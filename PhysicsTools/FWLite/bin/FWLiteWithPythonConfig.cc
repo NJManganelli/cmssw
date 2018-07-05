@@ -5,35 +5,31 @@
 
 #include "DataFormats/FWLite/interface/Event.h"
 #include "DataFormats/Common/interface/Handle.h"
-#include "FWCore/FWLite/interface/FWLiteEnabler.h"
-
-#include "DataFormats/FWLite/interface/InputSource.h"
-#include "DataFormats/FWLite/interface/OutputFiles.h"
-#include "FWCore/ParameterSet/interface/ParameterSet.h"
-#include "FWCore/PythonParameterSet/interface/MakeParameterSets.h"
+#include "FWCore/FWLite/interface/AutoLibraryLoader.h"
 
 #include "DataFormats/MuonReco/interface/Muon.h"
-#include "DataFormats/PatCandidates/interface/Muon.h"
 #include "PhysicsTools/FWLite/interface/TFileService.h"
-
+#include "DataFormats/PatCandidates/interface/Muon.h"
+#include "FWCore/ParameterSet/interface/ProcessDesc.h"
+#include "FWCore/PythonParameterSet/interface/PythonProcessDesc.h"
 
 int main(int argc, char* argv[]) 
 {
   // define what muon you are using; this is necessary as FWLite is not 
   // capable of reading edm::Views
-  using reco::Muon;
+  using pat::Muon;
 
   // ----------------------------------------------------------------------
   // First Part: 
   //
-  //  * enable FWLite 
+  //  * enable the AutoLibraryLoader 
   //  * book the histograms of interest 
   //  * open the input file
   // ----------------------------------------------------------------------
 
   // load framework libraries
   gSystem->Load( "libFWCoreFWLite" );
-  FWLiteEnabler::enable();
+  AutoLibraryLoader::enable();
 
   // parse arguments
   if ( argc < 2 ) {
@@ -41,20 +37,19 @@ int main(int argc, char* argv[])
     return 0;
   }
 
-  if( !edm::readPSetsFrom(argv[1])->existsAs<edm::ParameterSet>("process") ){
-    std::cout << " ERROR: ParametersSet 'process' is missing in your configuration file" << std::endl; exit(0);
-  }
   // get the python configuration
-  const edm::ParameterSet& process = edm::readPSetsFrom(argv[1])->getParameter<edm::ParameterSet>("process");
-  fwlite::InputSource inputHandler_(process); fwlite::OutputFiles outputHandler_(process);
-
+  PythonProcessDesc builder(argv[1]);
+  edm::ParameterSet const& cfg = builder.processDesc()->getProcessPSet()->getParameter<edm::ParameterSet>("MuonAnalyzer");
 
   // now get each parameter
-  const edm::ParameterSet& ana = process.getParameter<edm::ParameterSet>("muonAnalyzer");
-  edm::InputTag muons_( ana.getParameter<edm::InputTag>("muons") );
+  int maxEvents_( cfg.getParameter<int>("maxEvents") );
+  unsigned int outputEvery_( cfg.getParameter<unsigned int>("outputEvery") );
+  std::string outputFile_( cfg.getParameter<std::string>("outputFile" ) );
+  std::vector<std::string> inputFiles_( cfg.getParameter<std::vector<std::string> >("fileNames") );
+  edm::InputTag muons_( cfg.getParameter<edm::InputTag>("muons") );
 
   // book a set of histograms
-  fwlite::TFileService fs = fwlite::TFileService(outputHandler_.file().c_str());
+  fwlite::TFileService fs = fwlite::TFileService(outputFile_.c_str());
   TFileDirectory dir = fs.mkdir("analyzeBasicPat");
   TH1F* muonPt_  = dir.make<TH1F>("muonPt"  , "pt"  ,   100,   0.,  300.);
   TH1F* muonEta_ = dir.make<TH1F>("muonEta" , "eta" ,   100,  -3.,    3.);
@@ -63,10 +58,9 @@ int main(int argc, char* argv[])
   
   // loop the events
   int ievt=0;  
-  int maxEvents_( inputHandler_.maxEvents() );
-  for(unsigned int iFile=0; iFile<inputHandler_.files().size(); ++iFile){
+  for(unsigned int iFile=0; iFile<inputFiles_.size(); ++iFile){
     // open input file (can be located on castor)
-    TFile* inFile = TFile::Open(inputHandler_.files()[iFile].c_str());
+    TFile* inFile = TFile::Open(inputFiles_[iFile].c_str());
     if( inFile ){
       // ----------------------------------------------------------------------
       // Second Part: 
@@ -82,7 +76,7 @@ int main(int argc, char* argv[])
 	// break loop if maximal number of events is reached 
 	if(maxEvents_>0 ? ievt+1>maxEvents_ : false) break;
 	// simple event counter
-	if(inputHandler_.reportAfter()!=0 ? (ievt>0 && ievt%inputHandler_.reportAfter()==0) : false) 
+	if(outputEvery_!=0 ? (ievt>0 && ievt%outputEvery_==0) : false) 
 	  std::cout << "  processing event: " << ievt << std::endl;
 	
 	// Handle to the muon collection
@@ -90,11 +84,13 @@ int main(int argc, char* argv[])
 	event.getByLabel(muons_, muons);
 	
 	// loop muon collection and fill histograms
-	for(std::vector<Muon>::const_iterator mu1=muons->begin(); mu1!=muons->end(); ++mu1){
+        for(std::vector<Muon>::const_iterator mu1=muons->begin(); mu1!=muons->end(); ++mu1){
+
 	  muonPt_ ->Fill( mu1->pt () );
 	  muonEta_->Fill( mu1->eta() );
-	  muonPhi_->Fill( mu1->phi() );	  
+	  muonPhi_->Fill( mu1->phi() );  
 	  if( mu1->pt()>20 && fabs(mu1->eta())<2.1 ){
+	    //    for(std::vector<reco::Muon>::const_iterator mu2=muons->begin(); mu2!=muons->end(); ++mu2){
 	    for(std::vector<Muon>::const_iterator mu2=muons->begin(); mu2!=muons->end(); ++mu2){
 	      if(mu2>mu1){ // prevent double conting
 		if( mu1->charge()*mu2->charge()<0 ){ // check only muon pairs of unequal charge 
