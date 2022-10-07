@@ -206,6 +206,7 @@ namespace {
 
         if (aboveThrPos != hitRec.end()) {
           if (hitRec.end() - aboveThrPos > 0 || orderChanged) {
+            fireTDC = aboveThrPos->second;
             if (aboveThrPos - hitRec.begin() >= 1) {
               float accChargeForToA = aboveThrPos->first;
               const auto& belowThrPos = aboveThrPos - 1;
@@ -214,8 +215,6 @@ namespace {
               float deltaQ = accChargeForToA - chargeBeforeThr;
               float deltaTOF = fireTDC - timeBeforeThr;
               fireTDC = (cell_threshold - chargeBeforeThr) * deltaTOF / deltaQ + timeBeforeThr;
-            } else {
-              fireTDC = aboveThrPos->second;
             }
           }
         }
