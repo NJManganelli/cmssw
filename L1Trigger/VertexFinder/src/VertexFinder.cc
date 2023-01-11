@@ -770,9 +770,9 @@ namespace l1tVertexFinder {
     };
 
     enum HistogramBitWidths {
-      kBinSize = 10,                    // Width of a single bin in z
-      kBinFixedSize = 7,                // Width of a single z0 bin in fixed point representation
-      kBinFixedMagSize = 4,             // Width (magnitude) of a single z0 bin in fixed point representation
+      kBinSize = 8,                    // Width of a single bin in z
+      kBinFixedSize = 8,                // Width of a single z0 bin in fixed point representation
+      kBinFixedMagSize = 5,             // Width (magnitude) of a single z0 bin in fixed point representation
       kSlidingSumSize = 11,             // Width of the sum of a window of bins
       kInverseSize = 14,                // Width of the inverse sum
       kInverseMagSize = 1,              // Width of the inverse sum magnitude (unsigned)
