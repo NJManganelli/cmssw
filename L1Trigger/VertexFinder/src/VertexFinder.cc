@@ -781,6 +781,7 @@ namespace l1tVertexFinder {
       kWindowSize = 3,                  // Number of bins in the window used to sum histogram bins
       kSumPtLinkSize = 9,  // Number of bits used to represent the sum of track pts in a single bin from a single link
       kSumPtWindowBits = BitsToRepresent(HistogramBitWidths::kWindowSize * (1 << HistogramBitWidths::kSumPtLinkSize)),
+      kSumPtUntruncatedLinkSize = 16,  // Number of bits to represent the untruncated sum of track pts in a single bin from a single link
     };
 
     static constexpr unsigned int kTableSize =
@@ -798,6 +799,9 @@ namespace l1tVertexFinder {
     // Histogram bin in fixed point representation, before truncation
     typedef ap_ufixed<HistogramBitWidths::kBinFixedSize, HistogramBitWidths::kBinFixedMagSize, AP_RND_INF, AP_SAT>
         histbin_fixed_t;
+    // This type is slightly arbitrary, but 2 bits larger than untruncated track pt to store sums in histogram bins
+    // with truncation just before vertex-finding
+    typedef ap_ufixed<TrackBitWidths::kPtSize+2, TrackBitWidths::kPtMagSize+2, AP_RND_INF, AP_SAT> histbin_pt_sum_fixed_t;
     // This value is slightly arbitrary, but small enough that the windows sums aren't too big.
     typedef ap_ufixed<HistogramBitWidths::kSumPtLinkSize, HistogramBitWidths::kSumPtLinkSize, AP_RND_INF, AP_SAT>
         link_pt_sum_fixed_t;
@@ -955,6 +959,7 @@ namespace l1tVertexFinder {
         std::round((settings_->vx_histogram_max() - settings_->vx_histogram_min()) / settings_->vx_histogram_binwidth());
     unsigned int nsums = nbins - settings_->vx_windowSize() + 1;
     std::vector<link_pt_sum_fixed_t> hist(nbins, 0);
+    std::vector<histbin_pt_sum_fixed_t> hist_untruncated(nbins, 0);
 
     // Loop over the tracks and fill the histogram
     if (settings_->debug() > 2) {
@@ -963,11 +968,10 @@ namespace l1tVertexFinder {
     for (const L1Track& track : fitTracks_) {
       // Get the track pt and z0
       // Convert them to an appropriate data format
-      // Truncation and saturdation taken care of by the data type specification
+      // Truncation and saturation taken care of by the data type specification, now delayed to end of histogramming
       pt_t tkpt = 0;
       tkpt.V = track.getTTTrackPtr()->getTrackWord()(TTTrack_TrackWord::TrackBitLocations::kRinvMSB - 1,
                                                      TTTrack_TrackWord::TrackBitLocations::kRinvLSB);
-      track_pt_fixed_t pt_tmp = tkpt;
       z0_t tkZ0 = track.getTTTrackPtr()->getZ0Word();
 
       if ((settings_->vx_DoQualityCuts() && track_quality_check(tkpt)) || (!settings_->vx_DoQualityCuts())) {
@@ -986,16 +990,16 @@ namespace l1tVertexFinder {
                                          << "\n"
                                          << "tkZ0 = " << tkZ0.to_double() << "(" << tkZ0.to_string(2)
                                          << ")\ttkpt = " << tkpt.to_double() << "(" << tkpt.to_string(2)
-                                         << ")\tpt_tmp = " << pt_tmp << "\tbin = " << bin.first.to_int() << "\n"
+                                         << ")\tbin = " << bin.first.to_int() << "\n"
                                          << "pt sum in bin " << bin.first.to_int()
                                          << " BEFORE adding track = " << hist.at(bin.first).to_double();
         }
         if (bin.second) {
-          hist.at(bin.first) = hist.at(bin.first) + pt_tmp;
+          hist_untruncated.at(bin.first) = hist_untruncated.at(bin.first) + tkpt;
         }
         if (settings_->debug() > 2) {
           edm::LogInfo("VertexProducer") << "fastHistoEmulation::\npt sum in bin " << bin.first.to_int()
-                                         << " AFTER adding track = " << hist.at(bin.first).to_double();
+                                         << " AFTER adding track = " << hist_untruncated.at(bin.first).to_double();
         }
       } else {
         if (settings_->debug() > 2) {
@@ -1004,10 +1008,26 @@ namespace l1tVertexFinder {
                                          << "\n"
                                          << "tkZ0 = " << tkZ0.to_double() << "(" << tkZ0.to_string(2)
                                          << ")\ttkpt = " << tkpt.to_double() << "(" << tkpt.to_string(2)
-                                         << ")\tpt_tmp = " << pt_tmp;
+                                         << ")";
         }
       }
     }  // end loop over tracks
+
+    // HLS histogramming used to truncate track pt before adding, using 
+    // track_pt_fixed_t pt_tmp = tkpt;
+    // Now, truncation should happen after histograms are filled but prior to the vertex-finding part of the algo
+    for(unsigned int hb = 0; hb < hist.size(); ++hb) {
+      track_pt_fixed_t bin_trunc = hist_untruncated.at(hb);
+      hist.at(hb) = bin_trunc;      
+      if (settings_->debug() > 1) {
+	edm::LogInfo("VertexProducer") << "fastHistoEmulation::truncating histogram bin pt once filling is complete \n"
+				       << "hist_untruncated.at(" << hb << ") = " << hist_untruncated.at(hb).to_double() 
+				       << "(" << hist_untruncated.at(hb).to_string(2) << ")\tbin_trunc = "
+				       << bin_trunc.to_double() << "(" << bin_trunc.to_string(2)
+				       << ")\n\thist.at(" << hb << ") = " << hist.at(hb).to_double()
+				       << "(" << hist.at(hb).to_string(2) << ")";
+      }
+    }
 
     // Loop through all bins, taking into account the fact that the last bin is nbins-window_width+1,
     // and compute the sums using sliding windows ... sum_i_i+(w-1) where i in (0,nbins-w) and w is the window size
