@@ -1030,6 +1030,18 @@ namespace l1tVertexFinder {
       }
     }
 
+    // print out the histograms
+
+    if (settings_->debug() >= 1) {
+      edm::LogInfo log("VertexProducer");
+      log << "fastHistoEmulation::Checking the histogram filling and truncation ... \n";
+      printHistogram<histbin_pt_sum_fixed_t,edm::LogInfo>(log, hist_untruncated, 80, 0, -1, 
+							  "fastHistoEmulation::hist_untruncated", "\e[94m");
+      printHistogram<link_pt_sum_fixed_t, edm::LogInfo>(log, hist, 80, 0, -1, 
+							"fastHistoEmulation::hist_truncated", "\e[94m");
+    }
+
+
     // Loop through all bins, taking into account the fact that the last bin is nbins-window_width+1,
     // and compute the sums using sliding windows ... sum_i_i+(w-1) where i in (0,nbins-w) and w is the window size
     std::vector<window_pt_sum_fixed_t> hist_window_sums(nsums, 0);
