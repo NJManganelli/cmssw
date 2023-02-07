@@ -999,15 +999,6 @@ namespace l1tVertexFinder {
                                          << " BEFORE adding track = " << hist.at(bin.first).to_double();
         }
         if (bin.second) {
-	  if(bin.first == 134){ //FIXME remove these lines
-	    track_pt_fixed_t pt_tmp = tkpt;
-	    std::cout << "index: " << bin.first << "/" << bin.first.to_int() << " bin pt: " 
-		      << hist_untruncated.at(bin.first).to_double()
-		      << " tkpt: " << tkpt.to_double() << " tkZ0: " << tkZ0.to_double() 
-	              << " pt_tmp: " << pt_tmp.to_double() << "\n\t pass track quality (full/trunc): "
-		      << track_quality_check(tkpt) << "/" << track_quality_check(pt_tmp)
-		      << std::endl;
-	  }
           hist_untruncated.at(bin.first) = hist_untruncated.at(bin.first) + tkpt;
         }
         if (settings_->debug() > 2) {
@@ -1032,9 +1023,8 @@ namespace l1tVertexFinder {
       // double bin_trunc = std::trunc(hist_untruncated.at(hb).to_double());
       // hist.at(hb) = bin_trunc;
       //FIXME : make the offset a common definition
-      link_pt_sum_fixed_t bin_trunc = hist_untruncated.at(hb).range(HistogramBitWidths::kSumPtUntruncatedLinkSize, 
+      link_pt_sum_fixed_t bin_trunc = hist_untruncated.at(hb).range(HistogramBitWidths::kSumPtUntruncatedLinkSize - 1, 
 								    HistogramBitWidths::kSumPtUntruncatedLinkSize - HistogramBitWidths::kSumPtUntruncatedLinkMagSize);
-      // link_pt_sum_fixed_t bin_trunc = hist_untruncated.at(hb).range(HistogramBitWidths::kPtSize + 2, HistogramBitWidths::kPtMagSize + 2);
       hist.at(hb) = bin_trunc;
       if (settings_->debug() > 1) {
         edm::LogInfo("VertexProducer") << "fastHistoEmulation::truncating histogram bin pt once filling is complete \n"
