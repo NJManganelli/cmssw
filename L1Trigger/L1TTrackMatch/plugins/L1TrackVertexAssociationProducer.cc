@@ -330,8 +330,8 @@ private:
       TTTrackWordBendChi2Chi2RZChi2RPhiMaxSelector;
 
   // ----------member data ---------------------------
-  const edm::EDGetTokenT<TTTrackRefCollectionType> l1SelectedTracksToken_;
-  const edm::EDGetTokenT<TTTrackRefCollectionType> l1SelectedTracksEmulationToken_;
+  edm::EDGetTokenT<TTTrackRefCollectionType> l1SelectedTracksToken_;
+  edm::EDGetTokenT<TTTrackRefCollectionType> l1SelectedTracksEmulationToken_;
   edm::EDGetTokenT<l1t::VertexCollection> l1VerticesToken_;
   edm::EDGetTokenT<l1t::VertexWordCollection> l1VerticesEmulationToken_;
   edm::ESGetToken<TrackerTopology, TrackerTopologyRcd> tTopoToken_;
@@ -385,21 +385,19 @@ L1TrackVertexAssociationProducer::L1TrackVertexAssociationProducer(const edm::Pa
   doDeltaZCutSim_ = false;
   doDeltaZCutEmu_ = false;
   if (processSimulatedTracks_) {
-    // produces<TTTrackRefCollectionType>(outputCollectionName_); //FIXME: REMOVE
     if (iConfig.exists("l1VerticesInputTag")) {
-      l1VerticesToken_ = consumes<l1t::VertexCollection>(iConfig.getParameter<edm::InputTag>("l1VerticesInputTag"));
       l1SelectedTracksToken_ = consumes<TTTrackRefCollectionType>(iConfig.getParameter<edm::InputTag>("l1SelectedTracksInputTag"));
+      l1VerticesToken_ = consumes<l1t::VertexCollection>(iConfig.getParameter<edm::InputTag>("l1VerticesInputTag"));
       doDeltaZCutSim_ = true;
       produces<TTTrackRefCollectionType>(outputCollectionName_);
     }
   }
   if (processEmulatedTracks_) {
-    // produces<TTTrackRefCollectionType>(outputCollectionName_ + "Emulation"); //FIXME: REMOVE
     if (iConfig.exists("l1VerticesEmulationInputTag")) {
+      l1SelectedTracksEmulationToken_ =
+      	consumes<TTTrackRefCollectionType>(iConfig.getParameter<edm::InputTag>("l1SelectedTracksEmulationInputTag"));
       l1VerticesEmulationToken_ =
 	consumes<l1t::VertexWordCollection>(iConfig.getParameter<edm::InputTag>("l1VerticesEmulationInputTag"));
-      l1SelectedTracksEmulationToken_ =
-	consumes<TTTrackRefCollectionType>(iConfig.getParameter<edm::InputTag>("l1SelectedTracksEmulationInputTag"));
       doDeltaZCutEmu_ = true;
       produces<TTTrackRefCollectionType>(outputCollectionName_ + "Emulation");
     }
@@ -545,31 +543,6 @@ void L1TrackVertexAssociationProducer::produce(edm::StreamID, edm::Event& iEvent
   l1t::Vertex leadingVertex;
   l1t::VertexWord leadingEmulationVertex;
 
-  iEvent.getByToken(l1SelectedTracksToken_, l1SelectedTracksHandle);
-  size_t nOutputApproximate = l1SelectedTracksHandle->size();
-  if (processSimulatedTracks_) {
-    if (doDeltaZCutSim_) {
-      iEvent.getByToken(l1VerticesToken_, l1VerticesHandle);
-      leadingVertex = l1VerticesHandle->at(0);
-      if (debug_ >= 2) {
-        edm::LogInfo("L1TrackVertexAssociationProducer") << "leading vertex z0 = " << leadingVertex.z0();
-      }
-    }
-    vTTTrackOutput->reserve(nOutputApproximate);
-    vTTTrackAssociatedOutput->reserve(nOutputApproximate);
-  }
-  if (processEmulatedTracks_) {
-    if (doDeltaZCutEmu_) {
-      iEvent.getByToken(l1VerticesEmulationToken_, l1VerticesEmulationHandle);
-      leadingEmulationVertex = l1VerticesEmulationHandle->at(0);
-      if (debug_ >= 2) {
-        edm::LogInfo("L1TrackVertexAssociationProducer") << "leading emulation vertex z0 = " << leadingEmulationVertex.z0();
-      }
-    }
-    vTTTrackEmulationOutput->reserve(nOutputApproximate);
-    vTTTrackAssociatedEmulationOutput->reserve(nOutputApproximate); //FIXME: UPDATE
-  }
-
   TTTrackPtMinEtaMaxZ0MaxNStubsMinSelector kinSel(ptMin_, absEtaMax_, absZ0Max_, nStubsMin_);
   TTTrackWordPtMinEtaMaxZ0MaxNStubsMinSelector kinSelEmu(ptMin_, absEtaMax_, absZ0Max_, nStubsMin_);
   TTTrackBendChi2Chi2RZChi2RPhiMaxSelector chi2Sel(bendChi2Max_, reducedChi2RZMax_, reducedChi2RPhiMax_);
@@ -578,49 +551,72 @@ void L1TrackVertexAssociationProducer::produce(edm::StreamID, edm::Event& iEvent
   TTTrackWordDeltaZMaxSelector deltaZSelEmu(deltaZMaxEtaBounds_, deltaZMax_);
   TTTrackNPSStubsMinSelector nPSStubsSel(nPSStubsMin_, tTopo);
 
-  // for (size_t i = 0; i < nOutputApproximate; i++) {
-  //   const auto& track = l1SelectedTracksHandle->at(i); //FIXME: REMOVE
-  for (const auto& trackword : *l1SelectedTracksHandle) {
-    auto track = l1tVertexFinder::L1Track(edm::refToPtr(trackword));
-    // Select tracks based on the floating point TTTrack
-    if (processSimulatedTracks_ && kinSel(*trackword) && nPSStubsSel(*trackword) && chi2Sel(*trackword)) {
-      // vTTTrackOutput->push_back(TTTrackRef(l1SelectedTracksHandle, i));
-      vTTTrackOutput->push_back(trackword);
-      if (doDeltaZCutSim_ && deltaZSel(*trackword, leadingVertex)) {
-        vTTTrackAssociatedOutput->push_back(trackword);
+  if (processSimulatedTracks_ && doDeltaZCutSim_) {
+    iEvent.getByToken(l1SelectedTracksToken_, l1SelectedTracksHandle);
+    iEvent.getByToken(l1VerticesToken_, l1VerticesHandle);
+    size_t nOutputApproximate = l1SelectedTracksHandle->size();
+    leadingVertex = l1VerticesHandle->at(0);
+    if (debug_ >= 2) {
+      edm::LogInfo("L1TrackVertexAssociationProducer") << "leading vertex z0 = " << leadingVertex.z0();
+    }
+    vTTTrackOutput->reserve(nOutputApproximate);
+    vTTTrackAssociatedOutput->reserve(nOutputApproximate);
+    for (const auto& trackword : *l1SelectedTracksHandle) {
+      auto track = l1tVertexFinder::L1Track(edm::refToPtr(trackword));
+      // Select tracks based on the floating point TTTrack
+      if (processSimulatedTracks_ && kinSel(*trackword) && nPSStubsSel(*trackword) && chi2Sel(*trackword)) {
+	// vTTTrackOutput->push_back(TTTrackRef(l1SelectedTracksHandle, i));
+	vTTTrackOutput->push_back(trackword);
+	if (doDeltaZCutSim_ && deltaZSel(*trackword, leadingVertex)) {
+	  vTTTrackAssociatedOutput->push_back(trackword);
+	}
       }
     }
+    iEvent.put(std::move(vTTTrackAssociatedOutput), outputCollectionName_);
   }
-  for (const auto& trackword : *l1SelectedTracksEmulationHandle) {
-    // Select tracks based on the bitwise accurate TTTrack_TrackWord
-    if (processEmulatedTracks_ && kinSelEmu(*trackword) && chi2SelEmu(*trackword)) {
-      vTTTrackEmulationOutput->push_back(trackword);
-      if (doDeltaZCutEmu_ && deltaZSelEmu(*trackword, leadingEmulationVertex)) {
-        vTTTrackAssociatedEmulationOutput->push_back(trackword);
+  if (processEmulatedTracks_ && doDeltaZCutEmu_) {
+    iEvent.getByToken(l1SelectedTracksEmulationToken_, l1SelectedTracksEmulationHandle);
+    iEvent.getByToken(l1VerticesEmulationToken_, l1VerticesEmulationHandle);
+    size_t nOutputApproximateEmulation = l1SelectedTracksEmulationHandle->size();
+    leadingEmulationVertex = l1VerticesEmulationHandle->at(0);
+    if (debug_ >= 2) {
+      edm::LogInfo("L1TrackVertexAssociationProducer") << "leading emulation vertex z0 = " << leadingEmulationVertex.z0();
+    }
+    vTTTrackEmulationOutput->reserve(nOutputApproximateEmulation);
+    vTTTrackAssociatedEmulationOutput->reserve(nOutputApproximateEmulation); //FIXME: UPDATE
+    for (const auto& trackword : *l1SelectedTracksEmulationHandle) {
+      // Select tracks based on the bitwise accurate TTTrack_TrackWord
+      if (processEmulatedTracks_ && kinSelEmu(*trackword) && chi2SelEmu(*trackword)) {
+	vTTTrackEmulationOutput->push_back(trackword);
+	if (doDeltaZCutEmu_ && deltaZSelEmu(*trackword, leadingEmulationVertex)) {
+	  vTTTrackAssociatedEmulationOutput->push_back(trackword);
+	}
       }
     }
+    iEvent.put(std::move(vTTTrackAssociatedEmulationOutput), outputCollectionName_ + "Emulation");
   }
 
-  if (debug_ >= 2) {
+  // for (size_t i = 0; i < nOutputApproximate; i++) {
+  //   const auto& track = l1SelectedTracksHandle->at(i); //FIXME: REMOVE
+
+  if (processSimulatedTracks_ && processEmulatedTracks_ && debug_ >= 2) {
     printDebugInfo(l1SelectedTracksHandle,
 		   l1SelectedTracksEmulationHandle,
                    vTTTrackAssociatedOutput,
                    vTTTrackAssociatedEmulationOutput);
   }
 
-  // Put the outputs into the event
-  if (processSimulatedTracks_) {
-    // iEvent.put(std::move(vTTTrackOutput), outputCollectionName_); //FIXME: REMOVE
-    if (doDeltaZCutSim_) {
-      iEvent.put(std::move(vTTTrackAssociatedOutput), outputCollectionName_);
-    }
-  }
-  if (processEmulatedTracks_) {
-    // iEvent.put(std::move(vTTTrackEmulationOutput), outputCollectionName_ + "Emulation"); //FIXME: REMOVE
-    if (doDeltaZCutEmu_) {
-      iEvent.put(std::move(vTTTrackAssociatedEmulationOutput), outputCollectionName_ + "Emulation");
-    }
-  }
+  // // Put the outputs into the event
+  // if (processSimulatedTracks_) {
+  //   // iEvent.put(std::move(vTTTrackOutput), outputCollectionName_); //FIXME: REMOVE
+  //   if (doDeltaZCutSim_) {
+  //   }
+  // }
+  // if (processEmulatedTracks_) {
+  //   // iEvent.put(std::move(vTTTrackEmulationOutput), outputCollectionName_ + "Emulation"); //FIXME: REMOVE
+  //   if (doDeltaZCutEmu_) {
+  //   }
+  // }
 }
 
 // ------------ method fills 'descriptions' with the allowed parameters for the module  ------------
