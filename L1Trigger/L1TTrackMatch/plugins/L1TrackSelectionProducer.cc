@@ -429,10 +429,12 @@ void L1TrackSelectionProducer::produce(edm::StreamID, edm::Event& iEvent, const 
       vTTTrackOutput->push_back(TTTrackRef(l1TracksHandle, i));
     }
 
+    if (processEmulatedTracks_) {
+      vTTTrackEmulationRawOutput->push_back(TTTrackRef(l1TracksHandle, i)); //FIXME: REMOVE
+    }
     // Select tracks based on the bitwise accurate TTTrack_TrackWord
     if (processEmulatedTracks_ && kinSelEmu(track) && chi2SelEmu(track)) {
       vTTTrackEmulationOutput->push_back(TTTrackRef(l1TracksHandle, i));
-      vTTTrackEmulationRawOutput->push_back(TTTrackRef(l1TracksHandle, i)); //FIXME: REMOVE
     }
   }
 
