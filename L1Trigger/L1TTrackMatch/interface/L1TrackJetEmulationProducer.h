@@ -1,5 +1,3 @@
-
-
 #ifndef L1Trigger_L1TTrackMatch_L1TrackJetEmulationProducer_HH
 #define L1Trigger_L1TTrackMatch_L1TrackJetEmulationProducer_HH
 #include <iostream>
