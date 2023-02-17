@@ -309,7 +309,6 @@ L1TrackSelectionProducer::L1TrackSelectionProducer(const edm::ParameterSet& iCon
   }
   if (processEmulatedTracks_) {
     produces<TTTrackRefCollection>(outputCollectionName_ + "Emulation");
-    produces<TTTrackRefCollection>(outputCollectionName_ + "EmulationRaw"); //FIXME: REMOVE
   }
 }
 
@@ -398,7 +397,6 @@ void L1TrackSelectionProducer::printTrackInfo(edm::LogInfo& log, const L1Track& 
 void L1TrackSelectionProducer::produce(edm::StreamID, edm::Event& iEvent, const edm::EventSetup& iSetup) const {
   auto vTTTrackOutput = std::make_unique<TTTrackRefCollection>();
   auto vTTTrackEmulationOutput = std::make_unique<TTTrackRefCollection>();
-  auto vTTTrackEmulationRawOutput = std::make_unique<TTTrackRefCollection>(); //FIXME: REMOVE
 
   // Tracker Topology
   const TrackerTopology& tTopo = iSetup.getData(tTopoToken_);
@@ -412,7 +410,6 @@ void L1TrackSelectionProducer::produce(edm::StreamID, edm::Event& iEvent, const 
   }
   if (processEmulatedTracks_) {
     vTTTrackEmulationOutput->reserve(nOutputApproximate);
-    vTTTrackEmulationRawOutput->reserve(nOutputApproximate); //FIXME: REMOVE
   }
 
   TTTrackPtMinEtaMaxZ0MaxNStubsMinSelector kinSel(ptMin_, absEtaMax_, absZ0Max_, nStubsMin_);
@@ -429,9 +426,6 @@ void L1TrackSelectionProducer::produce(edm::StreamID, edm::Event& iEvent, const 
       vTTTrackOutput->push_back(TTTrackRef(l1TracksHandle, i));
     }
 
-    if (processEmulatedTracks_) {
-      vTTTrackEmulationRawOutput->push_back(TTTrackRef(l1TracksHandle, i)); //FIXME: REMOVE
-    }
     // Select tracks based on the bitwise accurate TTTrack_TrackWord
     if (processEmulatedTracks_ && kinSelEmu(track) && chi2SelEmu(track)) {
       vTTTrackEmulationOutput->push_back(TTTrackRef(l1TracksHandle, i));
@@ -450,7 +444,6 @@ void L1TrackSelectionProducer::produce(edm::StreamID, edm::Event& iEvent, const 
   }
   if (processEmulatedTracks_) {
     iEvent.put(std::move(vTTTrackEmulationOutput), outputCollectionName_ + "Emulation");
-    iEvent.put(std::move(vTTTrackEmulationRawOutput), outputCollectionName_ + "EmulationRaw"); //FIXME: REMOVE
   }
 }
 
