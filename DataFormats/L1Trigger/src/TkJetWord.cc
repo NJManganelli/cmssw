@@ -4,11 +4,25 @@
 #include "DataFormats/L1Trigger/interface/TkJetWord.h"
 
 namespace l1t {
-  TkJetWord::TkJetWord(pt_t pt, glbeta_t eta, glbphi_t phi, z0_t z0, nt_t nt, nx_t nx, dispflag_t dispflag, tkjetunassigned_t unassigned) {
+  TkJetWord::TkJetWord(pt_t pt,
+                       glbeta_t eta,
+                       glbphi_t phi,
+                       z0_t z0,
+                       nt_t nt,
+                       nx_t nx,
+                       dispflag_t dispflag,
+                       tkjetunassigned_t unassigned) {
     setTkJetWord(pt, eta, phi, z0, nt, nx, dispflag, unassigned);
   }
 
-  void TkJetWord::setTkJetWord(pt_t pt, glbeta_t eta, glbphi_t phi, z0_t z0, nt_t nt, nx_t nx, dispflag_t dispflag, tkjetunassigned_t unassigned) {
+  void TkJetWord::setTkJetWord(pt_t pt,
+                               glbeta_t eta,
+                               glbphi_t phi,
+                               z0_t z0,
+                               nt_t nt,
+                               nx_t nx,
+                               dispflag_t dispflag,
+                               tkjetunassigned_t unassigned) {
     // pack the TkJet word
     unsigned int offset = 0;
     for (unsigned int b = offset; b < (offset + TkJetBitWidths::kPtSize); b++) {

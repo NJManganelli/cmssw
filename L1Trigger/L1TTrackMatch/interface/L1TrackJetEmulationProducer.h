@@ -11,39 +11,37 @@
 #include "DataFormats/L1TrackTrigger/interface/TTTypes.h"
 #include "FWCore/MessageLogger/interface/MessageLogger.h"
 
-
-
 //For precision studies
 const unsigned int PT_INTPART_BITS{9};
 const unsigned int ETA_INTPART_BITS{3};
 const unsigned int kExtraGlobalPhiBit{4};
 
 typedef ap_ufixed<TTTrack_TrackWord::TrackBitWidths::kRinvSize - 1, PT_INTPART_BITS, AP_TRN, AP_SAT> pt_intern;
-typedef  ap_fixed<TTTrack_TrackWord::TrackBitWidths::kTanlSize, ETA_INTPART_BITS,  AP_TRN, AP_SAT> glbeta_intern;
-typedef ap_int<TTTrack_TrackWord::TrackBitWidths::kPhiSize + kExtraGlobalPhiBit>  glbphi_intern;
+typedef ap_fixed<TTTrack_TrackWord::TrackBitWidths::kTanlSize, ETA_INTPART_BITS, AP_TRN, AP_SAT> glbeta_intern;
+typedef ap_int<TTTrack_TrackWord::TrackBitWidths::kPhiSize + kExtraGlobalPhiBit> glbphi_intern;
 typedef ap_int<TTTrack_TrackWord::TrackBitWidths::kZ0Size> z0_intern;  // 40cm / 0.1
 typedef ap_uint<TTTrack_TrackWord::TrackBitWidths::kD0Size> d0_intern;
 
-inline const unsigned int DoubleToBit(double value, unsigned int maxBits, double step){
-    unsigned int digitized_value = std::floor(std::abs(value) /step );
-    unsigned int digitized_maximum = (1 << ( maxBits - 1)) - 1;  // The remove 1 bit from nBits to account for the sign
-    if (digitized_value > digitized_maximum)
-        digitized_value = digitized_maximum;
-    if (value < 0)
-       digitized_value = (1 <<  maxBits) - digitized_value;  // two's complement encoding
-    return digitized_value;       
+inline const unsigned int DoubleToBit(double value, unsigned int maxBits, double step) {
+  unsigned int digitized_value = std::floor(std::abs(value) / step);
+  unsigned int digitized_maximum = (1 << (maxBits - 1)) - 1;  // The remove 1 bit from nBits to account for the sign
+  if (digitized_value > digitized_maximum)
+    digitized_value = digitized_maximum;
+  if (value < 0)
+    digitized_value = (1 << maxBits) - digitized_value;  // two's complement encoding
+  return digitized_value;
 }
-inline const double BitToDouble(unsigned int bits, unsigned int maxBits, double step){
-    int isign = 1;
-    unsigned int digitized_maximum = (1 << maxBits) - 1;
-    if (bits & (1 << (maxBits - 1))) {  // check the sign
-       isign = -1;
-       bits = (1 << (maxBits + 1)) - bits;
-    }
-    return (double(bits & digitized_maximum) + 0.5) * step * isign;   
+inline const double BitToDouble(unsigned int bits, unsigned int maxBits, double step) {
+  int isign = 1;
+  unsigned int digitized_maximum = (1 << maxBits) - 1;
+  if (bits & (1 << (maxBits - 1))) {  // check the sign
+    isign = -1;
+    bits = (1 << (maxBits + 1)) - bits;
+  }
+  return (double(bits & digitized_maximum) + 0.5) * step * isign;
 }
 
-// eta/phi clusters - simulation 
+// eta/phi clusters - simulation
 struct EtaPhiBin {
   float pTtot;
   int ntracks;
@@ -62,8 +60,7 @@ struct MaxZBin {
   float ht;                         //sum of all cluster pTs--only the zbin with the maximum ht is stored
 };
 
-
-// eta/phi clusters - emulation 
+// eta/phi clusters - emulation
 struct TrackJetEmulationEtaPhiBin {
   pt_intern pTtot;
   l1t::TkJetWord::nt_t ntracks;
@@ -74,19 +71,28 @@ struct TrackJetEmulationEtaPhiBin {
   std::vector<unsigned int> trackidx;
 };
 
-
 // z bin struct - emulation (used if z bin are many)
 struct TrackJetEmulationMaxZBin {
   int znum;    //Numbered from 0 to nzbins (16, 32, or 64) in order
   int nclust;  //number of clusters in this bin
   z0_intern zbincenter;
   std::vector<TrackJetEmulationEtaPhiBin> clusters;  //list of all the clusters in this bin
-  pt_intern ht;                          //sum of all cluster pTs--only the zbin with the maximum ht is stored
+  pt_intern ht;  //sum of all cluster pTs--only the zbin with the maximum ht is stored
 };
 
-
 // track quality cuts
-inline bool TrackQualitySelection(int trk_nstub, double trk_chi2, double trk_bendchi2, double nStubs4PromptBend_, double nStubs5PromptBend_, double nStubs4PromptChi2_, double nStubs5PromptChi2_, double nStubs4DisplacedBend_, double nStubs5DisplacedBend_, double nStubs4DisplacedChi2_, double nStubs5DisplacedChi2_, bool displaced_) {
+inline bool TrackQualitySelection(int trk_nstub,
+                                  double trk_chi2,
+                                  double trk_bendchi2,
+                                  double nStubs4PromptBend_,
+                                  double nStubs5PromptBend_,
+                                  double nStubs4PromptChi2_,
+                                  double nStubs5PromptChi2_,
+                                  double nStubs4DisplacedBend_,
+                                  double nStubs5DisplacedBend_,
+                                  double nStubs4DisplacedChi2_,
+                                  double nStubs5DisplacedChi2_,
+                                  bool displaced_) {
   bool PassQuality = false;
   if (!displaced_) {
     if (trk_nstub == 4 && trk_bendchi2 < nStubs4PromptBend_ &&
@@ -106,20 +112,16 @@ inline bool TrackQualitySelection(int trk_nstub, double trk_chi2, double trk_ben
   return PassQuality;
 }
 
-
-
-
 // L1 clustering (in eta)
-template< typename T, typename Pt, typename Eta, typename Phi>
-inline std::vector<T> L1_clustering(T *phislice, int etaBins_, Eta etaStep_){
-
+template <typename T, typename Pt, typename Eta, typename Phi>
+inline std::vector<T> L1_clustering(T *phislice, int etaBins_, Eta etaStep_) {
   std::vector<T> clusters;
   // Find eta bin with maxpT, make center of cluster, add neighbors if not already used
   int nclust = 0;
 
   // get tracks in eta bins in increasing eta order
   for (int etabin = 0; etabin < etaBins_; ++etabin) {
-    Pt  my_pt = 0;
+    Pt my_pt = 0;
     Pt previousbin_pt = 0;
     Pt nextbin_pt = 0;
     Pt nextbin2_pt = 0;
@@ -127,11 +129,11 @@ inline std::vector<T> L1_clustering(T *phislice, int etaBins_, Eta etaStep_){
     // skip (already) used tracks
     if (phislice[etabin].used)
       continue;
-    
+
     my_pt = phislice[etabin].pTtot;
     if (my_pt == 0)
       continue;
-  
+
     //get previous bin pT
     if (etabin > 0 && !phislice[etabin - 1].used)
       previousbin_pt = phislice[etabin - 1].pTtot;
@@ -174,25 +176,26 @@ inline std::vector<T> L1_clustering(T *phislice, int etaBins_, Eta etaStep_){
     }
 
     nclust++;
-    
+
   }  // for each etabin
 
   // Merge close-by clusters
   for (int m = 0; m < nclust - 1; ++m) {
-    if (  ((clusters[m + 1].eta - clusters[m].eta) < (3 * etaStep_)/2 ) &&  (  -(3 * etaStep_)/2 <(clusters[m + 1].eta - clusters[m].eta))  ) {
+    if (((clusters[m + 1].eta - clusters[m].eta) < (3 * etaStep_) / 2) &&
+        (-(3 * etaStep_) / 2 < (clusters[m + 1].eta - clusters[m].eta))) {
       if (clusters[m + 1].pTtot > clusters[m].pTtot) {
         clusters[m].eta = clusters[m + 1].eta;
       }
       clusters[m].pTtot += clusters[m + 1].pTtot;
-      clusters[m].ntracks += clusters[m + 1].ntracks;  // total ntrk
+      clusters[m].ntracks += clusters[m + 1].ntracks;    // total ntrk
       clusters[m].nxtracks += clusters[m + 1].nxtracks;  // total ndisp
       for (unsigned int itrk = 0; itrk < clusters[m + 1].trackidx.size(); itrk++)
         clusters[m].trackidx.push_back(clusters[m + 1].trackidx[itrk]);
 
       // if remove the merged cluster - all the others must be closer to 0
-      for (int m1 = m + 1; m1 < nclust - 1; ++m1) 
+      for (int m1 = m + 1; m1 < nclust - 1; ++m1)
         clusters[m1] = clusters[m1 + 1];
-      
+
       clusters.erase(clusters.begin() + nclust);
       nclust--;
       m = -1;
@@ -202,10 +205,9 @@ inline std::vector<T> L1_clustering(T *phislice, int etaBins_, Eta etaStep_){
   return clusters;
 }
 
-
 // Fill L2 clusters (helper function)
-template< typename T, typename Pt>
-inline void Fill_L2Cluster( T &bin, Pt pt, int ntrk, int ndtrk, std::vector<unsigned int> trkidx) {
+template <typename T, typename Pt>
+inline void Fill_L2Cluster(T &bin, Pt pt, int ntrk, int ndtrk, std::vector<unsigned int> trkidx) {
   bin.pTtot += pt;
   bin.ntracks += ntrk;
   bin.nxtracks += ndtrk;
@@ -215,13 +217,16 @@ inline void Fill_L2Cluster( T &bin, Pt pt, int ntrk, int ndtrk, std::vector<unsi
 
 inline glbphi_intern DPhi(glbphi_intern phi1, glbphi_intern phi2) {
   glbphi_intern x = phi1 - phi2;
-  if (x >= DoubleToBit(M_PI,  TTTrack_TrackWord::TrackBitWidths::kPhiSize+kExtraGlobalPhiBit, TTTrack_TrackWord::stepPhi0) )
-    x -=  DoubleToBit(2*M_PI, TTTrack_TrackWord::TrackBitWidths::kPhiSize+kExtraGlobalPhiBit, TTTrack_TrackWord::stepPhi0);
-  if (x <  DoubleToBit( -1*M_PI, TTTrack_TrackWord::TrackBitWidths::kPhiSize+kExtraGlobalPhiBit, TTTrack_TrackWord::stepPhi0) )
-    x +=  DoubleToBit(2*M_PI, TTTrack_TrackWord::TrackBitWidths::kPhiSize+kExtraGlobalPhiBit, TTTrack_TrackWord::stepPhi0);
+  if (x >=
+      DoubleToBit(M_PI, TTTrack_TrackWord::TrackBitWidths::kPhiSize + kExtraGlobalPhiBit, TTTrack_TrackWord::stepPhi0))
+    x -= DoubleToBit(
+        2 * M_PI, TTTrack_TrackWord::TrackBitWidths::kPhiSize + kExtraGlobalPhiBit, TTTrack_TrackWord::stepPhi0);
+  if (x < DoubleToBit(
+              -1 * M_PI, TTTrack_TrackWord::TrackBitWidths::kPhiSize + kExtraGlobalPhiBit, TTTrack_TrackWord::stepPhi0))
+    x += DoubleToBit(
+        2 * M_PI, TTTrack_TrackWord::TrackBitWidths::kPhiSize + kExtraGlobalPhiBit, TTTrack_TrackWord::stepPhi0);
   return x;
 }
-
 
 inline float DPhi(float phi1, float phi2) {
   float x = phi1 - phi2;
@@ -232,20 +237,16 @@ inline float DPhi(float phi1, float phi2) {
   return x;
 }
 
-
 // L2 clustering (in phi)
-template<typename T, typename Pt, typename Eta, typename Phi>
-inline std::vector< T > L2_clustering(std::vector<std::vector< T> > &L1clusters, int phiBins_, Phi phiStep_, Eta etaStep_) {
-
+template <typename T, typename Pt, typename Eta, typename Phi>
+inline std::vector<T> L2_clustering(std::vector<std::vector<T> > &L1clusters, int phiBins_, Phi phiStep_, Eta etaStep_) {
   std::vector<T> clusters;
   for (int phibin = 0; phibin < phiBins_; ++phibin) {  //Find eta-phibin with highest pT
     if (L1clusters[phibin].empty())
       continue;
-       
+
     // sort L1 clusters max -> min
-     sort(L1clusters[phibin].begin(), L1clusters[phibin].end(), []( T &a, T &b) {
-       return a.pTtot > b.pTtot;
-    });
+    sort(L1clusters[phibin].begin(), L1clusters[phibin].end(), [](T &a, T &b) { return a.pTtot > b.pTtot; });
 
     for (unsigned int imax = 0; imax < L1clusters[phibin].size(); ++imax) {
       if (L1clusters[phibin][imax].used)
@@ -269,11 +270,11 @@ inline std::vector< T > L2_clustering(std::vector<std::vector< T> > &L1clusters,
 
       std::vector<unsigned int> used_already;  //keep phi+1 clusters that have been used
       for (unsigned int icluster = 0; icluster < L1clusters[phibin + 1].size(); ++icluster) {
-
         if (L1clusters[phibin + 1][icluster].used)
           continue;
-     
-        if ( ((L1clusters[phibin + 1][icluster].eta - L1clusters[phibin][imax].eta) > (3 * etaStep_)/2) || ((L1clusters[phibin + 1][icluster].eta - L1clusters[phibin][imax].eta) < -(3 * etaStep_)/2) )
+
+        if (((L1clusters[phibin + 1][icluster].eta - L1clusters[phibin][imax].eta) > (3 * etaStep_) / 2) ||
+            ((L1clusters[phibin + 1][icluster].eta - L1clusters[phibin][imax].eta) < -(3 * etaStep_) / 2))
           continue;
 
         pt_next += L1clusters[phibin + 1][icluster].pTtot;
@@ -303,12 +304,13 @@ inline std::vector< T > L2_clustering(std::vector<std::vector< T> > &L1clusters,
       for (unsigned int icluster = 0; icluster < L1clusters[phibin + 2].size(); ++icluster) {
         if (L1clusters[phibin + 2][icluster].used)
           continue;
-        if ( ((L1clusters[phibin + 2][icluster].eta - L1clusters[phibin][imax].eta) > (3 * etaStep_)/2 ) || ((L1clusters[phibin + 2][icluster].eta - L1clusters[phibin][imax].eta) <-(3 * etaStep_)/2 ) )
+        if (((L1clusters[phibin + 2][icluster].eta - L1clusters[phibin][imax].eta) > (3 * etaStep_) / 2) ||
+            ((L1clusters[phibin + 2][icluster].eta - L1clusters[phibin][imax].eta) < -(3 * etaStep_) / 2))
           continue;
         pt_next2 += L1clusters[phibin + 2][icluster].pTtot;
         trk2 += L1clusters[phibin + 2][icluster].ntracks;
         tdtrk2 += L1clusters[phibin + 2][icluster].nxtracks;
-  
+
         for (unsigned int itrk = 0; itrk < L1clusters[phibin + 2][icluster].trackidx.size(); itrk++)
           trkidx2.push_back(L1clusters[phibin + 2][icluster].trackidx[itrk]);
         used_already2.push_back(icluster);
@@ -318,7 +320,8 @@ inline std::vector< T > L2_clustering(std::vector<std::vector< T> > &L1clusters,
         trkidx_both.reserve(trkidx1.size() + trkidx2.size());
         trkidx_both.insert(trkidx_both.end(), trkidx1.begin(), trkidx1.end());
         trkidx_both.insert(trkidx_both.end(), trkidx2.begin(), trkidx2.end());
-        Fill_L2Cluster<T,Pt>(clusters[clusters.size() - 1], pt_next + pt_next2, trk1 + trk2, tdtrk1 + tdtrk2, trkidx_both);
+        Fill_L2Cluster<T, Pt>(
+            clusters[clusters.size() - 1], pt_next + pt_next2, trk1 + trk2, tdtrk1 + tdtrk2, trkidx_both);
         clusters[clusters.size() - 1].phi = L1clusters[phibin + 1][used_already[0]].phi;
         for (unsigned int iused : used_already)
           L1clusters[phibin + 1][iused].used = true;
@@ -335,7 +338,8 @@ inline std::vector< T > L2_clustering(std::vector<std::vector< T> > &L1clusters,
     for (int n = m + 1; n < nclust; ++n) {
       if (clusters[n].eta != clusters[m].eta)
         continue;
-      if ( (DPhi(clusters[n].phi, clusters[m].phi) > (3 *  phiStep_)/2 ) ||(DPhi(clusters[n].phi, clusters[m].phi) < -(3 *  phiStep_)/2 ) )
+      if ((DPhi(clusters[n].phi, clusters[m].phi) > (3 * phiStep_) / 2) ||
+          (DPhi(clusters[n].phi, clusters[m].phi) < -(3 * phiStep_) / 2))
         continue;
       if (clusters[n].pTtot > clusters[m].pTtot)
         clusters[m].phi = clusters[n].phi;
@@ -354,7 +358,5 @@ inline std::vector< T > L2_clustering(std::vector<std::vector< T> > &L1clusters,
   }    // end of m-loop
   return clusters;
 }
-
-
 
 #endif

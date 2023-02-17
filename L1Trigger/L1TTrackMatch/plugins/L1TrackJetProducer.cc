@@ -1,6 +1,6 @@
 // Original simulation Author:  Rishi Patel
-// 
-// Rewritting/improvements:  George Karathanasis, 
+//
+// Rewritting/improvements:  George Karathanasis,
 //                           georgios.karathanasis@cern.ch, CU Boulder
 //
 //         Created:  Wed, 01 Aug 2018 14:01:41 GMT
@@ -10,7 +10,6 @@
 // then by clustering in eta
 // Introduction to object (p10-13):
 // https://indico.cern.ch/event/791517/contributions/3341650/attachments/1818736/2973771/TrackBasedAlgos_L1TMadrid_MacDonald.pdf
-
 
 // system include files
 #include "DataFormats/Common/interface/Ref.h"
@@ -103,7 +102,7 @@ private:
 };
 
 L1TrackJetProducer::L1TrackJetProducer(const ParameterSet &iConfig)
-    :  tTopoToken_(esConsumes<TrackerTopology, TrackerTopologyRcd>(edm::ESInputTag("", ""))),
+    : tTopoToken_(esConsumes<TrackerTopology, TrackerTopologyRcd>(edm::ESInputTag("", ""))),
       trackToken_(consumes<vector<TTTrack<Ref_Phase2TrackerDigi_>>>(iConfig.getParameter<InputTag>("L1TrackInputTag"))),
       PVtxToken_(consumes<l1t::VertexWordCollection>(iConfig.getParameter<InputTag>("VertexInputTag"))) {
   trkZMax_ = (float)iConfig.getParameter<double>("trk_zMax");
@@ -149,7 +148,7 @@ void L1TrackJetProducer::produce(Event &iEvent, const EventSetup &iSetup) {
   unique_ptr<TkJetCollection> L1L1TrackJetProducer(new TkJetCollection);
 
   // Read inputs
-  const TrackerTopology& tTopo = iSetup.getData(tTopoToken_);
+  const TrackerTopology &tTopo = iSetup.getData(tTopoToken_);
 
   edm::Handle<vector<TTTrack<Ref_Phase2TrackerDigi_>>> TTTrackHandle;
   iEvent.getByToken(trackToken_, TTTrackHandle);
@@ -182,7 +181,18 @@ void L1TrackJetProducer::produce(Event &iEvent, const EventSetup &iSetup) {
     // PS track cut
     if (trk_nPS < trkNPSStubMin_)
       continue;
-    if (!TrackQualitySelection(trk_nstubs, trk_chi2dof, trk_bendchi2,nStubs4PromptBend_,nStubs5PromptBend_,nStubs4PromptChi2_,nStubs5PromptChi2_,nStubs4DisplacedBend_,nStubs5DisplacedBend_,nStubs4DisplacedChi2_,nStubs5DisplacedChi2_,displaced_))
+    if (!TrackQualitySelection(trk_nstubs,
+                               trk_chi2dof,
+                               trk_bendchi2,
+                               nStubs4PromptBend_,
+                               nStubs5PromptBend_,
+                               nStubs4PromptChi2_,
+                               nStubs5PromptChi2_,
+                               nStubs4DisplacedBend_,
+                               nStubs5DisplacedBend_,
+                               nStubs4DisplacedChi2_,
+                               nStubs5DisplacedChi2_,
+                               displaced_))
       continue;
     if (std::abs(PVz - trkPtr->z0()) > dzPVTrk_ && dzPVTrk_ > 0)
       continue;
@@ -201,8 +211,8 @@ void L1TrackJetProducer::produce(Event &iEvent, const EventSetup &iSetup) {
       tdtrk_.push_back(0);  // not displaced track
   }
 
- // if no tracks pass selection return empty containers
-  if (L1TrkPtrs_.empty()){
+  // if no tracks pass selection return empty containers
+  if (L1TrkPtrs_.empty()) {
     if (displaced_)
       iEvent.put(std::move(L1L1TrackJetProducer), "L1TrackJetsExtended");
     else
@@ -216,9 +226,9 @@ void L1TrackJetProducer::produce(Event &iEvent, const EventSetup &iSetup) {
   mzb.ht = -1;
 
   // create 2D grid of eta phi bins
-  EtaPhiBin epbins_default[phiBins_][etaBins_]; 
+  EtaPhiBin epbins_default[phiBins_][etaBins_];
   float phi = -1.0 * M_PI;
-  float eta = -1.0 * trkEtaMax_;   
+  float eta = -1.0 * trkEtaMax_;
   for (int i = 0; i < phiBins_; ++i) {
     eta = -1.0 * trkEtaMax_;
     for (int j = 0; j < etaBins_; ++j) {
@@ -251,7 +261,7 @@ void L1TrackJetProducer::produce(Event &iEvent, const EventSetup &iSetup) {
       epbins_default[i][j].trackidx.clear();
     }
   }
-    
+
   for (unsigned int zbin = 0; zbin < zmins.size(); ++zbin) {
     // initialize grid
     float zmin = zmins[zbin];
@@ -278,7 +288,7 @@ void L1TrackJetProducer::produce(Event &iEvent, const EventSetup &iSetup) {
         if (zmin >= trkZ)
           continue;
       }
-       
+
       for (int i = 0; i < phiBins_; ++i) {
         for (int j = 0; j < etaBins_; ++j) {
           float eta_min = epbins[i][j].eta - etaStep_ / 2.0;  //eta min
@@ -289,9 +299,9 @@ void L1TrackJetProducer::produce(Event &iEvent, const EventSetup &iSetup) {
           if ((trketa < eta_min) || (trketa > eta_max) || (trkphi < phi_min) || (trkphi > phi_max))
             continue;
           if (trkpt < trkPtMax_)
-             epbins[i][j].pTtot += trkpt;
+            epbins[i][j].pTtot += trkpt;
           else
-             epbins[i][j].pTtot += trkPtMax_;
+            epbins[i][j].pTtot += trkPtMax_;
           epbins[i][j].nxtracks += tdtrk_[k];
           epbins[i][j].trackidx.push_back(k);
           ++epbins[i][j].ntracks;
@@ -303,11 +313,11 @@ void L1TrackJetProducer::produce(Event &iEvent, const EventSetup &iSetup) {
     for (int phibin = 0; phibin < phiBins_; ++phibin) {
       L1clusters.push_back(L1_clustering<EtaPhiBin, float, float, float>(epbins[phibin], etaBins_, etaStep_));
     }
-     
+
     // second layer clustering in phi for using eta clusters
-    L2clusters = L2_clustering<EtaPhiBin,float,float,float>(L1clusters, phiBins_, phiStep_, etaStep_);
-      
-    // sum all cluster pTs in this zbin to find max 
+    L2clusters = L2_clustering<EtaPhiBin, float, float, float>(L1clusters, phiBins_, phiStep_, etaStep_);
+
+    // sum all cluster pTs in this zbin to find max
     float sum_pt = 0;
     for (unsigned int k = 0; k < L2clusters.size(); ++k) {
       if (L2clusters[k].pTtot > lowpTJetThreshold_ && L2clusters[k].ntracks < lowpTJetMinTrackMultiplicity_)
@@ -315,7 +325,7 @@ void L1TrackJetProducer::produce(Event &iEvent, const EventSetup &iSetup) {
       if (L2clusters[k].pTtot > highpTJetThreshold_ && L2clusters[k].ntracks < highpTJetMinTrackMultiplicity_)
         continue;
       if (L2clusters[k].pTtot > minTrkJetpT_)
-         sum_pt += L2clusters[k].pTtot;
+        sum_pt += L2clusters[k].pTtot;
     }
 
     if (sum_pt < mzb.ht)
@@ -342,7 +352,7 @@ void L1TrackJetProducer::produce(Event &iEvent, const EventSetup &iSetup) {
     int totalDisptrk = mzb.clusters[j].nxtracks;
     bool isDispJet = false;
     if (totalDisptrk > nDisplacedTracks_ || totalDisptrk == nDisplacedTracks_)
-       isDispJet = true;
+      isDispJet = true;
 
     math::XYZTLorentzVector jetP4(jetPx, jetPy, jetPz, jetP);
     L1TrackAssocJet.clear();
@@ -350,22 +360,21 @@ void L1TrackJetProducer::produce(Event &iEvent, const EventSetup &iSetup) {
       L1TrackAssocJet.push_back(L1TrkPtrs_[mzb.clusters[j].trackidx[itrk]]);
 
     TkJet trkJet(jetP4, L1TrackAssocJet, mzb.zbincenter, mzb.clusters[j].ntracks, 0, totalDisptrk, 0, isDispJet);
-  
+
     L1L1TrackJetProducer->push_back(trkJet);
   }
 
-  std::sort(L1L1TrackJetProducer->begin(),L1L1TrackJetProducer->end(), [] (auto &a, auto &b) {return a.pt()>b.pt(); });
+  std::sort(
+      L1L1TrackJetProducer->begin(), L1L1TrackJetProducer->end(), [](auto &a, auto &b) { return a.pt() > b.pt(); });
   if (displaced_)
     iEvent.put(std::move(L1L1TrackJetProducer), "L1TrackJetsExtended");
   else
     iEvent.put(std::move(L1L1TrackJetProducer), "L1TrackJets");
-  
 }
 
 void L1TrackJetProducer::beginStream(StreamID) {}
 
 void L1TrackJetProducer::endStream() {}
-
 
 void L1TrackJetProducer::fillDescriptions(ConfigurationDescriptions &descriptions) {
   //The following says we do not know what parameters are allowed so do no validation
