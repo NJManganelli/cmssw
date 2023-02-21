@@ -306,6 +306,7 @@
 
   <class name="l1t::TkJetWord" ClassVersion="4">
     <version ClassVersion="4" checksum="2346039066"/>
+    <version ClassVersion="3" checksum="3521396532"/>
   </class>
   <class name="std::vector<l1t::TkJetWord>"/>
   <class name="edm::Wrapper<std::vector<l1t::TkJetWord> >"/>
