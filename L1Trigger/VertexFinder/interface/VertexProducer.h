@@ -4,7 +4,6 @@
 #include "DataFormats/Common/interface/Ptr.h"
 #include "DataFormats/Common/interface/RefToPtr.h"
 #include "DataFormats/L1Trigger/interface/Vertex.h"
-#include "FWCore/Framework/interface/global/EDProducer.h"
 #include "DataFormats/L1TrackTrigger/interface/TTTypes.h"
 #include "DataFormats/L1Trigger/interface/VertexWord.h"
 #include "DataFormats/TrackerCommon/interface/TrackerTopology.h"
