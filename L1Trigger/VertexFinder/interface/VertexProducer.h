@@ -1,6 +1,8 @@
 #ifndef __L1Trigger_VertexFinder_VertexProducer_h__
 #define __L1Trigger_VertexFinder_VertexProducer_h__
 
+#include "DataFormats/Common/interface/Ptr.h"
+#include "DataFormats/Common/interface/RefToPtr.h"
 #include "DataFormats/L1Trigger/interface/Vertex.h"
 #include "FWCore/Framework/interface/global/EDProducer.h"
 #include "DataFormats/L1TrackTrigger/interface/TTTypes.h"
@@ -33,12 +35,15 @@ public:
   ~VertexProducer() override {}
 
 private:
-  typedef edm::View<TTTrack<Ref_Phase2TrackerDigi_>> TTTrackCollectionView;
+  typedef TTTrack<Ref_Phase2TrackerDigi_> TTTrackType;
+  typedef std::vector<TTTrackType> TTTrackCollectionType;
+  typedef edm::RefVector<TTTrackCollectionType> TTTrackRefCollectionType;
+  typedef edm::View<TTTrackType> TTTrackCollectionView;
 
   void produce(edm::StreamID, edm::Event&, const edm::EventSetup&) const override;
 
 private:
-  const edm::EDGetTokenT<TTTrackCollectionView> l1TracksToken_;
+  const edm::EDGetTokenT<TTTrackRefCollectionType> l1TracksToken_;
   const edm::ESGetToken<TrackerTopology, TrackerTopologyRcd> tTopoToken;
   const std::string outputCollectionName_;
 
