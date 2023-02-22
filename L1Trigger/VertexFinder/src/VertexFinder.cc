@@ -1020,13 +1020,10 @@ namespace l1tVertexFinder {
     // track_pt_fixed_t pt_tmp = tkpt;
     // Now, truncation should happen after histograms are filled but prior to the vertex-finding part of the algo
     for (unsigned int hb = 0; hb < hist.size(); ++hb) {
-      // double bin_trunc = std::trunc(hist_untruncated.at(hb).to_double());
-      // hist.at(hb) = bin_trunc;
-      //FIXME : make the offset a common definition
       link_pt_sum_fixed_t bin_trunc = hist_untruncated.at(hb).range(HistogramBitWidths::kSumPtUntruncatedLinkSize - 1, 
 								    HistogramBitWidths::kSumPtUntruncatedLinkSize - HistogramBitWidths::kSumPtUntruncatedLinkMagSize);
       hist.at(hb) = bin_trunc;
-      if (settings_->debug() > 1) {
+      if (settings_->debug() > 2) {
         edm::LogInfo("VertexProducer") << "fastHistoEmulation::truncating histogram bin pt once filling is complete \n"
                                        << "hist_untruncated.at(" << hb << ") = " << hist_untruncated.at(hb).to_double()
                                        << "(" << hist_untruncated.at(hb).to_string(2)
@@ -1035,18 +1032,6 @@ namespace l1tVertexFinder {
                                        << hist.at(hb).to_string(2) << ")";
       }
     }
-
-    // print out the histograms
-
-    if (settings_->debug() >= 1) {
-      edm::LogInfo log("VertexProducer");
-      log << "fastHistoEmulation::Checking the histogram filling and truncation ... \n";
-      printHistogram<histbin_pt_sum_fixed_t,edm::LogInfo>(log, hist_untruncated, 80, 0, -1, 
-							  "fastHistoEmulation::hist_untruncated", "\e[94m");
-      printHistogram<link_pt_sum_fixed_t, edm::LogInfo>(log, hist, 80, 0, -1, 
-							"fastHistoEmulation::hist_truncated", "\e[94m");
-    }
-
 
     // Loop through all bins, taking into account the fact that the last bin is nbins-window_width+1,
     // and compute the sums using sliding windows ... sum_i_i+(w-1) where i in (0,nbins-w) and w is the window size
