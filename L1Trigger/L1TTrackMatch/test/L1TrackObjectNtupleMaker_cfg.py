@@ -40,7 +40,7 @@ process.MessageLogger.cerr.INFO.limit = cms.untracked.int32(0) # default: 0
 # input and output
 ############################################################
 
-process.maxEvents = cms.untracked.PSet(input = cms.untracked.int32(2))
+process.maxEvents = cms.untracked.PSet(input = cms.untracked.int32(100))
 
 readFiles = cms.untracked.vstring(
     '/store/relval/CMSSW_12_6_0_pre4/RelValTTbar_14TeV/GEN-SIM-DIGI-RAW/PU_125X_mcRun4_realistic_v2_2026D88PU200-v1/2590000/00b3d04b-4c7b-4506-8d82-9538fb21ee19.root'
@@ -108,8 +108,8 @@ process.pPVemu = cms.Path(process.l1tVertexFinderEmulator)
 
 process.l1tTrackFastJets.L1PrimaryVertexTag = cms.InputTag("l1tVertexFinder", "l1vertices")
 process.l1tTrackFastJetsExtended.L1PrimaryVertexTag = cms.InputTag("l1tVertexFinder", "l1vertices")
-process.l1tTrackJets.L1PVertexCollection = cms.InputTag("l1tVertexFinder", "l1vertices")
-process.l1tTrackJetsExtended.L1PVertexCollection = cms.InputTag("l1tVertexFinder", "l1vertices")
+process.l1tTrackJets.VertexInputTag = cms.InputTag("l1tVertexFinderEmulator","l1verticesEmulation")
+process.l1tTrackJetsExtended.VertexInputTag = cms.InputTag("l1tVertexFinderEmulator","l1verticesEmulation")
 process.l1tTrackerEtMiss.L1VertexInputTag = cms.InputTag("l1tVertexFinder", "l1vertices")
 process.l1tTrackerHTMiss.L1VertexInputTag = cms.InputTag("l1tVertexFinder", "l1vertices")
 process.l1tTrackerEtMissExtended.L1VertexInputTag = cms.InputTag("l1tVertexFinder", "l1vertices")
