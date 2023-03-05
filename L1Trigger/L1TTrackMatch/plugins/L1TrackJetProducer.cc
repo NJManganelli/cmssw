@@ -35,7 +35,7 @@
 #include "DataFormats/L1Trigger/interface/Vertex.h"
 
 //own headers
-#include "L1Trigger/L1TTrackMatch/interface/L1TrackJetEmulationProducer.h"
+#include "L1Trigger/L1TTrackMatch/interface/L1TrackJetEmulatorProducer.h"
 
 //general
 #include <TMath.h>
