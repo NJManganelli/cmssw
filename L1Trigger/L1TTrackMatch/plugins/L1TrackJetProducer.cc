@@ -7,9 +7,13 @@
 //         Latest update: Nov 2022 (by GK)
 //
 // Track jets are clustered in a two-layer process, first by clustering in phi,
-// then by clustering in eta
+// then by clustering in eta. The code proceeds as following: putting all tracks
+// in a grid of eta vs phi space, and then cluster them. Finally we merge the cl
+// usters when needed. The code is improved to use the same module between emula
+// tion and simulation was also improved, with bug fixes and being faster.
 // Introduction to object (p10-13):
 // https://indico.cern.ch/event/791517/contributions/3341650/attachments/1818736/2973771/TrackBasedAlgos_L1TMadrid_MacDonald.pdf
+// New and improved version: https://indico.cern.ch/event/1203796/contributions/5073056/attachments/2519806/4333006/trackjet_emu.pdf
 
 // system include files
 #include "DataFormats/Common/interface/Ref.h"
@@ -104,43 +108,43 @@ private:
 L1TrackJetProducer::L1TrackJetProducer(const ParameterSet &iConfig)
     : tTopoToken_(esConsumes<TrackerTopology, TrackerTopologyRcd>(edm::ESInputTag("", ""))),
       trackToken_(consumes<vector<TTTrack<Ref_Phase2TrackerDigi_>>>(iConfig.getParameter<InputTag>("L1TrackInputTag"))),
-      PVtxToken_(consumes<l1t::VertexWordCollection>(iConfig.getParameter<InputTag>("VertexInputTag"))) {
-  trkZMax_ = (float)iConfig.getParameter<double>("trk_zMax");
-  trkPtMax_ = (float)iConfig.getParameter<double>("trk_ptMax");
-  trkPtMin_ = (float)iConfig.getParameter<double>("trk_ptMin");
-  trkEtaMax_ = (float)iConfig.getParameter<double>("trk_etaMax");
-  nStubs4PromptChi2_ = (float)iConfig.getParameter<double>("nStubs4PromptChi2");
-  nStubs5PromptChi2_ = (float)iConfig.getParameter<double>("nStubs5PromptChi2");
-  nStubs4PromptBend_ = (float)iConfig.getParameter<double>("nStubs4PromptBend");
-  nStubs5PromptBend_ = (float)iConfig.getParameter<double>("nStubs5PromptBend");
-  trkNPSStubMin_ = (int)iConfig.getParameter<int>("trk_nPSStubMin");
-  minTrkJetpT_ = iConfig.getParameter<double>("minTrkJetpT");
-  etaBins_ = (int)iConfig.getParameter<int>("etaBins");
-  phiBins_ = (int)iConfig.getParameter<int>("phiBins");
-  zBins_ = (int)iConfig.getParameter<int>("zBins");
-  d0CutNStubs4_ = (float)iConfig.getParameter<double>("d0_cutNStubs4");
-  d0CutNStubs5_ = (float)iConfig.getParameter<double>("d0_cutNStubs5");
-  lowpTJetMinTrackMultiplicity_ = (int)iConfig.getParameter<int>("lowpTJetMinTrackMultiplicity");
-  lowpTJetThreshold_ = (float)iConfig.getParameter<double>("lowpTJetThreshold");
-  highpTJetMinTrackMultiplicity_ = (int)iConfig.getParameter<int>("highpTJetMinTrackMultiplicity");
-  highpTJetThreshold_ = (float)iConfig.getParameter<double>("highpTJetThreshold");
-  displaced_ = iConfig.getParameter<bool>("displaced");
-  nStubs4DisplacedChi2_ = (float)iConfig.getParameter<double>("nStubs4DisplacedChi2");
-  nStubs5DisplacedChi2_ = (float)iConfig.getParameter<double>("nStubs5DisplacedChi2");
-  nStubs4DisplacedBend_ = (float)iConfig.getParameter<double>("nStubs4DisplacedBend");
-  nStubs5DisplacedBend_ = (float)iConfig.getParameter<double>("nStubs5DisplacedBend");
-  nDisplacedTracks_ = (int)iConfig.getParameter<int>("nDisplacedTracks");
-  dzPVTrk_ = (float)iConfig.getParameter<double>("MaxDzTrackPV");
+      PVtxToken_(consumes<l1t::VertexWordCollection>(iConfig.getParameter<InputTag>("VertexInputTag"))),
+      trkZMax_(iConfig.getParameter<double>("trk_zMax")),
+      trkPtMax_(iConfig.getParameter<double>("trk_ptMax")),
+      trkPtMin_(iConfig.getParameter<double>("trk_ptMin")),
+      trkEtaMax_(iConfig.getParameter<double>("trk_etaMax")),
+      nStubs4PromptChi2_(iConfig.getParameter<double>("nStubs4PromptChi2")),
+      nStubs5PromptChi2_(iConfig.getParameter<double>("nStubs5PromptChi2")),
+      nStubs4PromptBend_(iConfig.getParameter<double>("nStubs4PromptBend")),
+      nStubs5PromptBend_(iConfig.getParameter<double>("nStubs5PromptBend")),
+      trkNPSStubMin_(iConfig.getParameter<int>("trk_nPSStubMin")),
+      lowpTJetMinTrackMultiplicity_(iConfig.getParameter<int>("lowpTJetMinTrackMultiplicity")),
+      lowpTJetThreshold_(iConfig.getParameter<double>("lowpTJetThreshold")),
+      highpTJetMinTrackMultiplicity_(iConfig.getParameter<int>("highpTJetMinTrackMultiplicity")),
+      highpTJetThreshold_(iConfig.getParameter<double>("highpTJetThreshold")),
+      zBins_(iConfig.getParameter<int>("zBins")),
+      etaBins_(iConfig.getParameter<int>("etaBins")),
+      phiBins_ (iConfig.getParameter<int>("phiBins")),
+      minTrkJetpT_(iConfig.getParameter<double>("minTrkJetpT")),
+      displaced_(iConfig.getParameter<bool>("displaced")),
+      d0CutNStubs4_(iConfig.getParameter<double>("d0_cutNStubs4")),
+      d0CutNStubs5_(iConfig.getParameter<double>("d0_cutNStubs5")),
+      nStubs4DisplacedChi2_(iConfig.getParameter<double>("nStubs4DisplacedChi2")),
+      nStubs5DisplacedChi2_(iConfig.getParameter<double>("nStubs5DisplacedChi2")),
+      nStubs4DisplacedBend_(iConfig.getParameter<double>("nStubs4DisplacedBend")),
+      nStubs5DisplacedBend_ (iConfig.getParameter<double>("nStubs5DisplacedBend")),
+      nDisplacedTracks_(iConfig.getParameter<int>("nDisplacedTracks")),
+      dzPVTrk_(iConfig.getParameter<double>("MaxDzTrackPV")){
 
-  zStep_ = 2.0 * trkZMax_ / (zBins_ + 1);  // added +1 in denom
-  etaStep_ = 2.0 * trkEtaMax_ / etaBins_;  //etaStep is the width of an etabin
-  phiStep_ = 2 * M_PI / phiBins_;          ////phiStep is the width of a phibin
-
-  if (displaced_)
-    produces<TkJetCollection>("L1TrackJetsExtended");
-  else
-    produces<TkJetCollection>("L1TrackJets");
-}
+        zStep_ = 2.0 * trkZMax_ / (zBins_ + 1);  // added +1 in denom
+        etaStep_ = 2.0 * trkEtaMax_ / etaBins_;  //etaStep is the width of an etabin
+        phiStep_ = 2 * M_PI / phiBins_;          ////phiStep is the width of a phibin
+      
+        if (displaced_)
+          produces<TkJetCollection>("L1TrackJetsExtended");
+        else
+          produces<TkJetCollection>("L1TrackJets");
+      }
 
 L1TrackJetProducer::~L1TrackJetProducer() {}
 
@@ -239,7 +243,7 @@ void L1TrackJetProducer::produce(Event &iEvent, const EventSetup &iSetup) {
     phi += phiStep_;
   }  // for each phibin (finished creating bins)
 
-  // create z-bins (might be useful for displaced if we run w/o dz cut
+  // create z-bins (might be useful for displaced if we run w/o dz cut)
   std::vector<float> zmins, zmaxs;
   for (int zbin = 0; zbin < zBins_; zbin++) {
     zmins.push_back(-1.0 * trkZMax_ + zStep_ * zbin);
@@ -377,8 +381,6 @@ void L1TrackJetProducer::beginStream(StreamID) {}
 void L1TrackJetProducer::endStream() {}
 
 void L1TrackJetProducer::fillDescriptions(ConfigurationDescriptions &descriptions) {
-  //The following says we do not know what parameters are allowed so do no validation
-  // Please change this to state exactly what you do use, even if it is no parameters
   ParameterSetDescription desc;
   desc.setUnknown();
   descriptions.addDefault(desc);
