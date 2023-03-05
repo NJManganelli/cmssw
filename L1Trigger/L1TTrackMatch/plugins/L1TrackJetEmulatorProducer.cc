@@ -42,7 +42,7 @@
 #include "DataFormats/Common/interface/Ref.h"
 
 //own headers
-#include "L1Trigger/L1TTrackMatch/interface/L1TrackJetEmulatorProducer.h"
+#include "L1TrackJetEmulatorProducer.h"
 
 //general
 #include <memory>
@@ -58,6 +58,7 @@
 using namespace std;
 using namespace edm;
 using namespace l1t;
+using namespace l1ttrackjet;
 //using namespace trackjetwords;
 
 class L1TrackJetEmulatorProducer : public stream::EDProducer<> {

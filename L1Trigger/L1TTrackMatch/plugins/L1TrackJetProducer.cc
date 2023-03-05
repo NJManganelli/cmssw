@@ -39,7 +39,7 @@
 #include "DataFormats/L1Trigger/interface/Vertex.h"
 
 //own headers
-#include "L1Trigger/L1TTrackMatch/interface/L1TrackJetEmulatorProducer.h"
+#include "L1TrackJetEmulatorProducer.h"
 
 //general
 #include <TMath.h>
@@ -53,6 +53,8 @@
 using namespace std;
 using namespace edm;
 using namespace l1t;
+using namespace l1ttrackjet;
+
 
 class L1TrackJetProducer : public stream::EDProducer<> {
 public:
