@@ -40,10 +40,10 @@ process.MessageLogger.cerr.INFO.limit = cms.untracked.int32(0) # default: 0
 # input and output
 ############################################################
 
-process.maxEvents = cms.untracked.PSet(input = cms.untracked.int32(100))
+process.maxEvents = cms.untracked.PSet(input = cms.untracked.int32(10))
 
 readFiles = cms.untracked.vstring(
-    '/store/relval/CMSSW_12_6_0_pre4/RelValTTbar_14TeV/GEN-SIM-DIGI-RAW/PU_125X_mcRun4_realistic_v2_2026D88PU200-v1/2590000/00b3d04b-4c7b-4506-8d82-9538fb21ee19.root'
+                                  '/store/relval/CMSSW_12_6_0_pre5/RelValTTbar_14TeV/GEN-SIM-DIGI-RAW/PU_125X_mcRun4_realistic_v5_2026D95PU200-v1/2590000/01a84fb0-d73d-44e9-82ea-090327c13376.root'
 )
 secFiles = cms.untracked.vstring()
 
@@ -78,9 +78,8 @@ process.TTClusterStubTruth = cms.Path(process.TrackTriggerAssociatorClustersStub
 
 
 # DTC emulation
-#process.load('L1Trigger.TrackerDTC.ProducerES_cff')
 process.load('L1Trigger.TrackerDTC.ProducerED_cff')
-process.dtc = cms.Path(process.TrackerDTCProducer)#*process.TrackerDTCAnalyzer)
+process.dtc = cms.Path(process.TrackerDTCProducer)
 
 process.load("L1Trigger.TrackFindingTracklet.L1HybridEmulationTracks_cff")
 process.load("L1Trigger.L1TTrackMatch.l1tTrackSelectionProducer_cfi")
@@ -142,7 +141,6 @@ elif (L1TRKALGO == 'HYBRID_DISPLACED'):
     process.pL1GTTInput = cms.Path(process.l1tGTTInputProducerExtended)
     process.pL1TrackJetsEmu = cms.Path(process.l1tTrackJetsExtendedEmulation)
     process.pTkMET = cms.Path(process.l1tTrackerEtMissExtended)
-    #process.pTkMETEmu = cms.Path(process.L1TrackerEmuEtMissExtended) #Doesn't exist
     process.pTkMHT = cms.Path(process.l1tTrackerHTMissExtended)
     process.pTkMHTEmulator = cms.Path(process.l1tTrackerEmuHTMissExtended)
     DISPLACED = 'Displaced'#
@@ -227,12 +225,7 @@ process.L1TrackNtuple = cms.EDAnalyzer('L1TrackObjectNtupleMaker',
 process.ntuple = cms.Path(process.L1TrackNtuple)
 
 process.out = cms.OutputModule( "PoolOutputModule",
-     #  #                         fastCloning = cms.untracked.bool( False ),
                                 outputCommands = process.RAWSIMEventContent.outputCommands,
- #                               dataset = cms.untracked.PSet(
-    #                                filterName = cms.untracked.string(''),
-  #                                  dataTier = cms.untracked.string('GEN-SIM')
-   #                             ),
                                 fileName = cms.untracked.string("test.root" )
 		               )
 process.out.outputCommands.append('keep  *TTTrack*_*_*_*')
@@ -247,6 +240,5 @@ process.pOut = cms.EndPath(process.out)
 
 process.schedule = cms.Schedule(process.TTClusterStub, process.TTClusterStubTruth, process.dtc, process.TTTracksEmuWithTruth, process.pL1GTTInput, process.pPV, process.pPVemu, process.pL1TrackSelection, process.pL1TrackJets, process.pL1TrackJetsEmu,process.pL1TrackFastJets, process.pTkMET, process.pTkMETEmu, process.pTkMHT, process.pTkMHTEmulator, process.ntuple)
 
-#process.schedule = cms.Schedule(process.TTClusterStub, process.TTClusterStubTruth, process.dtc, process.TTTracksEmuWithTruth, process.pL1GTTInput, process.pPV, process.pPVemu, process.pL1TrackSelection, process.pOut)
 
 
