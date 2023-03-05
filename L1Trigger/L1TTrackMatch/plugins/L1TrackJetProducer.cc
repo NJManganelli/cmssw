@@ -55,7 +55,6 @@ using namespace edm;
 using namespace l1t;
 using namespace l1ttrackjet;
 
-
 class L1TrackJetProducer : public stream::EDProducer<> {
 public:
   explicit L1TrackJetProducer(const ParameterSet &);
@@ -126,7 +125,7 @@ L1TrackJetProducer::L1TrackJetProducer(const ParameterSet &iConfig)
       highpTJetThreshold_(iConfig.getParameter<double>("highpTJetThreshold")),
       zBins_(iConfig.getParameter<int>("zBins")),
       etaBins_(iConfig.getParameter<int>("etaBins")),
-      phiBins_ (iConfig.getParameter<int>("phiBins")),
+      phiBins_(iConfig.getParameter<int>("phiBins")),
       minTrkJetpT_(iConfig.getParameter<double>("minTrkJetpT")),
       displaced_(iConfig.getParameter<bool>("displaced")),
       d0CutNStubs4_(iConfig.getParameter<double>("d0_cutNStubs4")),
@@ -134,19 +133,18 @@ L1TrackJetProducer::L1TrackJetProducer(const ParameterSet &iConfig)
       nStubs4DisplacedChi2_(iConfig.getParameter<double>("nStubs4DisplacedChi2")),
       nStubs5DisplacedChi2_(iConfig.getParameter<double>("nStubs5DisplacedChi2")),
       nStubs4DisplacedBend_(iConfig.getParameter<double>("nStubs4DisplacedBend")),
-      nStubs5DisplacedBend_ (iConfig.getParameter<double>("nStubs5DisplacedBend")),
+      nStubs5DisplacedBend_(iConfig.getParameter<double>("nStubs5DisplacedBend")),
       nDisplacedTracks_(iConfig.getParameter<int>("nDisplacedTracks")),
-      dzPVTrk_(iConfig.getParameter<double>("MaxDzTrackPV")){
+      dzPVTrk_(iConfig.getParameter<double>("MaxDzTrackPV")) {
+  zStep_ = 2.0 * trkZMax_ / (zBins_ + 1);  // added +1 in denom
+  etaStep_ = 2.0 * trkEtaMax_ / etaBins_;  //etaStep is the width of an etabin
+  phiStep_ = 2 * M_PI / phiBins_;          ////phiStep is the width of a phibin
 
-        zStep_ = 2.0 * trkZMax_ / (zBins_ + 1);  // added +1 in denom
-        etaStep_ = 2.0 * trkEtaMax_ / etaBins_;  //etaStep is the width of an etabin
-        phiStep_ = 2 * M_PI / phiBins_;          ////phiStep is the width of a phibin
-      
-        if (displaced_)
-          produces<TkJetCollection>("L1TrackJetsExtended");
-        else
-          produces<TkJetCollection>("L1TrackJets");
-      }
+  if (displaced_)
+    produces<TkJetCollection>("L1TrackJetsExtended");
+  else
+    produces<TkJetCollection>("L1TrackJets");
+}
 
 L1TrackJetProducer::~L1TrackJetProducer() {}
 

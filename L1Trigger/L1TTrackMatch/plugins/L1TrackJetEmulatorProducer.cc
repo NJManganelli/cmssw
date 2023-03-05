@@ -15,7 +15,6 @@
 // https://indico.cern.ch/event/791517/contributions/3341650/attachments/1818736/2973771/TrackBasedAlgos_L1TMadrid_MacDonald.pdf
 // New and improved version: https://indico.cern.ch/event/1203796/contributions/5073056/attachments/2519806/4333006/trackjet_emu.pdf
 
-
 // L1T include files
 #include "DataFormats/L1TCorrelator/interface/TkJet.h"
 #include "DataFormats/L1TCorrelator/interface/TkJetFwd.h"
@@ -127,16 +126,16 @@ L1TrackJetEmulatorProducer::L1TrackJetEmulatorProducer(const ParameterSet &iConf
       trkEtaMax_(iConfig.getParameter<double>("trk_etaMax")),
       nStubs4PromptChi2_(iConfig.getParameter<double>("nStubs4PromptChi2")),
       nStubs5PromptChi2_(iConfig.getParameter<double>("nStubs5PromptChi2")),
-      nStubs4PromptBend_ (iConfig.getParameter<double>("nStubs4PromptBend")),
+      nStubs4PromptBend_(iConfig.getParameter<double>("nStubs4PromptBend")),
       nStubs5PromptBend_(iConfig.getParameter<double>("nStubs5PromptBend")),
       trkNPSStubMin_(iConfig.getParameter<int>("trk_nPSStubMin")),
       lowpTJetMinTrackMultiplicity_(iConfig.getParameter<int>("lowpTJetMinTrackMultiplicity")),
       lowpTJetThreshold_(iConfig.getParameter<double>("lowpTJetThreshold")),
       highpTJetMinTrackMultiplicity_(iConfig.getParameter<int>("highpTJetMinTrackMultiplicity")),
       highpTJetThreshold_(iConfig.getParameter<double>("highpTJetThreshold")),
-      zBins_ (iConfig.getParameter<int>("zBins")),
-      etaBins_ (iConfig.getParameter<int>("etaBins")),
-      phiBins_ (iConfig.getParameter<int>("phiBins")),
+      zBins_(iConfig.getParameter<int>("zBins")),
+      etaBins_(iConfig.getParameter<int>("etaBins")),
+      phiBins_(iConfig.getParameter<int>("phiBins")),
       minTrkJetpT_(iConfig.getParameter<double>("minTrkJetpT")),
       displaced_(iConfig.getParameter<bool>("displaced")),
       d0CutNStubs4_(iConfig.getParameter<double>("d0_cutNStubs4")),
@@ -146,19 +145,18 @@ L1TrackJetEmulatorProducer::L1TrackJetEmulatorProducer(const ParameterSet &iConf
       nStubs4DisplacedBend_(iConfig.getParameter<double>("nStubs4DisplacedBend")),
       nStubs5DisplacedBend_(iConfig.getParameter<double>("nStubs5DisplacedBend")),
       nDisplacedTracks_(iConfig.getParameter<int>("nDisplacedTracks")),
-      dzPVTrk_(iConfig.getParameter<double>("MaxDzTrackPV"))
-      {
-         zStep_ = 2.0 * trkZMax_ / (zBins_ + 1);  // added +1 in denom
-         etaStep_ = glbeta_intern(2.0 * trkEtaMax_ / etaBins_);  //etaStep is the width of an etabin
-         phiStep_ = DoubleToBit(2.0 * (M_PI) / phiBins_,
-                                TTTrack_TrackWord::TrackBitWidths::kPhiSize + kExtraGlobalPhiBit,
-                                TTTrack_TrackWord::stepPhi0);  ///phiStep is the width of a phibin
+      dzPVTrk_(iConfig.getParameter<double>("MaxDzTrackPV")) {
+  zStep_ = 2.0 * trkZMax_ / (zBins_ + 1);                 // added +1 in denom
+  etaStep_ = glbeta_intern(2.0 * trkEtaMax_ / etaBins_);  //etaStep is the width of an etabin
+  phiStep_ = DoubleToBit(2.0 * (M_PI) / phiBins_,
+                         TTTrack_TrackWord::TrackBitWidths::kPhiSize + kExtraGlobalPhiBit,
+                         TTTrack_TrackWord::stepPhi0);  ///phiStep is the width of a phibin
 
-         if (displaced_)
-           produces<l1t::TkJetWordCollection>("L1TrackJetsExtended");
-         else
-           produces<l1t::TkJetWordCollection>("L1TrackJets");
-      }
+  if (displaced_)
+    produces<l1t::TkJetWordCollection>("L1TrackJetsExtended");
+  else
+    produces<l1t::TkJetWordCollection>("L1TrackJets");
+}
 
 //destructor
 L1TrackJetEmulatorProducer::~L1TrackJetEmulatorProducer() {}
