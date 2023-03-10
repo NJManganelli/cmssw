@@ -1,7 +1,9 @@
 import FWCore.ParameterSet.Config as cms
 import FWCore.Utilities.FileUtils as FileUtils
 import FWCore.ParameterSet.VarParsing as VarParsing
-
+from L1Trigger.VertexFinder.l1tVertexProducer_cfi import l1tVertexProducer
+from L1Trigger.L1TTrackMatch.l1tTrackVertexAssociationProducer_cfi import l1tTrackVertexAssociationProducer
+from L1Trigger.L1TTrackMatch.l1tTrackSelectionProducer_cfi import l1tTrackSelectionProducer
 
 # PART 1 : PARSE ARGUMENTS
 
@@ -44,8 +46,8 @@ for filePath in options.inputFiles:
 
 process = cms.Process("GTTFileWriter")
 
-process.load('Configuration.Geometry.GeometryExtended2026D88Reco_cff')
-process.load('Configuration.Geometry.GeometryExtended2026D88_cff')
+process.load('Configuration.Geometry.GeometryExtended2026D95Reco_cff')
+process.load('Configuration.Geometry.GeometryExtended2026D95_cff')
 process.load('Configuration.StandardSequences.MagneticField_cff')
 process.load('Configuration.StandardSequences.FrontierConditions_GlobalTag_cff')
 from Configuration.AlCa.GlobalTag import GlobalTag
@@ -63,24 +65,51 @@ process.options = cms.untracked.PSet(
 )
 
 process.load('L1Trigger.L1TTrackMatch.l1tGTTInputProducer_cfi')
-process.load('L1Trigger.VertexFinder.l1tVertexProducer_cfi')
-process.load("L1Trigger.L1TTrackMatch.l1tTrackSelectionProducer_cfi")
 process.load("L1Trigger.L1TTrackMatch.l1tTrackJetsEmulation_cfi")
 process.load("L1Trigger.L1TTrackMatch.l1tTrackerEmuHTMiss_cfi")
 process.load("L1Trigger.L1TTrackMatch.l1tTrackerEmuEtMiss_cfi")
-process.load('L1Trigger.DemonstratorTools.GTTFileWriter_cff')
+process.load('L1Trigger.DemonstratorTools.l1tGTTFileWriter_cfi')
 
+process.l1tGTTInputProducer.l1TracksInputTag = cms.InputTag("TTTracksFromTrackletEmulation", "Level1TTTracks")
 process.l1tGTTInputProducer.debug = cms.int32(options.debug)
-process.l1tVertexProducer.l1TracksInputTag = cms.InputTag("l1tGTTInputProducer","Level1TTTracksConverted")
+process.l1tTrackSelectionProducer = l1tTrackSelectionProducer.clone()
+process.l1tTrackSelectionProducer.processSimulatedTracks = cms.bool(False)
+process.l1tTrackSelectionProducer.processEmulatedTracks = cms.bool(True)
+
+# process.l1tVertexProducerSim = l1tVertexProducer.clone()
+# process.l1tVertexProducerSim.l1TracksInputTag = cms.InputTag("l1tTrackSelectionProducer", "Level1TTTracksSelected")
+# process.l1tVertexProducerSim.l1VertexCollectionName = cms.string("l1vertices")
+# process.l1tVertexProducerSim.VertexReconstruction.Algorithm = cms.string("fastHisto")
+# process.l1tVertexProducerSim.VertexReconstruction.VxMinTrackPt = cms.double(0.0)
+# process.l1tVertexProducerSim.debug = options.debug
+
+process.l1tVertexProducer = l1tVertexProducer.clone()
+process.l1tVertexProducer.l1TracksInputTag = cms.InputTag("l1tTrackSelectionProducer", "Level1TTTracksSelectedEmulation")
+process.l1tVertexProducer.l1VertexCollectionName = cms.string("l1tVertices")
 process.l1tVertexProducer.VertexReconstruction.Algorithm = cms.string("fastHistoEmulation")
 process.l1tVertexProducer.VertexReconstruction.VxMinTrackPt = cms.double(0.0)
 process.l1tVertexProducer.debug = options.debug
-process.l1tTrackSelectionProducer.processSimulatedTracks = cms.bool(False)
-process.l1tTrackSelectionProducer.l1VerticesEmulationInputTag = cms.InputTag("l1tVertexProducer", "l1verticesEmulation")
-process.l1tTrackSelectionProducer.debug = options.debug
-process.l1tTrackJetsEmulation.VertexInputTag = cms.InputTag("l1tVertexProducer", "l1verticesEmulation")
-process.l1tTrackerEmuEtMiss.L1VertexInputTag = cms.InputTag("l1tVertexProducer", "l1verticesEmulation")
+
+process.l1tTrackVertexAssociationProducer = l1tTrackVertexAssociationProducer.clone()
+process.l1tTrackVertexAssociationProducer.l1SelectedTracksInputTag = cms.InputTag("l1tTrackSelectionProducer", "Level1TTTracksSelected")
+process.l1tTrackVertexAssociationProducer.l1SelectedTracksEmulationInputTag = cms.InputTag("l1tTrackSelectionProducer", "Level1TTTracksSelectedEmulation")
+process.l1tTrackVertexAssociationProducer.l1VerticesInputTag = cms.InputTag("l1tVertexProducerSim", "l1tVertices")
+process.l1tTrackVertexAssociationProducer.l1VerticesEmulationInputTag = cms.InputTag("l1tVertexProducer", "l1tVerticesEmulation")
+process.l1tTrackVertexAssociationProducer.outputCollectionName = cms.string("Level1TTTracksSelectedAssociated")
+process.l1tTrackVertexAssociationProducer.processSimulatedTracks = cms.bool(True)
+process.l1tTrackVertexAssociationProducer.processEmulatedTracks = cms.bool(True)
+
+process.l1tTrackerEmuEtMiss.L1VertexInputTag = cms.InputTag("l1tVertexProducer", "l1tVerticesEmulation")
+process.l1tTrackerEmuEtMiss.L1TrackInputTag = cms.InputTag("l1tTrackSelectionProducer", "Level1TTTracksSelectedEmulation")
+process.l1tTrackerEmuEtMiss.L1TrackAssociatedInputTag = cms.InputTag("l1tTrackVertexAssociationProducer", "Level1TTTracksSelectedAssociatedEmulation")
+process.l1tTrackerEmuEtMiss.L1MetCollectionName = cms.string("l1tTrackerEmuEtMiss")
 process.l1tTrackerEmuEtMiss.debug = options.debug
+
+process.l1tTrackJetsEmulation.L1TrackInputTag= cms.InputTag("l1tGTTInputProducer", "Level1TTTracksConverted")
+process.l1tTrackJetsEmulation.VertexInputTag = cms.InputTag("l1tVertexProducer", "l1tVerticesEmulation")
+process.l1tTrackerEmuHTMiss.L1TkJetEmulationInputTag = cms.InputTag("l1tTrackJetsEmulation", "L1TrackJets") #hardcoded
+process.l1tTrackerEmuHTMiss.L1MHTCollectionName = cms.string("l1tTrackerEmuHTMiss")
+process.l1tTrackerEmuHTMiss.debug = (options.debug > 0)
 
 if options.debug:
     process.MessageLogger.cerr.INFO.limit = cms.untracked.int32(1000000000)
@@ -89,10 +118,40 @@ if options.debug:
         limit = cms.untracked.int32(0)
     )
 
-process.GTTFileWriter.format = cms.untracked.string(options.format)
-# process.GTTFileWriter.outputFilename = cms.untracked.string("myOutputFile.txt")
+process.l1tGTTFileWriter.format = cms.untracked.string(options.format)
+process.l1tGTTFileWriter.tracks = cms.untracked.InputTag("TTTracksFromTrackletEmulation", "Level1TTTracks")
+process.l1tGTTFileWriter.convertedTracks = cms.untracked.InputTag("l1tGTTInputProducer", "Level1TTTracksConverted")
+process.l1tGTTFileWriter.selectedTracks = cms.untracked.InputTag("l1tTrackSelectionProducer", "Level1TTTracksSelectedEmulation")
+process.l1tGTTFileWriter.vertices = cms.untracked.InputTag("l1tVertexProducer", "l1tVerticesEmulation")
+process.l1tGTTFileWriter.vertexAssociatedTracks = cms.untracked.InputTag("l1tTrackVertexAssociationProducer", "Level1TTTracksSelectedAssociatedEmulation")
+process.l1tGTTFileWriter.jets = cms.untracked.InputTag("l1tTrackJetsEmulation","L1TrackJets")
+process.l1tGTTFileWriter.htmiss = cms.untracked.InputTag("l1tTrackerEmuHTMiss", "l1tTrackerEmuHTMiss")
+process.l1tGTTFileWriter.etmiss = cms.untracked.InputTag("l1tTrackerEmuEtMiss", "l1tTrackerEmuEtMiss")
+process.l1tGTTFileWriter.outputCorrelatorFilename = cms.untracked.string("L1GTTOutputToCorrelatorFile")
+process.l1tGTTFileWriter.outputGlobalTriggerFilename = cms.untracked.string("L1GTTOutputToGlobalTriggerFile")
+process.l1tGTTFileWriter.selectedTracksFilename = cms.untracked.string("L1GTTSelectedTracksFile")
+process.l1tGTTFileWriter.vertexAssociatedTracksFilename = cms.untracked.string("L1GTTVertexAssociatedTracksFile")
 
 process.MessageLogger.cerr.FwkReport.reportEvery = 1
 process.Timing = cms.Service("Timing", summaryOnly = cms.untracked.bool(True))
 
-process.p = cms.Path(process.l1tGTTInputProducer * process.l1tVertexProducer * process.l1tTrackSelectionProducer * process.l1tTrackJetsEmulation * process.l1tTrackerEmuHTMiss * process.l1tTrackerEmuEtMiss * process.GTTFileWriter)
+
+process.p = cms.Path(process.l1tGTTFileWriter)
+process.p.associate(cms.Task(process.l1tGTTInputProducer, 
+                             process.l1tTrackSelectionProducer,
+                             process.l1tVertexProducer, 
+                             # process.l1tVertexProducerSim, 
+                             process.l1tTrackVertexAssociationProducer,
+                             process.l1tTrackJetsEmulation, 
+                             process.l1tTrackerEmuHTMiss, 
+                             process.l1tTrackerEmuEtMiss
+                         )
+                )
+
+# Tools for debugging dependencies
+#option 1: graph file. process output with ```dot dependency.gv -Tpdf -o dependency.pdf```
+process.load("FWCore.Services.DependencyGraph_cfi")
+process.DependencyGraph.fileName = 'dependency_mar11plus.gv'
+process.DependencyGraph.showPathDependencies = True
+from FWCore.ParameterSet.Utilities import moduleLabelsInSequences
+process.DependencyGraph.highlightModules = moduleLabelsInSequences(process.p)
