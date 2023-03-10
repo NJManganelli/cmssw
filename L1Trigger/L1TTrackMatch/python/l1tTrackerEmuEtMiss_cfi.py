@@ -2,7 +2,7 @@ import FWCore.ParameterSet.Config as cms
 
 l1tTrackerEmuEtMiss = cms.EDProducer('L1TrackerEtMissEmulatorProducer',
     L1TrackInputTag = cms.InputTag("l1tTrackSelectionProducer", "Level1TTTracksSelectedEmulation"),
-    L1TrackAssociatedInputTag = cms.InputTag("l1tTrackSelectionProducer", "Level1TTTracksSelectedAssociatedEmulation"),
+    L1TrackAssociatedInputTag = cms.InputTag("l1tTrackVertexAssociationProducer", "Level1TTTracksSelectedAssociatedEmulation"),
     # To bypass GTT input module use  cms.InputTag("TTTracksFromTrackletEmulation", "Level1TTTracks")
     # and set useGTTinput to false
     L1VertexInputTag = cms.InputTag("l1tVertexProducer", "l1vertices"),
