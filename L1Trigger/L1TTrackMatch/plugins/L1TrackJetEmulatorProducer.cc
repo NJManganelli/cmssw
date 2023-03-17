@@ -82,7 +82,7 @@ private:
   // ----------member data ---------------------------
 
   edm::ESGetToken<TrackerTopology, TrackerTopologyRcd> tTopoToken_;
-  const edm::EDGetTokenT<TTTrackRefCollectionType> trackToken_;
+  const EDGetTokenT<TTTrackRefCollectionType> trackToken_;
   const EDGetTokenT<l1t::VertexWordCollection> PVtxToken_;
   std::vector<edm::Ptr<TTTrackType>> L1TrkPtrs_;
   vector<int> tdtrk_;
