@@ -47,6 +47,7 @@ public:
   ~L1TrackJetProducer() override = default;
   typedef TTTrack<Ref_Phase2TrackerDigi_> L1TTTrackType;
   typedef vector<L1TTTrackType> L1TTTrackCollectionType;
+  typedef edm::RefVector<L1TTTrackCollectionType> L1TTTrackRefCollectionType;
   static void fillDescriptions(ConfigurationDescriptions &descriptions);
 
 private:
@@ -87,7 +88,7 @@ private:
   const float dzPVTrk_;
 
   edm::ESGetToken<TrackerTopology, TrackerTopologyRcd> tTopoToken_;
-  const EDGetTokenT<vector<TTTrack<Ref_Phase2TrackerDigi_>>> trackToken_;
+  const EDGetTokenT<L1TTTrackRefCollectionType> trackToken_;
   const EDGetTokenT<l1t::VertexWordCollection> PVtxToken_;
 };
 
@@ -137,7 +138,7 @@ void L1TrackJetProducer::produce(Event &iEvent, const EventSetup &iSetup) {
   // Read inputs
   const TrackerTopology &tTopo = iSetup.getData(tTopoToken_);
 
-  edm::Handle<vector<TTTrack<Ref_Phase2TrackerDigi_>>> TTTrackHandle;
+  edm::Handle<L1TTTrackRefCollectionType> TTTrackHandle;
   iEvent.getByToken(trackToken_, TTTrackHandle);
 
   edm::Handle<l1t::VertexWordCollection> PVtx;
