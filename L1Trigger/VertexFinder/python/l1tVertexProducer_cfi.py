@@ -72,8 +72,8 @@ l1tVertexProducer = cms.EDProducer('VertexProducer',
   debug  = cms.uint32(0)
 )
 
-l1tVertexFinderSim = l1tVertexProducer.clone()
+l1tVertexFinderSimulator = l1tVertexProducer.clone()
 
-l1tVertexFinderEmu = l1tVertexProducer.clone()
-l1tVertexFinderEmu.VertexReconstruction.Algorithm = cms.string("fastHistoEmulation")
-l1tVertexFinderEmu.l1TracksInputTag = cms.InputTag("l1tTrackSelectionProducer", "Level1TTTracksSelectedEmulation")
+l1tVertexFinderEmulator = l1tVertexProducer.clone()
+l1tVertexFinderEmulator.VertexReconstruction.Algorithm = cms.string("fastHistoEmulation")
+l1tVertexFinderEmulator.l1TracksInputTag = cms.InputTag("l1tTrackSelectionProducer", "Level1TTTracksSelectedEmulation")

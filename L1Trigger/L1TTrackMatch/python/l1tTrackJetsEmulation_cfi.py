@@ -2,7 +2,7 @@ import FWCore.ParameterSet.Config as cms
 
 l1tTrackJetsEmulation = cms.EDProducer('L1TrackJetEmulatorProducer',
         L1TrackInputTag= cms.InputTag("l1tTrackVertexAssociationProducerForJets", "Level1TTTracksSelectedAssociatedEmulation"),
-        VertexInputTag=cms.InputTag("l1tVertexFinderEmu","l1tVerticesEmulation"),
+        VertexInputTag=cms.InputTag("l1tVertexFinderEmulator","l1tVerticesEmulation"),
         MaxDzTrackPV = cms.double(1.0),
         trk_zMax = cms.double (15.) ,    # maximum track z
 	trk_ptMax = cms.double(200.),    # maximumum track pT before saturation [GeV]
@@ -33,9 +33,9 @@ l1tTrackJetsEmulation = cms.EDProducer('L1TrackJetEmulatorProducer',
 
 l1tTrackJetsExtendedEmulation = l1tTrackJetsEmulation.clone(
 	L1TrackInputTag= cms.InputTag("l1tGTTInputProducerExtended", "Level1TTTracksExtendedConverted"),
-        VertexInputTag=cms.InputTag("l1tVertexFinderEmu", "l1tVerticesEmulation"),
-        MaxDzTrackPV = 5.0,
+        VertexInputTag=cms.InputTag("l1tVertexFinderEmulator", "l1tVerticesEmulation"),
 	minTrkJetpT= 5.0,      # minimum track pt to be considered for track jet
+        MaxDzTrackPV = 5.0,
 	d0_cutNStubs4= -1, # -1 excludes nstub=4 from disp tag
 	d0_cutNStubs5= 0.22,
 	displaced= True, #Flag for displaced tracks
