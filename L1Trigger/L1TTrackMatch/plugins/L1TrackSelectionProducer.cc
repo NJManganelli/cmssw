@@ -433,9 +433,7 @@ void L1TrackSelectionProducer::produce(edm::StreamID, edm::Event& iEvent, const 
   }
 
   if (debug_ >= 2) {
-    printDebugInfo(l1TracksHandle,
-                   vTTTrackOutput,
-                   vTTTrackEmulationOutput);
+    printDebugInfo(l1TracksHandle, vTTTrackOutput, vTTTrackEmulationOutput);
   }
 
   // Put the outputs into the event

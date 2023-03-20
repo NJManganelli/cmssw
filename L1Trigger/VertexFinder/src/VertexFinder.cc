@@ -780,10 +780,10 @@ namespace l1tVertexFinder {
       kWeightedSlidingSumMagSize = 10,  // Width of the pT weighted sliding sum magnitude (signed)
       kWindowSize = 3,                  // Number of bins in the window used to sum histogram bins
       kSumPtLinkSize = 9,  // Number of bits used to represent the sum of track pts in a single bin from a single link
-      
+
       kSumPtWindowBits = BitsToRepresent(HistogramBitWidths::kWindowSize * (1 << HistogramBitWidths::kSumPtLinkSize)),
       // Number of bits to represent the untruncated sum of track pts in a single bin from a single link
-      kSumPtUntruncatedLinkSize = TrackBitWidths::kPtSize + 2, 
+      kSumPtUntruncatedLinkSize = TrackBitWidths::kPtSize + 2,
       kSumPtUntruncatedLinkMagSize = TrackBitWidths::kPtMagSize + 2,
     };
 
@@ -804,8 +804,11 @@ namespace l1tVertexFinder {
         histbin_fixed_t;
     // This type is slightly arbitrary, but 2 bits larger than untruncated track pt to store sums in histogram bins
     // with truncation just before vertex-finding
-    typedef ap_ufixed<HistogramBitWidths::kSumPtUntruncatedLinkSize, HistogramBitWidths::kSumPtUntruncatedLinkMagSize, AP_RND_INF, AP_SAT>
-      histbin_pt_sum_fixed_t;
+    typedef ap_ufixed<HistogramBitWidths::kSumPtUntruncatedLinkSize,
+                      HistogramBitWidths::kSumPtUntruncatedLinkMagSize,
+                      AP_RND_INF,
+                      AP_SAT>
+        histbin_pt_sum_fixed_t;
     // This value is slightly arbitrary, but small enough that the windows sums aren't too big.
     typedef ap_ufixed<HistogramBitWidths::kSumPtLinkSize, HistogramBitWidths::kSumPtLinkSize, AP_RND_INF, AP_SAT>
         link_pt_sum_fixed_t;
@@ -1020,15 +1023,16 @@ namespace l1tVertexFinder {
     // track_pt_fixed_t pt_tmp = tkpt;
     // Now, truncation should happen after histograms are filled but prior to the vertex-finding part of the algo
     for (unsigned int hb = 0; hb < hist.size(); ++hb) {
-      link_pt_sum_fixed_t bin_trunc = hist_untruncated.at(hb).range(HistogramBitWidths::kSumPtUntruncatedLinkSize - 1, 
-								    HistogramBitWidths::kSumPtUntruncatedLinkSize - HistogramBitWidths::kSumPtUntruncatedLinkMagSize);
+      link_pt_sum_fixed_t bin_trunc = hist_untruncated.at(hb).range(
+          HistogramBitWidths::kSumPtUntruncatedLinkSize - 1,
+          HistogramBitWidths::kSumPtUntruncatedLinkSize - HistogramBitWidths::kSumPtUntruncatedLinkMagSize);
       hist.at(hb) = bin_trunc;
       if (settings_->debug() > 2) {
         edm::LogInfo("VertexProducer") << "fastHistoEmulation::truncating histogram bin pt once filling is complete \n"
                                        << "hist_untruncated.at(" << hb << ") = " << hist_untruncated.at(hb).to_double()
                                        << "(" << hist_untruncated.at(hb).to_string(2)
-				       << ")\tbin_trunc = " << bin_trunc.to_double() << "(" << bin_trunc.to_string(2)
-				       << ")\n\thist.at(" << hb << ") = " << hist.at(hb).to_double() << "("
+                                       << ")\tbin_trunc = " << bin_trunc.to_double() << "(" << bin_trunc.to_string(2)
+                                       << ")\n\thist.at(" << hb << ") = " << hist.at(hb).to_double() << "("
                                        << hist.at(hb).to_string(2) << ")";
       }
     }

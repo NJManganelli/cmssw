@@ -33,7 +33,6 @@
 #include <ap_fixed.h>
 #include <ap_int.h>
 
-
 // user include files
 #include "DataFormats/Common/interface/Handle.h"
 #include "DataFormats/Common/interface/Ref.h"
@@ -91,12 +90,11 @@ private:
   typedef edm::RefVector<TTTrackCollectionType> TTTrackRefCollectionType;
   typedef std::unique_ptr<TTTrackRefCollectionType> TTTrackRefCollectionUPtr;
 
-
   // ----------member functions ----------------------
   void printDebugInfo(const edm::Handle<TTTrackRefCollectionType>& l1SelectedTracksHandle,
-		      const edm::Handle<TTTrackRefCollectionType>& l1SelectedTracksEmulationHandle,
-		      const TTTrackRefCollectionUPtr& vTTTrackAssociatedOutput,
-		      const TTTrackRefCollectionUPtr& vTTTrackAssociatedEmulationOutput) const;
+                      const edm::Handle<TTTrackRefCollectionType>& l1SelectedTracksEmulationHandle,
+                      const TTTrackRefCollectionUPtr& vTTTrackAssociatedOutput,
+                      const TTTrackRefCollectionUPtr& vTTTrackAssociatedEmulationOutput) const;
   void printTrackInfo(edm::LogInfo& log, const TTTrackType& track, bool printEmulation = false) const;
   void produce(edm::StreamID, edm::Event&, const edm::EventSetup&) const override;
 
@@ -168,18 +166,21 @@ private:
 // constructors and destructor
 //
 L1TrackVertexAssociationProducer::L1TrackVertexAssociationProducer(const edm::ParameterSet& iConfig)
-  :   l1VerticesToken_(iConfig.getParameter<bool>("processSimulatedTracks") ? 
-		       consumes<l1t::VertexCollection>(iConfig.getParameter<edm::InputTag>("l1VerticesInputTag")) :
-		       edm::EDGetTokenT<l1t::VertexCollection>()),
-      l1SelectedTracksToken_(iConfig.getParameter<bool>("processSimulatedTracks") ?    
-			     consumes<TTTrackRefCollectionType>(iConfig.getParameter<edm::InputTag>("l1SelectedTracksInputTag")) :
-			     edm::EDGetTokenT<TTTrackRefCollectionType>()),
-      l1VerticesEmulationToken_(iConfig.getParameter<bool>("processEmulatedTracks") ?
-				consumes<l1t::VertexWordCollection>(iConfig.getParameter<edm::InputTag>("l1VerticesEmulationInputTag")) :
-				edm::EDGetTokenT<l1t::VertexWordCollection>()),
-      l1SelectedTracksEmulationToken_(iConfig.getParameter<bool>("processEmulatedTracks") ? 
-				      consumes<TTTrackRefCollectionType>(iConfig.getParameter<edm::InputTag>("l1SelectedTracksEmulationInputTag")) :
-				      edm::EDGetTokenT<TTTrackRefCollectionType>()),
+    : l1VerticesToken_(iConfig.getParameter<bool>("processSimulatedTracks")
+                           ? consumes<l1t::VertexCollection>(iConfig.getParameter<edm::InputTag>("l1VerticesInputTag"))
+                           : edm::EDGetTokenT<l1t::VertexCollection>()),
+      l1SelectedTracksToken_(
+          iConfig.getParameter<bool>("processSimulatedTracks")
+              ? consumes<TTTrackRefCollectionType>(iConfig.getParameter<edm::InputTag>("l1SelectedTracksInputTag"))
+              : edm::EDGetTokenT<TTTrackRefCollectionType>()),
+      l1VerticesEmulationToken_(
+          iConfig.getParameter<bool>("processEmulatedTracks")
+              ? consumes<l1t::VertexWordCollection>(iConfig.getParameter<edm::InputTag>("l1VerticesEmulationInputTag"))
+              : edm::EDGetTokenT<l1t::VertexWordCollection>()),
+      l1SelectedTracksEmulationToken_(iConfig.getParameter<bool>("processEmulatedTracks")
+                                          ? consumes<TTTrackRefCollectionType>(iConfig.getParameter<edm::InputTag>(
+                                                "l1SelectedTracksEmulationInputTag"))
+                                          : edm::EDGetTokenT<TTTrackRefCollectionType>()),
       outputCollectionName_(iConfig.getParameter<std::string>("outputCollectionName")),
       cutSet_(iConfig.getParameter<edm::ParameterSet>("cutSet")),
 
@@ -232,20 +233,22 @@ L1TrackVertexAssociationProducer::~L1TrackVertexAssociationProducer() {}
 //
 
 void L1TrackVertexAssociationProducer::printDebugInfo(
-						      const edm::Handle<TTTrackRefCollectionType>& l1SelectedTracksHandle,
-						      const edm::Handle<TTTrackRefCollectionType>& l1SelectedTracksEmulationHandle,
-						      const TTTrackRefCollectionUPtr& vTTTrackAssociatedOutput,
-						      const TTTrackRefCollectionUPtr& vTTTrackAssociatedEmulationOutput) const {
+    const edm::Handle<TTTrackRefCollectionType>& l1SelectedTracksHandle,
+    const edm::Handle<TTTrackRefCollectionType>& l1SelectedTracksEmulationHandle,
+    const TTTrackRefCollectionUPtr& vTTTrackAssociatedOutput,
+    const TTTrackRefCollectionUPtr& vTTTrackAssociatedEmulationOutput) const {
   edm::LogInfo log("L1TrackVertexAssociationProducer");
   if (processSimulatedTracks_) {
-    log << "The original selected track collection (pt, eta, phi, nstub, bendchi2, chi2rz, chi2rphi, z0) values are ... \n";
+    log << "The original selected track collection (pt, eta, phi, nstub, bendchi2, chi2rz, chi2rphi, z0) values are "
+           "... \n";
     for (const auto& track : *l1SelectedTracksHandle) {
       printTrackInfo(log, *track, debug_ >= 4);
     }
     log << "\t---\n\tNumber of tracks in this selection = " << l1SelectedTracksHandle->size() << "\n\n";
   }
   if (processEmulatedTracks_) {
-    log << "The original selected emulated track collection (pt, eta, phi, nstub, bendchi2, chi2rz, chi2rphi, z0) values are ... \n";
+    log << "The original selected emulated track collection (pt, eta, phi, nstub, bendchi2, chi2rz, chi2rphi, z0) "
+           "values are ... \n";
     for (const auto& track : *l1SelectedTracksEmulationHandle) {
       printTrackInfo(log, *track, debug_ >= 4);
     }
@@ -307,13 +310,15 @@ void L1TrackVertexAssociationProducer::printDebugInfo(
                         vTTTrackAssociatedOutput->begin(),
                         vTTTrackAssociatedOutput->end(),
                         std::back_inserter(inEmuButNotSim));
-    log << "The set of vertex associated tracks selected via cuts on the simulated values which are not in the set of tracks selected "
+    log << "The set of vertex associated tracks selected via cuts on the simulated values which are not in the set of "
+           "tracks selected "
            "by cutting on the emulated values ... \n";
     for (const auto& track : inSimButNotEmu) {
       printTrackInfo(log, *track, debug_ >= 3);
     }
     log << "\t---\n\tNumber of tracks in this selection = " << inSimButNotEmu.size() << "\n\n"
-        << "The set of vertex associated tracks selected via cuts on the emulated values which are not in the set of tracks selected "
+        << "The set of vertex associated tracks selected via cuts on the emulated values which are not in the set of "
+           "tracks selected "
            "by cutting on the simulated values ... \n";
     for (const auto& track : inEmuButNotSim) {
       printTrackInfo(log, *track, debug_ >= 3);
@@ -322,7 +327,9 @@ void L1TrackVertexAssociationProducer::printDebugInfo(
   }
 }
 
-void L1TrackVertexAssociationProducer::printTrackInfo(edm::LogInfo& log, const TTTrackType& track, bool printEmulation) const {
+void L1TrackVertexAssociationProducer::printTrackInfo(edm::LogInfo& log,
+                                                      const TTTrackType& track,
+                                                      bool printEmulation) const {
   log << "\t(" << track.momentum().perp() << ", " << track.momentum().eta() << ", " << track.momentum().phi() << ", "
       << track.getStubRefs().size() << ", " << track.stubPtConsistency() << ", " << track.chi2ZRed() << ", "
       << track.chi2XYRed() << ", " << track.z0() << ")\n";
@@ -375,7 +382,7 @@ void L1TrackVertexAssociationProducer::produce(edm::StreamID, edm::Event& iEvent
       auto track = l1tVertexFinder::L1Track(edm::refToPtr(trackword));
       // Select tracks based on the floating point TTTrack
       if (deltaZSel(*trackword, leadingVertex)) {
-	vTTTrackAssociatedOutput->push_back(trackword);
+        vTTTrackAssociatedOutput->push_back(trackword);
       }
     }
     iEvent.put(std::move(vTTTrackAssociatedOutput), outputCollectionName_);
@@ -386,13 +393,14 @@ void L1TrackVertexAssociationProducer::produce(edm::StreamID, edm::Event& iEvent
     size_t nOutputApproximateEmulation = l1SelectedTracksEmulationHandle->size();
     leadingEmulationVertex = l1VerticesEmulationHandle->at(0);
     if (debug_ >= 2) {
-      edm::LogInfo("L1TrackVertexAssociationProducer") << "leading emulation vertex z0 = " << leadingEmulationVertex.z0();
+      edm::LogInfo("L1TrackVertexAssociationProducer")
+          << "leading emulation vertex z0 = " << leadingEmulationVertex.z0();
     }
     vTTTrackAssociatedEmulationOutput->reserve(nOutputApproximateEmulation);
     for (const auto& trackword : *l1SelectedTracksEmulationHandle) {
       // Select tracks based on the bitwise accurate TTTrack_TrackWord
       if (deltaZSelEmu(*trackword, leadingEmulationVertex)) {
-	vTTTrackAssociatedEmulationOutput->push_back(trackword);	
+        vTTTrackAssociatedEmulationOutput->push_back(trackword);
       }
     }
     iEvent.put(std::move(vTTTrackAssociatedEmulationOutput), outputCollectionName_ + "Emulation");
@@ -400,7 +408,7 @@ void L1TrackVertexAssociationProducer::produce(edm::StreamID, edm::Event& iEvent
 
   if (processSimulatedTracks_ && processEmulatedTracks_ && debug_ >= 2) {
     printDebugInfo(l1SelectedTracksHandle,
-		   l1SelectedTracksEmulationHandle,
+                   l1SelectedTracksEmulationHandle,
                    vTTTrackAssociatedOutput,
                    vTTTrackAssociatedEmulationOutput);
   }
@@ -409,11 +417,13 @@ void L1TrackVertexAssociationProducer::produce(edm::StreamID, edm::Event& iEvent
 // ------------ method fills 'descriptions' with the allowed parameters for the module  ------------
 void L1TrackVertexAssociationProducer::fillDescriptions(edm::ConfigurationDescriptions& descriptions) {
   edm::ParameterSetDescription desc;
-  desc.addOptional<edm::InputTag>("l1SelectedTracksInputTag", edm::InputTag("L1TrackSelectionProducer", "Level1TTTracksSelected"));
-  desc.addOptional<edm::InputTag>("l1SelectedTracksEmulationInputTag", edm::InputTag("L1TrackSelectionProducer", "Level1TTTracksSelectedEmulation"));
-  desc.addOptional<edm::InputTag>("l1VerticesInputTag", edm::InputTag("L1VertexFinder", "l1vertices"));
-  desc.addOptional<edm::InputTag>("l1VerticesEmulationInputTag",
-                                  edm::InputTag("L1VertexFinderEmulator", "l1verticesEmulation"));
+  desc.add<edm::InputTag>("l1SelectedTracksInputTag",
+                          edm::InputTag("l1tTrackSelectionProducer", "Level1TTTracksSelected"));
+  desc.add<edm::InputTag>("l1SelectedTracksEmulationInputTag",
+                          edm::InputTag("l1tTrackSelectionProducer", "Level1TTTracksSelectedEmulation"));
+  desc.add<edm::InputTag>("l1VerticesInputTag", edm::InputTag("l1tVertexFinder", "l1tVertices"));
+  desc.add<edm::InputTag>("l1VerticesEmulationInputTag",
+                          edm::InputTag("l1tVertexFinderEmulator", "l1tVerticesEmulation"));
   desc.add<std::string>("outputCollectionName", "Level1TTTracksSelectedAssociated");
   {
     edm::ParameterSetDescription descCutSet;
