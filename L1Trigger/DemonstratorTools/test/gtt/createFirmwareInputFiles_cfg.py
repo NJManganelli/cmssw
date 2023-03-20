@@ -73,8 +73,8 @@ process.load('L1Trigger.DemonstratorTools.l1tGTTFileWriter_cfi')
 process.l1tGTTInputProducer.debug = cms.int32(options.debug)
 
 process.l1tTrackSelectionProducer.processSimulatedTracks = cms.bool(False)
-process.l1tVertexFinderEmu.VertexReconstruction.VxMinTrackPt = cms.double(0.0)
-process.l1tVertexFinderEmu.debug = options.debug
+process.l1tVertexFinderEmulator.VertexReconstruction.VxMinTrackPt = cms.double(0.0)
+process.l1tVertexFinderEmulator.debug = options.debug
 process.l1tTrackVertexAssociationProducer.processSimulatedTracks = cms.bool(False)
 
 process.l1tTrackSelectionProducerForEtMiss.processSimulatedTracks = cms.bool(False)
@@ -96,7 +96,7 @@ process.l1tGTTFileWriter.format = cms.untracked.string(options.format) #FIXME Pu
 process.l1tGTTFileWriter.tracks = cms.untracked.InputTag("l1tTTTracksFromTrackletEmulation", "Level1TTTracks")
 process.l1tGTTFileWriter.convertedTracks = cms.untracked.InputTag("l1tGTTInputProducer", "Level1TTTracksConverted")
 process.l1tGTTFileWriter.selectedTracks = cms.untracked.InputTag("l1tTrackSelectionProducer", "Level1TTTracksSelectedEmulation")
-process.l1tGTTFileWriter.vertices = cms.untracked.InputTag("l1tVertexFinderEmu", "l1tVerticesEmulation")
+process.l1tGTTFileWriter.vertices = cms.untracked.InputTag("l1tVertexFinderEmulator", "l1tVerticesEmulation")
 process.l1tGTTFileWriter.vertexAssociatedTracks = cms.untracked.InputTag("l1tTrackVertexAssociationProducer", "Level1TTTracksSelectedAssociatedEmulation")
 process.l1tGTTFileWriter.jets = cms.untracked.InputTag("l1tTrackJetsEmulation","L1TrackJets")
 process.l1tGTTFileWriter.htmiss = cms.untracked.InputTag("l1tTrackerEmuHTMiss", "l1tTrackerEmuHTMiss")
@@ -113,7 +113,7 @@ process.Timing = cms.Service("Timing", summaryOnly = cms.untracked.bool(True))
 process.p = cms.Path(process.l1tGTTFileWriter)
 process.p.associate(cms.Task(process.l1tGTTInputProducer, 
                              process.l1tTrackSelectionProducer,
-                             process.l1tVertexFinderEmu, 
+                             process.l1tVertexFinderEmulator, 
                              process.l1tTrackVertexAssociationProducer,
                              process.l1tTrackSelectionProducerForJets,
                              process.l1tTrackVertexAssociationProducerForJets,
