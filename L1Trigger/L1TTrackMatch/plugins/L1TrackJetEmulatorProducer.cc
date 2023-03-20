@@ -66,11 +66,9 @@ class L1TrackJetEmulatorProducer : public stream::EDProducer<> {
 public:
   explicit L1TrackJetEmulatorProducer(const ParameterSet &);
   ~L1TrackJetEmulatorProducer() override;
-  typedef TTTrack<Ref_Phase2TrackerDigi_> TTTrackType;
-  typedef std::vector<TTTrackType> TTTrackCollectionType;
-  typedef edm::Handle<TTTrackCollectionType> TTTrackCollectionHandle;
-  typedef edm::RefVector<TTTrackCollectionType> TTTrackRefCollectionType;
-  typedef std::unique_ptr<TTTrackRefCollectionType> TTTrackRefCollectionUPtr;
+  typedef TTTrack<Ref_Phase2TrackerDigi_> L1TTTrackType;
+  typedef vector<L1TTTrackType> L1TTTrackCollectionType;
+  typedef edm::RefVector<L1TTTrackCollectionType> L1TTTrackRefCollectionType;
 
   static void fillDescriptions(ConfigurationDescriptions &descriptions);
 
@@ -82,9 +80,9 @@ private:
   // ----------member data ---------------------------
 
   edm::ESGetToken<TrackerTopology, TrackerTopologyRcd> tTopoToken_;
-  const EDGetTokenT<TTTrackRefCollectionType> trackToken_;
+  const EDGetTokenT<L1TTTrackRefCollectionType> trackToken_;
   const EDGetTokenT<l1t::VertexWordCollection> PVtxToken_;
-  std::vector<edm::Ptr<TTTrackType>> L1TrkPtrs_;
+  std::vector<edm::Ptr<L1TTTrackType>> L1TrkPtrs_;
   vector<int> tdtrk_;
   double trkZMax_;
   double trkPtMax_;
@@ -124,7 +122,7 @@ private:
 //constructor
 L1TrackJetEmulatorProducer::L1TrackJetEmulatorProducer(const ParameterSet &iConfig)
     : tTopoToken_(esConsumes<TrackerTopology, TrackerTopologyRcd>(edm::ESInputTag("", ""))),
-      trackToken_(consumes<TTTrackRefCollectionType>(iConfig.getParameter<InputTag>("L1TrackInputTag"))),
+      trackToken_(consumes<L1TTTrackRefCollectionType>(iConfig.getParameter<InputTag>("L1TrackInputTag"))),
       PVtxToken_(consumes<l1t::VertexWordCollection>(iConfig.getParameter<InputTag>("VertexInputTag"))),
       trkZMax_(iConfig.getParameter<double>("trk_zMax")),
       trkPtMax_(iConfig.getParameter<double>("trk_ptMax")),
@@ -172,7 +170,7 @@ void L1TrackJetEmulatorProducer::produce(Event &iEvent, const EventSetup &iSetup
   // Read inputs
   const TrackerTopology &tTopo = iSetup.getData(tTopoToken_);
 
-  edm::Handle<TTTrackRefCollectionType> TTTrackHandle;
+  edm::Handle<L1TTTrackRefCollectionType> TTTrackHandle;
   iEvent.getByToken(trackToken_, TTTrackHandle);
 
   edm::Handle<l1t::VertexWordCollection> PVtx;
@@ -184,7 +182,7 @@ void L1TrackJetEmulatorProducer::produce(Event &iEvent, const EventSetup &iSetup
 
   // track selection
   for (unsigned int this_l1track = 0; this_l1track < TTTrackHandle->size(); this_l1track++) {
-    edm::Ptr<TTTrackType> trkPtr(TTTrackHandle, this_l1track);
+    edm::Ptr<L1TTTrackType> trkPtr(TTTrackHandle, this_l1track);
     float trk_pt = trkPtr->momentum().perp();
     int trk_nstubs = (int)trkPtr->getStubRefs().size();
     float trk_chi2dof = trkPtr->chi2Red();
@@ -409,7 +407,7 @@ void L1TrackJetEmulatorProducer::produce(Event &iEvent, const EventSetup &iSetup
     mzb.zbincenter = (zmin + zmax) / 2.0;
   }  //zbin loop
 
-  vector<edm::Ptr<TTTrackType>> L1TrackAssocJet;
+  vector<edm::Ptr<L1TTTrackType>> L1TrackAssocJet;
   for (unsigned int j = 0; j < mzb.clusters.size(); ++j) {
     if (mzb.clusters[j].pTtot < pt_intern(trkPtMin_))
       continue;

@@ -61,6 +61,7 @@ public:
   ~L1TrackJetProducer() override;
   typedef TTTrack<Ref_Phase2TrackerDigi_> L1TTTrackType;
   typedef vector<L1TTTrackType> L1TTTrackCollectionType;
+  typedef edm::RefVector<L1TTTrackCollectionType> L1TTTrackRefCollectionType;
   static void fillDescriptions(ConfigurationDescriptions &descriptions);
 
 private:
@@ -71,7 +72,7 @@ private:
   // ----------member data ---------------------------
 
   edm::ESGetToken<TrackerTopology, TrackerTopologyRcd> tTopoToken_;
-  const EDGetTokenT<vector<TTTrack<Ref_Phase2TrackerDigi_>>> trackToken_;
+  const EDGetTokenT<L1TTTrackRefCollectionType> trackToken_;
   const EDGetTokenT<l1t::VertexWordCollection> PVtxToken_;
   vector<Ptr<L1TTTrackType>> L1TrkPtrs_;
   vector<int> tdtrk_;
@@ -108,7 +109,7 @@ private:
 
 L1TrackJetProducer::L1TrackJetProducer(const ParameterSet &iConfig)
     : tTopoToken_(esConsumes<TrackerTopology, TrackerTopologyRcd>(edm::ESInputTag("", ""))),
-      trackToken_(consumes<vector<TTTrack<Ref_Phase2TrackerDigi_>>>(iConfig.getParameter<InputTag>("L1TrackInputTag"))),
+      trackToken_(consumes<L1TTTrackRefCollectionType>(iConfig.getParameter<InputTag>("L1TrackInputTag"))),
       PVtxToken_(consumes<l1t::VertexWordCollection>(iConfig.getParameter<InputTag>("VertexInputTag"))),
       trkZMax_(iConfig.getParameter<double>("trk_zMax")),
       trkPtMax_(iConfig.getParameter<double>("trk_ptMax")),
@@ -154,7 +155,7 @@ void L1TrackJetProducer::produce(Event &iEvent, const EventSetup &iSetup) {
   // Read inputs
   const TrackerTopology &tTopo = iSetup.getData(tTopoToken_);
 
-  edm::Handle<vector<TTTrack<Ref_Phase2TrackerDigi_>>> TTTrackHandle;
+  edm::Handle<L1TTTrackRefCollectionType> TTTrackHandle;
   iEvent.getByToken(trackToken_, TTTrackHandle);
 
   edm::Handle<l1t::VertexWordCollection> PVtx;
