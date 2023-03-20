@@ -4,8 +4,8 @@ l1tTrackVertexAssociationProducer = cms.EDProducer('L1TrackVertexAssociationProd
   l1SelectedTracksInputTag = cms.InputTag("l1tTrackSelectionProducer", "Level1TTTracksSelected"),
   l1SelectedTracksEmulationInputTag = cms.InputTag("l1tTrackSelectionProducer", "Level1TTTracksSelectedEmulation"),
   # If no vertex collection is provided, then the DeltaZ cuts will not be run
-  l1VerticesInputTag = cms.InputTag("l1tVertexFinderSim", "l1tVertices"),
-  l1VerticesEmulationInputTag = cms.InputTag("l1tVertexFinderEmu", "l1tVerticesEmulation"),
+  l1VerticesInputTag = cms.InputTag("l1tVertexFinderSimulator", "l1tVertices"),
+  l1VerticesEmulationInputTag = cms.InputTag("l1tVertexFinderEmulator", "l1tVerticesEmulation"),
   outputCollectionName = cms.string("Level1TTTracksSelectedAssociated"),
   cutSet = cms.PSet(
                     #deltaZMaxEtaBounds = cms.vdouble(0.0, absEtaMax.value), # these values define the bin boundaries in |eta|
@@ -39,8 +39,8 @@ l1tTrackVertexAssociationProducerForJets = cms.EDProducer('L1TrackVertexAssociat
   l1SelectedTracksInputTag = cms.InputTag("l1tTrackSelectionProducerForJets", "Level1TTTracksSelected"),
   l1SelectedTracksEmulationInputTag = cms.InputTag("l1tTrackSelectionProducerForJets", "Level1TTTracksSelectedEmulation"),
   # If no vertex collection is provided, then the DeltaZ cuts will not be run
-  l1VerticesInputTag = cms.InputTag("l1tVertexFinderSim", "l1tVertices"),
-  l1VerticesEmulationInputTag = cms.InputTag("l1tVertexFinderEmu", "l1tVerticesEmulation"),
+  l1VerticesInputTag = cms.InputTag("l1tVertexFinderSimulator", "l1tVertices"),
+  l1VerticesEmulationInputTag = cms.InputTag("l1tVertexFinderEmulator", "l1tVerticesEmulation"),
   outputCollectionName = cms.string("Level1TTTracksSelectedAssociated"),
   cutSet = cms.PSet(
                     #deltaZMaxEtaBounds = cms.vdouble(0.0, absEtaMax.value), # these values define the bin boundaries in |eta|
@@ -74,8 +74,8 @@ l1tTrackVertexAssociationProducerForEtMiss = cms.EDProducer('L1TrackVertexAssoci
   l1SelectedTracksInputTag = cms.InputTag("l1tTrackSelectionProducerForEtMiss", "Level1TTTracksSelected"),
   l1SelectedTracksEmulationInputTag = cms.InputTag("l1tTrackSelectionProducerForEtMiss", "Level1TTTracksSelectedEmulation"),
   # If no vertex collection is provided, then the DeltaZ cuts will not be run
-  l1VerticesInputTag = cms.InputTag("l1tVertexFinderSim", "l1tVertices"),
-  l1VerticesEmulationInputTag = cms.InputTag("l1tVertexFinderEmu", "l1tVerticesEmulation"),
+  l1VerticesInputTag = cms.InputTag("l1tVertexFinderSimulator", "l1tVertices"),
+  l1VerticesEmulationInputTag = cms.InputTag("l1tVertexFinderEmulator", "l1tVerticesEmulation"),
   outputCollectionName = cms.string("Level1TTTracksSelectedAssociated"),
   cutSet = cms.PSet(
                     #deltaZMaxEtaBounds = cms.vdouble(0.0, absEtaMax.value), # these values define the bin boundaries in |eta|
