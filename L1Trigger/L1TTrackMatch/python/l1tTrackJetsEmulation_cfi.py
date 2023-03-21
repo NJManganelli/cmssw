@@ -32,7 +32,7 @@ l1tTrackJetsEmulation = cms.EDProducer('L1TrackJetEmulatorProducer',
 )
 
 l1tTrackJetsExtendedEmulation = l1tTrackJetsEmulation.clone(
-	L1TrackInputTag= cms.InputTag("l1tGTTInputProducerExtended", "Level1TTTracksExtendedConverted"),
+	L1TrackInputTag= cms.InputTag("l1tTrackVertexAssociationProducerExtendedForJets", "Level1TTTracksExtendedSelectedAssociatedEmulation"),
         VertexInputTag=cms.InputTag("l1tVertexFinderEmulator", "l1tVerticesEmulation"),
 	minTrkJetpT= 5.0,      # minimum track pt to be considered for track jet
         MaxDzTrackPV = 5.0,
