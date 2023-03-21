@@ -72,7 +72,7 @@ l1tVertexProducer = cms.EDProducer('VertexProducer',
   debug  = cms.uint32(0)
 )
 
-l1tVertexFinderSimulator = l1tVertexProducer.clone()
+l1tVertexFinder = l1tVertexProducer.clone()
 
 l1tVertexFinderEmulator = l1tVertexProducer.clone()
 l1tVertexFinderEmulator.VertexReconstruction.Algorithm = cms.string("fastHistoEmulation")
