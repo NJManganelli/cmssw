@@ -20,8 +20,8 @@ l1tTrackVertexAssociationProducer = cms.EDProducer('L1TrackVertexAssociationProd
 )
 
 l1tTrackVertexAssociationProducerExtended = l1tTrackVertexAssociationProducer.clone(
-  l1SelectedTracksInputTag = cms.InputTag("l1tTrackSelectionProducer", "Level1TTTracksExtendedSelected"),
-  l1SelectedTracksEmulationInputTag = cms.InputTag("l1tTrackSelectionProducer", "Level1TTTracksExtendedSelectedEmulation"),
+  l1SelectedTracksInputTag = cms.InputTag("l1tTrackSelectionProducerExtended", "Level1TTTracksExtendedSelected"),
+  l1SelectedTracksEmulationInputTag = cms.InputTag("l1tTrackSelectionProducerExtended", "Level1TTTracksExtendedSelectedEmulation"),
   outputCollectionName = cms.string("Level1TTTracksExtendedSelectedAssociated"),
   cutSet = cms.PSet(
                     #deltaZMaxEtaBounds = cms.vdouble(0.0, absEtaMax.value), # these values define the bin boundaries in |eta|
