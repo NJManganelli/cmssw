@@ -86,6 +86,35 @@ process.l1tTrackSelectionProducerForJets.processSimulatedTracks = cms.bool(False
 process.l1tTrackVertexAssociationProducerForJets.processSimulatedTracks = cms.bool(False)
 process.l1tTrackerEmuHTMiss.debug = (options.debug > 0)
 
+#Disable internal track selection
+process.l1tTrackJetsEmulation.MaxDzTrackPV = cms.double(10000.0)
+process.l1tTrackJetsEmulation.trk_zMax = cms.double(10000.0)    # maximum track z
+process.l1tTrackJetsEmulation.trk_ptMax = cms.double(10000.0)    # maximumum track pT before saturation [GeV]
+process.l1tTrackJetsEmulation.trk_ptMin = cms.double(0.0)     # minimum track pt [GeV]
+process.l1tTrackJetsEmulation.trk_etaMax = cms.double(10000.0)    # maximum track eta
+process.l1tTrackJetsEmulation.nStubs4PromptChi2=cms.double(10000.0) #Prompt track quality flags for loose/tight
+process.l1tTrackJetsEmulation.nStubs4PromptBend=cms.double(10000.0)
+process.l1tTrackJetsEmulation.nStubs5PromptChi2=cms.double(10000.0)
+process.l1tTrackJetsEmulation.nStubs5PromptBend=cms.double(10000.0)
+# process.l1tTrackJetsEmulation.trk_nPSStubMin=cms.int32(-1)    # minimum PS stubs, -1 means no cut
+# process.l1tTrackJetsEmulation.minTrkJetpT=cms.double(-1.)      # minimum track pt to be considered for track jet
+# process.l1tTrackJetsEmulation.etaBins=cms.int32(24)
+# process.l1tTrackJetsEmulation.phiBins=cms.int32(27)
+# process.l1tTrackJetsEmulation.zBins=cms.int32(1)
+# process.l1tTrackJetsEmulation.d0_cutNStubs4=cms.double(-1)
+# process.l1tTrackJetsEmulation.d0_cutNStubs5=cms.double(-1)
+# process.l1tTrackJetsEmulation.lowpTJetMinTrackMultiplicity=cms.int32(2)
+# process.l1tTrackJetsEmulation.lowpTJetThreshold=cms.double(50.)
+# process.l1tTrackJetsEmulation.highpTJetMinTrackMultiplicity=cms.int32(3)
+# process.l1tTrackJetsEmulation.highpTJetThreshold=cms.double(100.)
+# process.l1tTrackJetsEmulation.displaced=cms.bool(False) #Flag for displaced tracks
+# process.l1tTrackJetsEmulation.nStubs4DisplacedChi2=cms.double(5.0) #Displaced track quality flags for loose/tight
+# process.l1tTrackJetsEmulation.nStubs4DisplacedBend=cms.double(1.7)
+# process.l1tTrackJetsEmulation.nStubs5DisplacedChi2=cms.double(2.75)
+# process.l1tTrackJetsEmulation.nStubs5DisplacedBend=cms.double(3.5)
+# process.l1tTrackJetsEmulation.nDisplacedTracks=cms.int32(2) #Number of displaced tracks required per jet
+
+
 if options.debug:
     process.MessageLogger.cerr.INFO.limit = cms.untracked.int32(1000000000)
     process.MessageLogger.suppressInfo = cms.untracked.vstring('CondDBESSource', 'PoolDBESSource')
