@@ -17,6 +17,7 @@
 
 // system include files
 #include "DataFormats/Common/interface/Ref.h"
+#include "DataFormats/Common/interface/RefVector.h"
 #include "DataFormats/L1TCorrelator/interface/TkJet.h"
 #include "DataFormats/L1TCorrelator/interface/TkJetFwd.h"
 #include "DataFormats/L1TrackTrigger/interface/TTTypes.h"
@@ -120,7 +121,7 @@ L1TrackJetProducer::L1TrackJetProducer(const ParameterSet &iConfig)
       nDisplacedTracks_(iConfig.getParameter<int>("nDisplacedTracks")),
       dzPVTrk_(iConfig.getParameter<double>("MaxDzTrackPV")),
       tTopoToken_(esConsumes<TrackerTopology, TrackerTopologyRcd>(edm::ESInputTag("", ""))),
-      trackToken_(consumes<vector<TTTrack<Ref_Phase2TrackerDigi_>>>(iConfig.getParameter<InputTag>("L1TrackInputTag"))),
+      trackToken_(consumes<L1TTTrackRefCollectionType>(iConfig.getParameter<InputTag>("L1TrackInputTag"))),
       PVtxToken_(consumes<l1t::VertexWordCollection>(iConfig.getParameter<InputTag>("L1PVertexInputTag"))) {
   zStep_ = 2.0 * trkZMax_ / (zBins_ + 1);  // added +1 in denom
   etaStep_ = 2.0 * trkEtaMax_ / etaBins_;  //etaStep is the width of an etabin
