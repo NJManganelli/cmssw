@@ -99,7 +99,7 @@ private:
   TTTrack_TrackWord trackword;
 
   edm::ESGetToken<TrackerTopology, TrackerTopologyRcd> tTopoToken_;
-  const EDGetTokenT<vector<TTTrack<Ref_Phase2TrackerDigi_>>> trackToken_;
+  const EDGetTokenT<L1TTTrackRefCollectionType> trackToken_;
   const EDGetTokenT<l1t::VertexWordCollection> PVtxToken_;
 };
 
@@ -132,7 +132,7 @@ L1TrackJetEmulatorProducer::L1TrackJetEmulatorProducer(const ParameterSet &iConf
       nDisplacedTracks_(iConfig.getParameter<int>("nDisplacedTracks")),
       dzPVTrk_(iConfig.getParameter<double>("MaxDzTrackPV")),
       tTopoToken_(esConsumes<TrackerTopology, TrackerTopologyRcd>(edm::ESInputTag("", ""))),
-      trackToken_(consumes<vector<TTTrack<Ref_Phase2TrackerDigi_>>>(iConfig.getParameter<InputTag>("L1TrackInputTag"))),
+      trackToken_(consumes<L1TTTrackRefCollectionType>(iConfig.getParameter<InputTag>("L1TrackInputTag"))),
       PVtxToken_(consumes<l1t::VertexWordCollection>(iConfig.getParameter<InputTag>("L1PVertexInputTag"))) {
   zStep_ = 2.0 * trkZMax_ / (zBins_ + 1);                 // added +1 in denom
   etaStep_ = glbeta_intern(2.0 * trkEtaMax_ / etaBins_);  //etaStep is the width of an etabin
