@@ -123,7 +123,7 @@ _phase2_siml1emulator.add(l1tCaloJetHTT)
 
 from L1Trigger.L1TTrackMatch.l1tGTTInputProducer_cfi import *
 from L1Trigger.L1TTrackMatch.l1tTrackSelectionProducer_cfi import *
-from L1Trigger.L1TTrackMatch..l1tTrackVertexAssociationProducer_cfi import *
+from L1Trigger.L1TTrackMatch.l1tTrackVertexAssociationProducer_cfi import *
 from L1Trigger.VertexFinder.l1tVertexProducer_cfi import *
 
 # Track Conversion, Track Selection, Vertex Finding
