@@ -154,11 +154,3 @@ process.p.associate(cms.Task(process.l1tGTTInputProducer,
                              process.l1tTrackerEmuEtMiss,
                          )
                 )
-
-# Tools for debugging dependencies
-#option 1: graph file. process output with ```dot dependency.gv -Tpdf -o dependency.pdf```
-process.load("FWCore.Services.DependencyGraph_cfi")
-process.DependencyGraph.fileName = 'dependency_mar16.gv'
-process.DependencyGraph.showPathDependencies = True
-from FWCore.ParameterSet.Utilities import moduleLabelsInSequences
-process.DependencyGraph.highlightModules = moduleLabelsInSequences(process.p)
