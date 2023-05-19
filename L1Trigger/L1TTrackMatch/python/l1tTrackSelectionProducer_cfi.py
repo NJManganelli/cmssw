@@ -37,9 +37,33 @@ l1tTrackSelectionProducerExtended = l1tTrackSelectionProducer.clone(
   processEmulatedTracks = cms.bool(True), # return selected tracks after cutting on the bitwise emulated values
 )
 
-l1tTrackSelectionProducerForJets = l1tTrackSelectionProducer.clone()
+l1tTrackSelectionProducerForJets = l1tTrackSelectionProducer.clone(
+  cutSet = dict(
+                    ptMin = 0.0, # pt must be greater than this value, [GeV]
+                    absEtaMax = 999.9, # absolute value of eta must be less than this value
+                    absZ0Max = 999.9, # z0 must be less than this value, [cm]
+                    nStubsMin = 0, # number of stubs must be greater than or equal to this value
+                    nPSStubsMin = 0, # the number of stubs in the PS Modules must be greater than or equal to this value
 
-l1tTrackSelectionProducerExtendedForJets = l1tTrackSelectionProducerExtended.clone()
+                    reducedBendChi2Max = 999.9, # bend chi2 must be less than this value
+                    reducedChi2RZMax = 999.9, # chi2rz/dof must be less than this value
+                    reducedChi2RPhiMax = 999.9, # chi2rphi/dof must be less than this value
+                    ),
+)
+
+l1tTrackSelectionProducerExtendedForJets = l1tTrackSelectionProducerExtended.clone(
+  cutSet = dict(
+                    ptMin = 0.0, # pt must be greater than this value, [GeV]
+                    absEtaMax = 999.9, # absolute value of eta must be less than this value
+                    absZ0Max = 999.9, # z0 must be less than this value, [cm]
+                    nStubsMin = 0, # number of stubs must be greater than or equal to this value
+                    nPSStubsMin = 0, # the number of stubs in the PS Modules must be greater than or equal to this value
+
+                    reducedBendChi2Max = 999.9, # bend chi2 must be less than this value
+                    reducedChi2RZMax = 999.9, # chi2rz/dof must be less than this value
+                    reducedChi2RPhiMax = 999.9, # chi2rphi/dof must be less than this value
+                    ),
+)
 
 l1tTrackSelectionProducerForEtMiss = l1tTrackSelectionProducer.clone()
 

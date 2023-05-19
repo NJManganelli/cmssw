@@ -83,7 +83,24 @@ process.l1tTrackVertexAssociationProducerForEtMiss.processSimulatedTracks = cms.
 process.l1tTrackerEmuEtMiss.debug = options.debug
 
 process.l1tTrackSelectionProducerForJets.processSimulatedTracks = cms.bool(False)
+process.l1tTrackSelectionProducerForJets.cutSet = cms.PSet(
+    ptMin = cms.double(2.0), # pt must be greater than this value, [GeV]
+    absEtaMax = cms.double(2.4), # absolute value of eta must be less than this value
+    absZ0Max = cms.double(15.0), # z0 must be less than this value, [cm]
+    nStubsMin = cms.int32(4), # number of stubs must be greater than or equal to this value
+    nPSStubsMin = cms.int32(0), # the number of stubs in the PS Modules must be greater than or equal to this value
+    
+    reducedBendChi2Max = cms.double(2.25), # bend chi2 must be less than this value
+    reducedChi2RZMax = cms.double(5.0), # chi2rz/dof must be less than this value
+    reducedChi2RPhiMax = cms.double(20.0), # chi2rphi/dof must be less than this value
+)
 process.l1tTrackVertexAssociationProducerForJets.processSimulatedTracks = cms.bool(False)
+process.l1tTrackVertexAssociationProducerForJets.cutSet = cms.PSet(
+    #deltaZMaxEtaBounds = cms.vdouble(0.0, absEtaMax.value), # these values define the bin boundaries in |eta|
+    #deltaZMax = cms.vdouble(0.5), # delta z must be less than these values, there will be one less value here than in deltaZMaxEtaBounds, [cm]
+    deltaZMaxEtaBounds = cms.vdouble(0.0, 0.7, 1.0, 1.2, 1.6, 2.0, 2.4), # these values define the bin boundaries in |eta|
+    deltaZMax = cms.vdouble(0.37, 0.50, 0.60, 0.75, 1.00, 1.60), # delta z must be less than these values, there will be one less value here than in deltaZMaxEtaBounds, [cm]
+)
 process.l1tTrackerEmuHTMiss.debug = (options.debug > 0)
 
 #Disable internal track selection
@@ -96,24 +113,6 @@ process.l1tTrackJetsEmulation.nStubs4PromptChi2=cms.double(10000.0) #Prompt trac
 process.l1tTrackJetsEmulation.nStubs4PromptBend=cms.double(10000.0)
 process.l1tTrackJetsEmulation.nStubs5PromptChi2=cms.double(10000.0)
 process.l1tTrackJetsEmulation.nStubs5PromptBend=cms.double(10000.0)
-# process.l1tTrackJetsEmulation.trk_nPSStubMin=cms.int32(-1)    # minimum PS stubs, -1 means no cut
-# process.l1tTrackJetsEmulation.minTrkJetpT=cms.double(-1.)      # minimum track pt to be considered for track jet
-# process.l1tTrackJetsEmulation.etaBins=cms.int32(24)
-# process.l1tTrackJetsEmulation.phiBins=cms.int32(27)
-# process.l1tTrackJetsEmulation.zBins=cms.int32(1)
-# process.l1tTrackJetsEmulation.d0_cutNStubs4=cms.double(-1)
-# process.l1tTrackJetsEmulation.d0_cutNStubs5=cms.double(-1)
-# process.l1tTrackJetsEmulation.lowpTJetMinTrackMultiplicity=cms.int32(2)
-# process.l1tTrackJetsEmulation.lowpTJetThreshold=cms.double(50.)
-# process.l1tTrackJetsEmulation.highpTJetMinTrackMultiplicity=cms.int32(3)
-# process.l1tTrackJetsEmulation.highpTJetThreshold=cms.double(100.)
-# process.l1tTrackJetsEmulation.displaced=cms.bool(False) #Flag for displaced tracks
-# process.l1tTrackJetsEmulation.nStubs4DisplacedChi2=cms.double(5.0) #Displaced track quality flags for loose/tight
-# process.l1tTrackJetsEmulation.nStubs4DisplacedBend=cms.double(1.7)
-# process.l1tTrackJetsEmulation.nStubs5DisplacedChi2=cms.double(2.75)
-# process.l1tTrackJetsEmulation.nStubs5DisplacedBend=cms.double(3.5)
-# process.l1tTrackJetsEmulation.nDisplacedTracks=cms.int32(2) #Number of displaced tracks required per jet
-
 
 if options.debug:
     process.MessageLogger.cerr.INFO.limit = cms.untracked.int32(1000000000)
