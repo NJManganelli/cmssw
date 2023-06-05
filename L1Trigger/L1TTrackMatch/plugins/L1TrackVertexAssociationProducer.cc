@@ -76,6 +76,8 @@ public:
 
 private:
   // ----------constants, enums and typedefs ---------
+  // constant to limit number of output tracks to match firmware limit
+  const long unsigned int maxTVATracks = 94;
   // Relevant constants for the converted track word
   enum TrackBitWidths {
     kPtSize = TTTrack_TrackWord::TrackBitWidths::kRinvSize - 1,  // Width of pt
@@ -385,6 +387,16 @@ void L1TrackVertexAssociationProducer::produce(edm::StreamID, edm::Event& iEvent
         vTTTrackAssociatedOutput->push_back(trackword);
       }
     }
+    //truncate TVA tracks to the max supported in firmware
+    if( vTTTrackAssociatedOutput->size() > maxTVATracks){
+      if( debug_ >= 1 ){
+	edm::LogInfo log("L1TrackVertexAssociationProducer");
+	log << "Simulated Vertex Associated Tracks truncated (" << vTTTrackAssociatedOutput->size() << " --> " << maxTVATracks << ") tracks" << std::endl;
+      }
+      auto target = vTTTrackAssociatedOutput->begin() + maxTVATracks;
+      while(std::distance(target, vTTTrackAssociatedOutput->end()) > 0)
+	vTTTrackAssociatedOutput->erase(target);
+    }
     iEvent.put(std::move(vTTTrackAssociatedOutput), outputCollectionName_);
   }
   if (processEmulatedTracks_ && doDeltaZCutEmu_) {
@@ -402,6 +414,16 @@ void L1TrackVertexAssociationProducer::produce(edm::StreamID, edm::Event& iEvent
       if (deltaZSelEmu(*trackword, leadingEmulationVertex)) {
         vTTTrackAssociatedEmulationOutput->push_back(trackword);
       }
+    }
+    //truncate TVA tracks to the max supported in firmware
+    if( vTTTrackAssociatedEmulationOutput->size() > maxTVATracks){
+      if( debug_ >= 1 ){
+	edm::LogInfo log("L1TrackVertexAssociationProducer");
+	log << "Emulated Vertex Associated Tracks truncated (" << vTTTrackAssociatedEmulationOutput->size() << " --> " << maxTVATracks << ") tracks" << std::endl;
+      }
+      auto target = vTTTrackAssociatedEmulationOutput->begin() + maxTVATracks;
+      while(std::distance(target, vTTTrackAssociatedEmulationOutput->end()) > 0)
+	vTTTrackAssociatedEmulationOutput->erase(target);
     }
     iEvent.put(std::move(vTTTrackAssociatedEmulationOutput), outputCollectionName_ + "Emulation");
   }
