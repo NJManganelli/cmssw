@@ -28,6 +28,8 @@ namespace l1tmetemu {
   const unsigned int kGlobalPhiExtra{4};
   const unsigned int kCosLUTSize{10};
   const unsigned int kCosLUTMagSize{1};
+  const unsigned int kCosLUTTableSize{10};
+  const unsigned int kCosLUTShift{TTTrack_TrackWord::TrackBitWidths::kPhiSize - kCosLUTTableSize};
   const unsigned int kAtanLUTSize{64};
   const unsigned int kAtanLUTMagSize{2};
 
