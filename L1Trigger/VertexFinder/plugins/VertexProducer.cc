@@ -62,6 +62,7 @@ VertexProducer::VertexProducer(const edm::ParameterSet& iConfig)
   //--- Define EDM output to be written to file (if required)
   if (settings_.vx_algo() == Algorithm::fastHistoEmulation) {
     produces<l1t::VertexWordCollection>(outputCollectionName_ + "Emulation");
+    produces<l1t::GTVertexWordCollection>(outputCollectionName_ + "GTEmulation");
   } else {
     produces<l1t::VertexCollection>(outputCollectionName_);
   }
@@ -137,7 +138,10 @@ void VertexProducer::produce(edm::StreamID, edm::Event& iEvent, const edm::Event
   if (settings_.vx_algo() == Algorithm::fastHistoEmulation) {
     std::unique_ptr<l1t::VertexWordCollection> product_emulation =
         std::make_unique<l1t::VertexWordCollection>(vf.verticesEmulation().begin(), vf.verticesEmulation().end());
+    std::unique_ptr<l1t::GTVertexWordCollection> product_gt_emulation =
+        std::make_unique<l1t::GTVertexWordCollection>(vf.gtVerticesEmulation().begin(), vf.gtVerticesEmulation().end());
     iEvent.put(std::move(product_emulation), outputCollectionName_ + "Emulation");
+    iEvent.put(std::move(product_gt_emulation), outputCollectionName_ + "GTEmulation");
   } else {
     std::unique_ptr<l1t::VertexCollection> product(new std::vector<l1t::Vertex>());
     for (const auto& vtx : vf.vertices()) {
