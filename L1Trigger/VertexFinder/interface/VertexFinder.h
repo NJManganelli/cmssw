@@ -4,6 +4,7 @@
 #include "DataFormats/Common/interface/Ptr.h"
 #include "DataFormats/L1TrackTrigger/interface/TTTrack.h"
 #include "DataFormats/L1Trigger/interface/VertexWord.h"
+#include "DataFormats/L1Trigger/interface/GTVertexWord.h"
 #include "DataFormats/Math/interface/deltaPhi.h"
 #include "DataFormats/TrackerCommon/interface/TrackerTopology.h"
 #include "FWCore/MessageLogger/interface/MessageLogger.h"
@@ -75,6 +76,8 @@ namespace l1tVertexFinder {
     const std::vector<RecoVertex<>>& vertices() const { return vertices_; }
     /// Returns the emulation primary vertices
     const l1t::VertexWordCollection& verticesEmulation() const { return verticesEmulation_; }
+    /// Returns the emulation GT primary vertices
+    const l1t::GTVertexWordCollection& gtVerticesEmulation() const { return gtVerticesEmulation_; }
 
     /// Find the primary vertex
     void findPrimaryVertex();
@@ -143,6 +146,7 @@ namespace l1tVertexFinder {
     const AlgoSettings* settings_;
     RecoVertexCollection vertices_;
     l1t::VertexWordCollection verticesEmulation_;
+    l1t::GTVertexWordCollection gtVerticesEmulation_;
     unsigned int numMatchedVertices_;
     FitTrackCollection fitTracks_;
     unsigned int pv_index_;

@@ -575,6 +575,10 @@ namespace l1tVertexFinder {
           verticesEmulation_.begin(),
           verticesEmulation_.end(),
           [](const l1t::VertexWord& vertex0, const l1t::VertexWord& vertex1) { return (vertex0.pt() > vertex1.pt()); });
+      std::sort(
+          gtVerticesEmulation_.begin(),
+          gtVerticesEmulation_.end(),
+          [](const l1t::GTVertexWord& vertex0, const l1t::GTVertexWord& vertex1) { return (vertex0.pt() > vertex1.pt()); });
     } else {
       std::sort(vertices_.begin(), vertices_.end(), [](const RecoVertex<>& vertex0, const RecoVertex<>& vertex1) {
         return (vertex0.pt() > vertex1.pt());
@@ -588,6 +592,10 @@ namespace l1tVertexFinder {
           verticesEmulation_.begin(),
           verticesEmulation_.end(),
           [](const l1t::VertexWord& vertex0, const l1t::VertexWord& vertex1) { return (vertex0.z0() < vertex1.z0()); });
+      std::sort(
+          gtVerticesEmulation_.begin(),
+          gtVerticesEmulation_.end(),
+          [](const l1t::GTVertexWord& vertex0, const l1t::GTVertexWord& vertex1) { return (vertex0.z0() < vertex1.z0()); });
     } else {
       std::sort(vertices_.begin(), vertices_.end(), [](const RecoVertex<>& vertex0, const RecoVertex<>& vertex1) {
         return (vertex0.z0() < vertex1.z0());
@@ -904,6 +912,22 @@ namespace l1tVertexFinder {
       return l1t::VertexWord::vtxz0_t(z * zsliding_t(settings_->vx_histogram_binwidth()));
     };
 
+    auto gtvtx_bin_center = [&](zsliding_t iz, int nbins) -> l1t::GTVertexWord::vtxz0_t {
+      zsliding_t z = iz - histbin_t(std::floor(nbins / 2.));
+      std::unique_ptr<edm::LogInfo> log;
+      if (settings_->debug() >= 1) {
+        log = std::make_unique<edm::LogInfo>("VertexProducer");
+        *log << "gtvtx_bin_center information ...\n"
+             << "iz = " << iz << "\n"
+             << "histbin_t(std::floor(nbins / 2.)) = " << histbin_t(std::floor(nbins / 2.)) << "\n"
+             << "indx_to_gtvtxz0 = " << l1t::indx_to_gtvtxz0 << "\n"
+             << "z = " << z << "\n"
+             << "zsliding_t(z * zsliding_t(indx_to_gtvtxz0) ) = " << std::setprecision(7)
+             << l1t::GTVertexWord::vtxz0_t(z * zsliding_t(l1t::indx_to_gtvtxz0));
+      }
+      return l1t::GTVertexWord::vtxz0_t(z * zsliding_t(l1t::indx_to_gtvtxz0));
+    };
+
     auto weighted_position = [&](histbin_t b_max,
                                  const std::vector<link_pt_sum_fixed_t>& binpt,
                                  slidingsum_t maximums,
@@ -959,6 +983,63 @@ namespace l1tVertexFinder {
         log.reset();
       }
       return zvtx_sliding;
+    };
+
+    auto gtvtx_weighted_position = [&](histbin_t b_max,
+				       const std::vector<link_pt_sum_fixed_t>& binpt,
+				       slidingsum_t maximums,
+				       int nbins) -> zsliding_t {
+      zsliding_t zvtx_sliding = 0;
+      slidingsum_t zvtx_sliding_sum = 0;
+      inverse_t inv = 0;
+
+      std::unique_ptr<edm::LogInfo> log;
+      if (settings_->debug() >= 1) {
+        log = std::make_unique<edm::LogInfo>("VertexProducer");
+        *log << "Progression of gtvtx_weighted_position() ...\n"
+             << "zvtx_sliding_sum = ";
+      }
+
+      // Find the weighted position within the window in index space (width = 1)
+      for (ap_uint<BitsToRepresent(HistogramBitWidths::kWindowSize)> w = 0; w < HistogramBitWidths::kWindowSize; ++w) {
+        zvtx_sliding_sum += (binpt.at(w) * w);
+        if (settings_->debug() >= 1) {
+          *log << "(" << w << " * " << binpt.at(w) << ")";
+          if (w < HistogramBitWidths::kWindowSize - 1) {
+            *log << " + ";
+          }
+        }
+      }
+
+      if (settings_->debug() >= 1) {
+        *log << " = " << zvtx_sliding_sum << "\n";
+      }
+
+      if (maximums != 0) {
+        inv = inversion(maximums);
+        zvtx_sliding = zvtx_sliding_sum * inv;
+      } else {
+        zvtx_sliding = (settings_->vx_windowSize() / 2.0) + (((int(settings_->vx_windowSize()) % 2) != 0) ? 0.5 : 0.0);
+      }
+      if (settings_->debug() >= 1) {
+        *log << "inversion(" << maximums << ") = " << inv << "\nzvtx_sliding = " << zvtx_sliding << "\n";
+      }
+
+      // Add the starting index plus half an index to shift the z position to its weighted position (still in inxex space) within all of the bins
+      zvtx_sliding += b_max;
+      zvtx_sliding += ap_ufixed<1, 0>(0.5);
+      if (settings_->debug() >= 1) {
+        *log << "b_max = " << b_max << "\n";
+        *log << "zvtx_sliding + b_max + 0.5 = " << zvtx_sliding << "\n";
+      }
+
+      // Shift the z position from index space into z [cm] space
+      l1t::GTVertexWord::vtxz0_t ret_z0 = gtvtx_bin_center(zvtx_sliding, nbins);
+      if (settings_->debug() >= 1) {
+        *log << "gtvtx_bin_center(zvtx_sliding + b_max + 0.5, nbins) = " << std::setprecision(7) << ret_z0;
+        log.reset();
+      }
+      return ret_z0;
     };
 
     // Create the histogram
@@ -1054,6 +1135,7 @@ namespace l1tVertexFinder {
       histbin_t b_max = 0;
       window_pt_sum_fixed_t max_pt = 0;
       zsliding_t zvtx_sliding = -999;
+      l1t::GTVertexWord::vtxz0_t gtzvtx_sliding = - (1 << (l1t::GTVertexWord::VertexBitWidths::kZ0Size));
       std::vector<link_pt_sum_fixed_t> binpt_max(HistogramBitWidths::kWindowSize, 0);
 
       // Find the maxima of the sums
@@ -1070,6 +1152,7 @@ namespace l1tVertexFinder {
 
           // Find the weighted position only for the highest sum pt window
           zvtx_sliding = weighted_position(b_max, binpt_max, max_pt, nbins);
+	  gtzvtx_sliding = gtvtx_weighted_position(b_max, binpt_max, max_pt, nbins);
         }
       }
       if (settings_->debug() >= 1) {
@@ -1084,7 +1167,8 @@ namespace l1tVertexFinder {
             log, binpt_max, 80, 0, -1, "fastHistoEmulation::binpt_max", "\e[92m");
         log << "bin index (not a VertexWord parameter) = " << b_max << "\n"
             << "sumPt = " << max_pt.to_double() << "\n"
-            << "z0 = " << zvtx_sliding.to_double();
+            << "z0 = " << zvtx_sliding.to_double()
+	    << "GT z0 = " << gtzvtx_sliding.to_double();
       }
       found.push_back(b_max);
       verticesEmulation_.emplace_back(l1t::VertexWord::vtxvalid_t(1),
@@ -1094,6 +1178,14 @@ namespace l1tVertexFinder {
                                       l1t::VertexWord::vtxquality_t(0),
                                       l1t::VertexWord::vtxinversemult_t(0),
                                       l1t::VertexWord::vtxunassigned_t(0));
+
+      gtVerticesEmulation_.emplace_back(l1t::GTVertexWord::vtxvalid_t(1),
+					l1t::GTVertexWord::vtxz0_t(gtzvtx_sliding),
+					l1t::GTVertexWord::vtxmultiplicity_t(0),
+					l1t::GTVertexWord::vtxsumpt_t(max_pt),
+					l1t::GTVertexWord::vtxquality_t(0),
+					l1t::GTVertexWord::vtxinversemult_t(0),
+					l1t::GTVertexWord::vtxunassigned_t(0));
     }
     pv_index_ = 0;
   }  // end of fastHistoEmulation
