@@ -158,7 +158,8 @@
    <version ClassVersion="11" checksum="2391271061"/>
    <version ClassVersion="10" checksum="256436604"/>
   </class>
-  <class name="l1extra::L1ParticleMap" ClassVersion="11">
+  <class name="l1extra::L1ParticleMap" ClassVersion="12">
+   <version ClassVersion="12" checksum="3859701250"/>
    <version ClassVersion="11" checksum="3029280877"/>
    <field name="indexCombosState_" transient="true"/>
    <version ClassVersion="10" checksum="72905536"/>
@@ -303,6 +304,15 @@
   <class name="l1t::VertexWord::VertexRef"/>
   <class name="edm::Wrapper<l1t::VertexWordCollection>"/>
   <class name="edm::Ref<l1t::VertexWordCollection>" />
+
+  <class name="l1t::GTVertexWord" ClassVersion="-1">
+    <version ClassVersion="-1" checksum="2372552679"/>
+  </class>
+  <class name="std::vector<l1t::GTVertexWord>"/>
+  <class name="edm::Wrapper<std::vector<l1t::GTVertexWord> >"/>
+  <class name="l1t::GTVertexWord::VertexRef"/>
+  <class name="edm::Wrapper<l1t::GTVertexWordCollection>"/>
+  <class name="edm::Ref<l1t::GTVertexWordCollection>" />
 
   <class name="l1t::TkJetWord" ClassVersion="4">
     <version ClassVersion="4" checksum="2346039066"/>
