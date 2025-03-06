@@ -521,42 +521,6 @@ void L1SmartPixelsTrackProducer::produce(const edm::Event& iEvent, const edm::Ev
         edm::LogVerbatim("Tracklet") << "    (is combinatoric)";
     }
 
-    m_trk_pt->push_back(tmp_trk_pt);
-    m_trk_eta->push_back(tmp_trk_eta);
-    m_trk_phi->push_back(tmp_trk_phi);
-    m_trk_z0->push_back(tmp_trk_z0);
-    if (L1Tk_nPar == 5)
-      m_trk_d0->push_back(tmp_trk_d0);
-    else
-      m_trk_d0->push_back(999.);
-    m_trk_chi2->push_back(tmp_trk_chi2);
-    m_trk_chi2_dof->push_back(tmp_trk_chi2_dof);
-    m_trk_chi2rphi->push_back(tmp_trk_chi2rphi);
-    m_trk_chi2rphi_dof->push_back(tmp_trk_chi2rphi_dof);
-    m_trk_chi2rz->push_back(tmp_trk_chi2rz);
-    m_trk_chi2rz_dof->push_back(tmp_trk_chi2rz_dof);
-    m_trk_bendchi2->push_back(tmp_trk_bendchi2);
-    m_trk_MVA1->push_back(tmp_trk_MVA1);
-    m_trk_nstub->push_back(tmp_trk_nstub);
-    m_trk_dhits->push_back(tmp_trk_dhits);
-    m_trk_lhits->push_back(tmp_trk_lhits);
-    m_trk_seed->push_back(tmp_trk_seed);
-    m_trk_hitpattern->push_back(tmp_trk_hitpattern);
-    m_trk_lhits_hitpattern->push_back(tmp_trk_lhits_hitpattern);
-    m_trk_dhits_hitpattern->push_back(tmp_trk_dhits_hitpattern);
-    m_trk_nPSstub_hitpattern->push_back(tmp_trk_nPSstub_hitpattern);
-    m_trk_n2Sstub_hitpattern->push_back(tmp_trk_n2Sstub_hitpattern);
-    m_trk_nLostPSstub_hitpattern->push_back(tmp_trk_nLostPSstub_hitpattern);
-    m_trk_nLost2Sstub_hitpattern->push_back(tmp_trk_nLost2Sstub_hitpattern);
-    m_trk_nLoststub_V1_hitpattern->push_back(tmp_trk_nLoststub_V1_hitpattern);
-    m_trk_nLoststub_V2_hitpattern->push_back(tmp_trk_nLoststub_V2_hitpattern);
-    m_trk_phiSector->push_back(tmp_trk_phiSector);
-    m_trk_etaSector->push_back(tmp_trk_etaSector);
-    m_trk_genuine->push_back(tmp_trk_genuine);
-    m_trk_loose->push_back(tmp_trk_loose);
-    m_trk_unknown->push_back(tmp_trk_unknown);
-    m_trk_combinatoric->push_back(tmp_trk_combinatoric);
-
     // ----------------------------------------------------------------------------------------------
     // for studying the fake rate
     // ----------------------------------------------------------------------------------------------
@@ -627,14 +591,10 @@ void L1SmartPixelsTrackProducer::produce(const edm::Event& iEvent, const edm::Ev
       }
     }
 
-    m_trk_fake->push_back(myFake);
-    m_trk_matchtp_pdgid->push_back(tmp_matchtp_pdgid);
-    m_trk_matchtp_pt->push_back(tmp_matchtp_pt);
-    m_trk_matchtp_eta->push_back(tmp_matchtp_eta);
-    m_trk_matchtp_phi->push_back(tmp_matchtp_phi);
-    m_trk_matchtp_z0->push_back(tmp_matchtp_z0);
-    m_trk_matchtp_dxy->push_back(tmp_matchtp_dxy);
-    m_trk_matchtp_d0->push_back(tmp_matchtp_d0);
+
+    // ----------------------------------------------------------------------------------------------
+    // create new L1Tracks through one of the valid modes
+    // ----------------------------------------------------------------------------------------------
 
     if(smartPixelsEmulatorMode_ == "passthrough") {
       //add the track to the output collection
@@ -689,28 +649,41 @@ void L1SmartPixelsTrackProducer::produce(const edm::Event& iEvent, const edm::Ev
     else if(smartPixelsEmulatorMode_ == "trackingParticleTruth") {
       // replace the relevant track parameters with the tracking particle truth
       if (my_tp.isNull())
-        //if no tracking particle is matched to the track, just continue
-        continue;
+        //if no tracking particle is matched to the track, make no changes, i.e. passthroughFloat behavior
+        L1Track track = L1Track(iterL1Track->rInv(),
+        iterL1Track->phi(),
+        iterL1Track->tanL(),
+        iterL1Track->z0(),
+        iterL1Track->d0(),
+        iterL1Track->chi2XY(), //or chi2XYRed()
+        iterL1Track->chi2Z(), //or chi2ZRed()
+        iterL1Track->trkMVA1(),
+        iterL1Track->trkMVA2(),
+        iterL1Track->trkMVA3(),
+        iterL1Track->hitPattern(),
+        iterL1Track->theNumFitPars_, //or L1Tk_nPar,
+        iterL1Track->theBField_ //or 3.8
+        )
+        track.setTrackWordBits()
       else {
-        //TODO: replace the float parameters with truth values where possible
-        //tmp_matchtp_pdgid = my_tp->pdgId();
-        // --- double thePT = std::abs(MagConstant / theRInv_ * aBField / 100.0);  // Rinv is in cm-1
-        // --- theMomentum_ = GlobalVector(GlobalVector::Cylindrical(thePT, thePhi_, thePT * theTanL_));
-        // L1Track track = L1Track(iterL1Track->rInv(), //TODO: replace
-        //                         iterL1Track->phi(), //TODO: replace
-        //                         iterL1Track->tanL(), //TODO: replace
-        //                         iterL1Track->z0(),  //TODO: replace
-        //                         iterL1Track->d0(), //TODO: replace
-        //                         iterL1Track->chi2XY(), // Keep from original track?
-        //                         iterL1Track->chi2Z(), // Keep from original track?
-        //                         iterL1Track->trkMVA1(), // Keep from original track?
-        //                         iterL1Track->trkMVA2(), // Keep from original track?
-        //                         iterL1Track->trkMVA3(), // Keep from original track?
-        //                         iterL1Track->hitPattern(), // Keep from original track?
-        //                         iterL1Track->theNumFitPars_, // Keep from original track?
-        //                         iterL1Track->theBField_ //or 3.8
-        // )
-        // track.setTrackWordBits()
+        // double thePT = std::abs(MagConstant / theRInv_ * aBField / 100.0);  // Rinv is in cm-1
+        auto tmp_matcht_rInv = my_tp->charge() * L1Track::MagConstant * iterL1Track->theBField_ / (tmp_matchtp_pt * 100.0)
+        auto tmp_matchtp_tanL = my_tp->p4().pz() / tmp_matchtp_pt;
+        L1Track track = L1Track(tmp_matcht_rInv,
+                                tmp_matchtp_phi,
+                                tmp_matchtp_tanL, //TODO: replace
+                                tmp_matchtp_z0,
+                                tmp_matchtp_d0,
+                                iterL1Track->chi2XY(), // Keep from original track?
+                                iterL1Track->chi2Z(), // Keep from original track?
+                                iterL1Track->trkMVA1(), // Keep from original track?
+                                iterL1Track->trkMVA2(), // Keep from original track?
+                                iterL1Track->trkMVA3(), // Keep from original track?
+                                iterL1Track->hitPattern(), // Keep from original track?
+                                iterL1Track->theNumFitPars_, // Keep from original track?
+                                iterL1Track->theBField_ //or 3.8
+        )
+        track.setTrackWordBits()
       continue;
     }
     else if(smartPixelsEmulatorMode_ == "toyDetectorParameterized") {
