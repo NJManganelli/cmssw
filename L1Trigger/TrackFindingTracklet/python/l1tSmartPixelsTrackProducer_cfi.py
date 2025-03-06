@@ -12,11 +12,6 @@ l1tSmartPixelsTrackProducer = cms.EDAnalyzer('L1SmartPixelsTrackProducer',
     DebugMode = cms.bool(False),      # printout lots of debug statements
     L1Tk_nPar = cms.int32(4),         # use 4 or 5-parameter L1 tracking?
     L1Tk_minNStub = cms.int32(4),     # L1 tracks with >= 4 stubs
-    TP_minNStub = cms.int32(4),       # require TP to have >= X number of stubs associated with it
-    TP_minNStubLayer = cms.int32(4),  # require TP to have stubs in >= X layers/disks
-    TP_minPt = cms.double(1.9),       # only save TPs with pt > X GeV
-    TP_maxEta = cms.double(2.5),      # only save TPs with |eta| < X
-    TP_maxZ0 = cms.double(30.0),      # only save TPs with |z0| < X cm
     # 4Param Fit Tracks, HYBRID
     L1TrackInputTag = cms.InputTag("l1tTTTracksFromTrackletEmulation",  "Level1TTTracks"),         # TTTrack input
     MCTruthTrackInputTag = cms.InputTag( "TTTrackAssociatorFromPixelDigis",  "Level1TTTracks"),  # MCTruth input
