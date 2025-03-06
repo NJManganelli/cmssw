@@ -145,7 +145,6 @@ private:
 
   int MyProcess;       // 11/13/211 for single electrons/muons/pions, 6/15 for pions from ttbar/taus, 1 for inclusive
   bool DebugMode;      // lots of debug printout statements
-  bool SaveStubs;      // option to save also stubs in the ntuples (makes them large...)
   int L1Tk_nPar;       // use 4 or 5 parameter track fit?
   int TP_minNStub;  // require TPs to have >= minNStub (defining efficiency denominator) (==0 means to only require >= 1 cluster)
   int TP_minNStubLayer;  // require TPs to have stubs in >= minNStubLayer layers/disks (defining efficiency denominator)
@@ -153,8 +152,7 @@ private:
   double TP_maxEta;      // save TPs with |eta| < maxEta
   double TP_maxZ0;       // save TPs with |z0| < maxZ0
   int L1Tk_minNStub;     // require L1 tracks to have >= minNStub (this is mostly for tracklet purposes)
-
-  //bool TrackingInJets;  // do tracking in jets?
+  const std::string outputCollectionName_; // name of the output collection
 
   edm::InputTag L1TrackInputTag;       // L1 track collection
   edm::InputTag MCTruthTrackInputTag;  // MC truth collection
@@ -162,8 +160,6 @@ private:
   edm::InputTag L1StubInputTag;
   edm::InputTag MCTruthStubInputTag;
   edm::InputTag TrackingParticleInputTag;
-  //edm::InputTag TrackingVertexInputTag;
-  //edm::InputTag GenJetInputTag;
 
   edm::EDGetTokenT<edmNew::DetSetVector<TTCluster<Ref_Phase2TrackerDigi_> > > ttClusterToken_;
   edm::EDGetTokenT<edmNew::DetSetVector<TTStub<Ref_Phase2TrackerDigi_> > > ttStubToken_;
@@ -175,8 +171,6 @@ private:
 
   edm::EDGetTokenT<std::vector<TrackingParticle> > TrackingParticleToken_;
   edm::EDGetTokenT<std::vector<TrackingVertex> > TrackingVertexToken_;
-
-  //edm::EDGetTokenT<std::vector<reco::GenJet> > GenJetToken_;
 
   edm::ESGetToken<TrackerGeometry, TrackerDigiGeometryRecord> getTokenTrackerGeom_;
   edm::ESGetToken<TrackerTopology, TrackerTopologyRcd> getTokenTrackerTopo_;
@@ -195,7 +189,6 @@ private:
 L1SmartPixelsTrackProducer::L1SmartPixelsTrackProducer(edm::ParameterSet const& iConfig) : config(iConfig) {
   MyProcess = iConfig.getParameter<int>("MyProcess");
   DebugMode = iConfig.getParameter<bool>("DebugMode");
-  SaveStubs = iConfig.getParameter<bool>("SaveStubs");
   L1Tk_nPar = iConfig.getParameter<int>("L1Tk_nPar");
   TP_minNStub = iConfig.getParameter<int>("TP_minNStub");
   TP_minNStubLayer = iConfig.getParameter<int>("TP_minNStubLayer");
@@ -205,15 +198,12 @@ L1SmartPixelsTrackProducer::L1SmartPixelsTrackProducer(edm::ParameterSet const& 
   L1TrackInputTag = iConfig.getParameter<edm::InputTag>("L1TrackInputTag");
   MCTruthTrackInputTag = iConfig.getParameter<edm::InputTag>("MCTruthTrackInputTag");
   L1Tk_minNStub = iConfig.getParameter<int>("L1Tk_minNStub");
-
-  //TrackingInJets = iConfig.getParameter<bool>("TrackingInJets");
+  outputCollectionName_ = iConfig.getParameter<std::string>("outputCollectionName");
 
   L1StubInputTag = iConfig.getParameter<edm::InputTag>("L1StubInputTag");
   MCTruthClusterInputTag = iConfig.getParameter<edm::InputTag>("MCTruthClusterInputTag");
   MCTruthStubInputTag = iConfig.getParameter<edm::InputTag>("MCTruthStubInputTag");
   TrackingParticleInputTag = iConfig.getParameter<edm::InputTag>("TrackingParticleInputTag");
-  //TrackingVertexInputTag = iConfig.getParameter<edm::InputTag>("TrackingVertexInputTag");
-  //GenJetInputTag = iConfig.getParameter<edm::InputTag>("GenJetInputTag");
 
   ttTrackToken_ = consumes<std::vector<TTTrack<Ref_Phase2TrackerDigi_> > >(L1TrackInputTag);
   ttTrackMCTruthToken_ = consumes<TTTrackAssociationMap<Ref_Phase2TrackerDigi_> >(MCTruthTrackInputTag);
@@ -222,13 +212,13 @@ L1SmartPixelsTrackProducer::L1SmartPixelsTrackProducer(edm::ParameterSet const& 
   ttStubMCTruthToken_ = consumes<TTStubAssociationMap<Ref_Phase2TrackerDigi_> >(MCTruthStubInputTag);
 
   TrackingParticleToken_ = consumes<std::vector<TrackingParticle> >(TrackingParticleInputTag);
-  //TrackingVertexToken_ = consumes<std::vector<TrackingVertex> >(TrackingVertexInputTag);
-  //GenJetToken_ = consumes<std::vector<reco::GenJet> >(GenJetInputTag);
 
   getTokenTrackerGeom_ = esConsumes<TrackerGeometry, TrackerDigiGeometryRecord>();
   getTokenTrackerTopo_ = esConsumes<TrackerTopology, TrackerTopologyRcd>();
   getTokenBField_ = esConsumes<MagneticField, IdealMagneticFieldRecord>();
   getTokenHPHSetup_ = esConsumes<hph::Setup, hph::SetupRcd>();
+
+  produces<std::vector<TTTrack<Ref_Phase2TrackerDigi_>>>(outputCollectionName_);
 }
 
 // DESTRUCTOR
@@ -259,8 +249,7 @@ void L1SmartPixelsTrackProducer::produce(const edm::Event& iEvent, const edm::Ev
 
   // L1 stubs
   edm::Handle<edmNew::DetSetVector<TTStub<Ref_Phase2TrackerDigi_> > > TTStubHandle;
-  if (SaveStubs)
-    iEvent.getByToken(ttStubToken_, TTStubHandle);
+  iEvent.getByToken(ttStubToken_, TTStubHandle);
 
   // MC truth association maps
   edm::Handle<TTClusterAssociationMap<Ref_Phase2TrackerDigi_> > MCTruthTTClusterHandle;
@@ -294,95 +283,93 @@ void L1SmartPixelsTrackProducer::produce(const edm::Event& iEvent, const edm::Ev
   // loop over L1 stubs
   // ----------------------------------------------------------------------------------------------
 
-  if (SaveStubs) {
-    for (auto gd = theTrackerGeom->dets().begin(); gd != theTrackerGeom->dets().end(); gd++) {
-      DetId detid = (*gd)->geographicalId();
-      if (detid.subdetId() != StripSubdetector::TOB && detid.subdetId() != StripSubdetector::TID)
-        continue;
-      if (!tTopo->isLower(detid))
-        continue;                              // loop on the stacks: choose the lower arbitrarily
-      DetId stackDetid = tTopo->stack(detid);  // Stub module detid
+  for (auto gd = theTrackerGeom->dets().begin(); gd != theTrackerGeom->dets().end(); gd++) {
+    DetId detid = (*gd)->geographicalId();
+    if (detid.subdetId() != StripSubdetector::TOB && detid.subdetId() != StripSubdetector::TID)
+      continue;
+    if (!tTopo->isLower(detid))
+      continue;                              // loop on the stacks: choose the lower arbitrarily
+    DetId stackDetid = tTopo->stack(detid);  // Stub module detid
 
-      if (TTStubHandle->find(stackDetid) == TTStubHandle->end())
-        continue;
+    if (TTStubHandle->find(stackDetid) == TTStubHandle->end())
+      continue;
 
-      // Get the DetSets of the Clusters
-      edmNew::DetSet<TTStub<Ref_Phase2TrackerDigi_> > stubs = (*TTStubHandle)[stackDetid];
-      const GeomDetUnit* det0 = theTrackerGeom->idToDetUnit(detid);
-      const auto* theGeomDet = dynamic_cast<const PixelGeomDetUnit*>(det0);
-      const PixelTopology* topol = dynamic_cast<const PixelTopology*>(&(theGeomDet->specificTopology()));
+    // Get the DetSets of the Clusters
+    edmNew::DetSet<TTStub<Ref_Phase2TrackerDigi_> > stubs = (*TTStubHandle)[stackDetid];
+    const GeomDetUnit* det0 = theTrackerGeom->idToDetUnit(detid);
+    const auto* theGeomDet = dynamic_cast<const PixelGeomDetUnit*>(det0);
+    const PixelTopology* topol = dynamic_cast<const PixelTopology*>(&(theGeomDet->specificTopology()));
 
-      // loop over stubs
-      for (auto stubIter = stubs.begin(); stubIter != stubs.end(); ++stubIter) {
-        edm::Ref<edmNew::DetSetVector<TTStub<Ref_Phase2TrackerDigi_> >, TTStub<Ref_Phase2TrackerDigi_> > tempStubPtr =
-            edmNew::makeRefTo(TTStubHandle, stubIter);
+    // loop over stubs
+    for (auto stubIter = stubs.begin(); stubIter != stubs.end(); ++stubIter) {
+      edm::Ref<edmNew::DetSetVector<TTStub<Ref_Phase2TrackerDigi_> >, TTStub<Ref_Phase2TrackerDigi_> > tempStubPtr =
+          edmNew::makeRefTo(TTStubHandle, stubIter);
 
-        int isBarrel = 0;
-        int layer = -999999;
-        if (detid.subdetId() == StripSubdetector::TOB) {
-          isBarrel = 1;
-          layer = static_cast<int>(tTopo->layer(detid));
-        } else if (detid.subdetId() == StripSubdetector::TID) {
-          isBarrel = 0;
-          layer = static_cast<int>(tTopo->layer(detid));
-        } else {
-          edm::LogVerbatim("Tracklet") << "WARNING -- neither TOB or TID stub, shouldn't happen...";
-          layer = -1;
-        }
-
-        int isPSmodule = 0;
-        if (topol->nrows() == 960)
-          isPSmodule = 1;
-
-        const unsigned int tobSide = tTopo->tobSide(detid);  // nonBarrel = 0, tiltedMinus = 1, tiltedPlus = 2, flat = 3
-        int isTiltedBarrel = 0;
-        if (isBarrel == 1 && (tobSide == 1 || tobSide == 2))
-          isTiltedBarrel = 1;
-
-        MeasurementPoint coords = tempStubPtr->clusterRef(0)->findAverageLocalCoordinatesCentered();
-        LocalPoint clustlp = topol->localPosition(coords);
-        GlobalPoint posStub = theGeomDet->surface().toGlobal(clustlp);
-
-        double tmp_stub_x = posStub.x();
-        double tmp_stub_y = posStub.y();
-        double tmp_stub_z = posStub.z();
-
-        float trigDisplace = tempStubPtr->rawBend();
-        float trigOffset = tempStubPtr->bendOffset();
-        float trigPos = tempStubPtr->innerClusterPosition();
-        float trigBend = tempStubPtr->bendFE();
-
-        // matched to tracking particle?
-        edm::Ptr<TrackingParticle> my_tp = MCTruthTTStubHandle->findTrackingParticlePtr(tempStubPtr);
-
-        int myTP_pdgid = -999;
-        float myTP_pt = -999;
-        float myTP_eta = -999;
-        float myTP_phi = -999;
-
-        if (my_tp.isNull() == false) {
-          int tmp_eventid = my_tp->eventId().event();
-
-          if (tmp_eventid > 0)
-            continue;  // this means stub from pileup track
-
-          myTP_pdgid = my_tp->pdgId();
-          myTP_pt = my_tp->p4().pt();
-          myTP_eta = my_tp->p4().eta();
-          myTP_phi = my_tp->p4().phi();
-        }
-
-        m_allstub_matchTP_pdgid->push_back(myTP_pdgid);
-        m_allstub_matchTP_pt->push_back(myTP_pt);
-        m_allstub_matchTP_eta->push_back(myTP_eta);
-        m_allstub_matchTP_phi->push_back(myTP_phi);
-
-        int tmp_stub_genuine = 0;
-        if (MCTruthTTStubHandle->isGenuine(tempStubPtr))
-          tmp_stub_genuine = 1;
-
-        m_allstub_genuine->push_back(tmp_stub_genuine);
+      int isBarrel = 0;
+      int layer = -999999;
+      if (detid.subdetId() == StripSubdetector::TOB) {
+        isBarrel = 1;
+        layer = static_cast<int>(tTopo->layer(detid));
+      } else if (detid.subdetId() == StripSubdetector::TID) {
+        isBarrel = 0;
+        layer = static_cast<int>(tTopo->layer(detid));
+      } else {
+        edm::LogVerbatim("Tracklet") << "WARNING -- neither TOB or TID stub, shouldn't happen...";
+        layer = -1;
       }
+
+      int isPSmodule = 0;
+      if (topol->nrows() == 960)
+        isPSmodule = 1;
+
+      const unsigned int tobSide = tTopo->tobSide(detid);  // nonBarrel = 0, tiltedMinus = 1, tiltedPlus = 2, flat = 3
+      int isTiltedBarrel = 0;
+      if (isBarrel == 1 && (tobSide == 1 || tobSide == 2))
+        isTiltedBarrel = 1;
+
+      MeasurementPoint coords = tempStubPtr->clusterRef(0)->findAverageLocalCoordinatesCentered();
+      LocalPoint clustlp = topol->localPosition(coords);
+      GlobalPoint posStub = theGeomDet->surface().toGlobal(clustlp);
+
+      double tmp_stub_x = posStub.x();
+      double tmp_stub_y = posStub.y();
+      double tmp_stub_z = posStub.z();
+
+      float trigDisplace = tempStubPtr->rawBend();
+      float trigOffset = tempStubPtr->bendOffset();
+      float trigPos = tempStubPtr->innerClusterPosition();
+      float trigBend = tempStubPtr->bendFE();
+
+      // matched to tracking particle?
+      edm::Ptr<TrackingParticle> my_tp = MCTruthTTStubHandle->findTrackingParticlePtr(tempStubPtr);
+
+      int myTP_pdgid = -999;
+      float myTP_pt = -999;
+      float myTP_eta = -999;
+      float myTP_phi = -999;
+
+      if (my_tp.isNull() == false) {
+        int tmp_eventid = my_tp->eventId().event();
+
+        if (tmp_eventid > 0)
+          continue;  // this means stub from pileup track
+
+        myTP_pdgid = my_tp->pdgId();
+        myTP_pt = my_tp->p4().pt();
+        myTP_eta = my_tp->p4().eta();
+        myTP_phi = my_tp->p4().phi();
+      }
+
+      m_allstub_matchTP_pdgid->push_back(myTP_pdgid);
+      m_allstub_matchTP_pt->push_back(myTP_pt);
+      m_allstub_matchTP_eta->push_back(myTP_eta);
+      m_allstub_matchTP_phi->push_back(myTP_phi);
+
+      int tmp_stub_genuine = 0;
+      if (MCTruthTTStubHandle->isGenuine(tempStubPtr))
+        tmp_stub_genuine = 1;
+
+      m_allstub_genuine->push_back(tmp_stub_genuine);
     }
   }
 
@@ -650,6 +637,34 @@ void L1SmartPixelsTrackProducer::produce(const edm::Event& iEvent, const edm::Ev
     m_trk_matchtp_d0->push_back(tmp_matchtp_d0);
 
   }  //end track loop
+  //From GTTFileReader.cc
+  auto inputTracks = std::make_unique<TTTrackCollection>();
+  for (size_t i = 0; i < l1t::demo::gtt::kTrackTMUX; i++) {
+    auto iTracks = decodeTracks(inputEventData.at({"tracks", i}));
+    for (auto& trackword : iTracks) {
+      if (!trackword.getValidWord())
+        continue;
+      L1Track track = L1Track(trackword.getValidWord(),
+                              trackword.getRinvWord(),
+                              trackword.getPhiWord(),
+                              trackword.getTanlWord(),
+                              trackword.getZ0Word(),
+                              trackword.getD0Word(),
+                              trackword.getChi2RPhiWord(),
+                              trackword.getChi2RZWord(),
+                              trackword.getBendChi2Word(),
+                              trackword.getHitPatternWord(),
+                              trackword.getMVAQualityWord(),
+                              trackword.getMVAOtherWord());
+      //retrieve the eta (first) and phi (second) sectors for GTT, encoded in an std::pair
+      auto sectors = (l1t::demo::codecs::sectorsEtaPhiFromGTTLinkID(i));
+      track.setEtaSector(sectors.first);
+      track.setPhiSector(sectors.second);
+      track.trackWord_ = trackword.trackWord_;
+      inputTracks->push_back(track);
+    }  //end loop over trackwoards
+  }    // end loop over GTT input links
+  iEvent.put(std::move(inputTracks), l1TrackCollectionName_);
 
 
   // ----------------------------------------------------------------------------------------------
@@ -1023,20 +1038,7 @@ void L1SmartPixelsTrackProducer::produce(const edm::Event& iEvent, const edm::Ev
     m_matchtrk_chi2rz_dof->push_back(tmp_matchtrk_chi2rz_dof);
 
   }  //end loop tracking particles
-
-//   if (TrackingInJets) {
-//     for (int ij = 0; ij < (int)v_jets.size(); ij++) {
-//       if (ij < NJETS) {
-//         m_jet_eta->push_back((v_jets.at(ij)).eta());
-//         m_jet_phi->push_back((v_jets.at(ij)).phi());
-//         m_jet_pt->push_back((v_jets.at(ij)).pt());
-//         m_jet_tp_sumpt->push_back(jets_tp_sumpt[ij]);
-//         m_jet_trk_sumpt->push_back(jets_trk_sumpt[ij]);
-//         m_jet_matchtrk_sumpt->push_back(jets_matchtrk_sumpt[ij]);
-//       }
-//     }
-//   }
-// }  // end of produce()
+}  // end of produce()
 
 // FILLDESCRIPTIONS
 void L1SmartPixelsTrackProducer::fillDescriptions(edm::ConfigurationDescriptions& descriptions) {
