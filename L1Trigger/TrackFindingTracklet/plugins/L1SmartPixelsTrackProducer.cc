@@ -146,11 +146,6 @@ private:
   int MyProcess;       // 11/13/211 for single electrons/muons/pions, 6/15 for pions from ttbar/taus, 1 for inclusive
   bool DebugMode;      // lots of debug printout statements
   int L1Tk_nPar;       // use 4 or 5 parameter track fit?
-  int TP_minNStub;  // require TPs to have >= minNStub (defining efficiency denominator) (==0 means to only require >= 1 cluster)
-  int TP_minNStubLayer;  // require TPs to have stubs in >= minNStubLayer layers/disks (defining efficiency denominator)
-  double TP_minPt;       // save TPs with pt > minPt
-  double TP_maxEta;      // save TPs with |eta| < maxEta
-  double TP_maxZ0;       // save TPs with |z0| < maxZ0
   int L1Tk_minNStub;     // require L1 tracks to have >= minNStub (this is mostly for tracklet purposes)
   const std::string outputCollectionName_; // name of the output collection
 
@@ -190,11 +185,6 @@ L1SmartPixelsTrackProducer::L1SmartPixelsTrackProducer(edm::ParameterSet const& 
   MyProcess = iConfig.getParameter<int>("MyProcess");
   DebugMode = iConfig.getParameter<bool>("DebugMode");
   L1Tk_nPar = iConfig.getParameter<int>("L1Tk_nPar");
-  TP_minNStub = iConfig.getParameter<int>("TP_minNStub");
-  TP_minNStubLayer = iConfig.getParameter<int>("TP_minNStubLayer");
-  TP_minPt = iConfig.getParameter<double>("TP_minPt");
-  TP_maxEta = iConfig.getParameter<double>("TP_maxEta");
-  TP_maxZ0 = iConfig.getParameter<double>("TP_maxZ0");
   L1TrackInputTag = iConfig.getParameter<edm::InputTag>("L1TrackInputTag");
   MCTruthTrackInputTag = iConfig.getParameter<edm::InputTag>("MCTruthTrackInputTag");
   L1Tk_minNStub = iConfig.getParameter<int>("L1Tk_minNStub");
