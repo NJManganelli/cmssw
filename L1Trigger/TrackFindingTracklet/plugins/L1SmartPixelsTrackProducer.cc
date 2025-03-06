@@ -132,8 +132,8 @@ private:
   //   kEtaMagSize = 3,                                             // Width of eta magnitude (signed)
   // };
 
-  // typedef TTTrack<Ref_Phase2TrackerDigi_> L1Track;
-  // typedef std::vector<L1Track> TTTrackCollection;
+  typedef TTTrack<Ref_Phase2TrackerDigi_> L1Track;
+  typedef std::vector<L1Track> TTTrackCollection;
   // typedef edm::Handle<TTTrackCollection> TTTrackCollectionHandle;
   // typedef edm::Ref<TTTrackCollection> TTTrackRef;
   // typedef edm::RefVector<TTTrackCollection> TTTrackRefCollection;
@@ -166,7 +166,7 @@ private:
   edm::EDGetTokenT<TTClusterAssociationMap<Ref_Phase2TrackerDigi_> > ttClusterMCTruthToken_;
   edm::EDGetTokenT<TTStubAssociationMap<Ref_Phase2TrackerDigi_> > ttStubMCTruthToken_;
 
-  edm::EDGetTokenT<std::vector<TTTrack<Ref_Phase2TrackerDigi_> > > ttTrackToken_;
+  edm::EDGetTokenT<TTTrackCollection> ttTrackToken_;
   edm::EDGetTokenT<TTTrackAssociationMap<Ref_Phase2TrackerDigi_> > ttTrackMCTruthToken_;
 
   edm::EDGetTokenT<std::vector<TrackingParticle> > TrackingParticleToken_;
@@ -205,7 +205,7 @@ L1SmartPixelsTrackProducer::L1SmartPixelsTrackProducer(edm::ParameterSet const& 
   MCTruthStubInputTag = iConfig.getParameter<edm::InputTag>("MCTruthStubInputTag");
   TrackingParticleInputTag = iConfig.getParameter<edm::InputTag>("TrackingParticleInputTag");
 
-  ttTrackToken_ = consumes<std::vector<TTTrack<Ref_Phase2TrackerDigi_> > >(L1TrackInputTag);
+  ttTrackToken_ = consumes<TTTrackCollection>(L1TrackInputTag);
   ttTrackMCTruthToken_ = consumes<TTTrackAssociationMap<Ref_Phase2TrackerDigi_> >(MCTruthTrackInputTag);
   ttStubToken_ = consumes<edmNew::DetSetVector<TTStub<Ref_Phase2TrackerDigi_> > >(L1StubInputTag);
   ttClusterMCTruthToken_ = consumes<TTClusterAssociationMap<Ref_Phase2TrackerDigi_> >(MCTruthClusterInputTag);
@@ -218,7 +218,7 @@ L1SmartPixelsTrackProducer::L1SmartPixelsTrackProducer(edm::ParameterSet const& 
   getTokenBField_ = esConsumes<MagneticField, IdealMagneticFieldRecord>();
   getTokenHPHSetup_ = esConsumes<hph::Setup, hph::SetupRcd>();
 
-  produces<std::vector<TTTrack<Ref_Phase2TrackerDigi_>>>(outputCollectionName_);
+  produces<TTTrackCollection>(outputCollectionName_);
 }
 
 // DESTRUCTOR
@@ -244,7 +244,7 @@ void L1SmartPixelsTrackProducer::produce(const edm::Event& iEvent, const edm::Ev
   // -----------------------------------------------------------------------------------------------
 
   // L1 tracks
-  edm::Handle<std::vector<TTTrack<Ref_Phase2TrackerDigi_> > > TTTrackHandle;
+  edm::Handle<TTTrackCollection> TTTrackHandle;
   iEvent.getByToken(ttTrackToken_, TTTrackHandle);
 
   // L1 stubs
@@ -382,11 +382,12 @@ void L1SmartPixelsTrackProducer::produce(const edm::Event& iEvent, const edm::Ev
     edm::LogVerbatim("Tracklet") << "\n Loop over L1 tracks!";
     edm::LogVerbatim("Tracklet") << "\n Looking at " << L1Tk_nPar << "-parameter tracks!";
   }
-
+  //output collection
+  auto outputTracks = std::make_unique<TTTrackCollection>();
   int this_l1track = 0;
-  std::vector<TTTrack<Ref_Phase2TrackerDigi_> >::const_iterator iterL1Track;
+  TTTrackCollection::const_iterator iterL1Track;
   for (iterL1Track = TTTrackHandle->begin(); iterL1Track != TTTrackHandle->end(); iterL1Track++) {
-    edm::Ptr<TTTrack<Ref_Phase2TrackerDigi_> > l1track_ptr(TTTrackHandle, this_l1track);
+    edm::Ptr<L1Track > l1track_ptr(TTTrackHandle, this_l1track);
     this_l1track++;
 
     float tmp_trk_pt = iterL1Track->momentum().perp();
@@ -627,7 +628,6 @@ void L1SmartPixelsTrackProducer::produce(const edm::Event& iEvent, const edm::Ev
     }
 
     m_trk_fake->push_back(myFake);
-
     m_trk_matchtp_pdgid->push_back(tmp_matchtp_pdgid);
     m_trk_matchtp_pt->push_back(tmp_matchtp_pt);
     m_trk_matchtp_eta->push_back(tmp_matchtp_eta);
@@ -636,35 +636,68 @@ void L1SmartPixelsTrackProducer::produce(const edm::Event& iEvent, const edm::Ev
     m_trk_matchtp_dxy->push_back(tmp_matchtp_dxy);
     m_trk_matchtp_d0->push_back(tmp_matchtp_d0);
 
-  }  //end track loop
-  //From GTTFileReader.cc
-  auto inputTracks = std::make_unique<TTTrackCollection>();
-  for (size_t i = 0; i < l1t::demo::gtt::kTrackTMUX; i++) {
-    auto iTracks = decodeTracks(inputEventData.at({"tracks", i}));
-    for (auto& trackword : iTracks) {
-      if (!trackword.getValidWord())
-        continue;
+    if(smartPixelsEmulatorMode_ == "passthrough") {
+      //add the track to the output collection
+      outputTracks->push_back(*iterL1Track);
+    }
+    else if(smartPixelsEmulatorMode_ == "passthroughFloat") {
+      //emulate the track
+      //create a L1Track object from the TTTrack by using the hw value constructor and copying the trackWord private member
+      //this type of track might be vulnerable to having the method trackRef.setTrackWordBits() being called on it, which is supposed to set the trackword from float constructor values; this misses some important member variables though and will fail, so e.g. GTTInputProducer needs to have the flag "setTrackWordBits" set to false
+      //FIXME: change L1Track collection type
+      //From GTTFileReader.cc
       L1Track track = L1Track(trackword.getValidWord(),
-                              trackword.getRinvWord(),
-                              trackword.getPhiWord(),
-                              trackword.getTanlWord(),
-                              trackword.getZ0Word(),
-                              trackword.getD0Word(),
-                              trackword.getChi2RPhiWord(),
-                              trackword.getChi2RZWord(),
-                              trackword.getBendChi2Word(),
-                              trackword.getHitPatternWord(),
-                              trackword.getMVAQualityWord(),
-                              trackword.getMVAOtherWord());
-      //retrieve the eta (first) and phi (second) sectors for GTT, encoded in an std::pair
-      auto sectors = (l1t::demo::codecs::sectorsEtaPhiFromGTTLinkID(i));
-      track.setEtaSector(sectors.first);
-      track.setPhiSector(sectors.second);
-      track.trackWord_ = trackword.trackWord_;
-      inputTracks->push_back(track);
-    }  //end loop over trackwoards
-  }    // end loop over GTT input links
-  iEvent.put(std::move(inputTracks), l1TrackCollectionName_);
+                              iterL1Track->getRInv(),
+                              iterL1Track->getPhi0(),
+                              iterL1Track->getTanLambda(),
+                              iterL1Track->getZ0(),
+                              iterL1Track->getD0(),
+                              iterL1Track->getChi2(),
+                              iterL1Track->getChi2RPhi(),
+                              iterL1Track->getChi2RZ(),
+                              iterL1Track->getBendChi2(),
+                              iterL1Track->getHitPattern(),
+                              iterL1Track->getMVAQuality(),
+                              iterL1Track->getMVAOther()
+                            );
+      track.trackWord_ = iterL1Track->getTrackWord();
+      //add the track to the output collection
+      outputTracks->push_back(track);
+    }
+    else if(smartPixelsEmulatorMode_ == "passthroughHW") {
+      //emulate the track
+      //create a L1Track object from the TTTrack by using the hw value constructor and copying the trackWord private member
+      //this type of track might be vulnerable to having the method trackRef.setTrackWordBits() being called on it, which is supposed to set the trackword from float constructor values; this misses some important member variables though and will fail, so e.g. GTTInputProducer needs to have the flag "setTrackWordBits" set to false
+      //FIXME: change L1Track collection type
+      //From GTTFileReader.cc
+      L1Track track = L1Track(trackword.getValidWord(),
+                              iterL1Track->getRInv(),
+                              iterL1Track->getPhi0(),
+                              iterL1Track->getTanLambda(),
+                              iterL1Track->getZ0(),
+                              iterL1Track->getD0(),
+                              iterL1Track->getChi2(),
+                              iterL1Track->getChi2RPhi(),
+                              iterL1Track->getChi2RZ(),
+                              iterL1Track->getBendChi2(),
+                              iterL1Track->getHitPattern(),
+                              iterL1Track->getMVAQuality(),
+                              iterL1Track->getMVAOther()
+                            );
+      track.trackWord_ = iterL1Track->getTrackWord();
+      //add the track to the output collection
+      outputTracks->push_back(track);
+    }
+    else if(smartPixelsEmulatorMode_ == "trackingParticleTruth") {
+      // replace the relevant track parameters with the tracking particle truth
+      continue;
+    }
+    else if(smartPixelsEmulatorMode_ == "toyDetectorParameterized") {
+      // correct the track parameters towards the tracking particle truth level based on the parameterized toy detector
+      continue;
+    }
+  }  //end track loop
+  iEvent.put(std::move(outputTracks), outputCollectionName_);
 }  // end of produce()
 
 // FILLDESCRIPTIONS
