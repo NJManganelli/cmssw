@@ -694,21 +694,23 @@ void L1SmartPixelsTrackProducer::produce(const edm::Event& iEvent, const edm::Ev
       else {
         //TODO: replace the float parameters with truth values where possible
         //tmp_matchtp_pdgid = my_tp->pdgId();
-        // L1Track track = L1Track(trackword.getValidWord(),
-        //                         iterL1Track->getRInv(),
-        //                         iterL1Track->getPhi0(),
-        //                         iterL1Track->getTanLambda(),
-        //                         iterL1Track->getZ0(),
-        //                         iterL1Track->getD0(),
-        //                         iterL1Track->getChi2(),
-        //                         iterL1Track->getChi2RPhi(),
-        //                         iterL1Track->getChi2RZ(),
-        //                         iterL1Track->getBendChi2(),
-        //                         iterL1Track->getHitPattern(),
-        //                         iterL1Track->getMVAQuality(),
-        //                         iterL1Track->getMVAOther()
-        //                       );
-        // track.trackWord_ = iterL1Track->getTrackWord();
+        // --- double thePT = std::abs(MagConstant / theRInv_ * aBField / 100.0);  // Rinv is in cm-1
+        // --- theMomentum_ = GlobalVector(GlobalVector::Cylindrical(thePT, thePhi_, thePT * theTanL_));
+        // L1Track track = L1Track(iterL1Track->rInv(), //TODO: replace
+        //                         iterL1Track->phi(), //TODO: replace
+        //                         iterL1Track->tanL(), //TODO: replace
+        //                         iterL1Track->z0(),  //TODO: replace
+        //                         iterL1Track->d0(), //TODO: replace
+        //                         iterL1Track->chi2XY(), // Keep from original track?
+        //                         iterL1Track->chi2Z(), // Keep from original track?
+        //                         iterL1Track->trkMVA1(), // Keep from original track?
+        //                         iterL1Track->trkMVA2(), // Keep from original track?
+        //                         iterL1Track->trkMVA3(), // Keep from original track?
+        //                         iterL1Track->hitPattern(), // Keep from original track?
+        //                         iterL1Track->theNumFitPars_, // Keep from original track?
+        //                         iterL1Track->theBField_ //or 3.8
+        // )
+        // track.setTrackWordBits()
       continue;
     }
     else if(smartPixelsEmulatorMode_ == "toyDetectorParameterized") {
