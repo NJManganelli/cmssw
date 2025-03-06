@@ -642,33 +642,31 @@ void L1SmartPixelsTrackProducer::produce(const edm::Event& iEvent, const edm::Ev
     }
     else if(smartPixelsEmulatorMode_ == "passthroughFloat") {
       //emulate the track
-      //create a L1Track object from the TTTrack by using the hw value constructor and copying the trackWord private member
-      //this type of track might be vulnerable to having the method trackRef.setTrackWordBits() being called on it, which is supposed to set the trackword from float constructor values; this misses some important member variables though and will fail, so e.g. GTTInputProducer needs to have the flag "setTrackWordBits" set to false
-      //FIXME: change L1Track collection type
-      //From GTTFileReader.cc
-      L1Track track = L1Track(trackword.getValidWord(),
-                              iterL1Track->getRInv(),
-                              iterL1Track->getPhi0(),
-                              iterL1Track->getTanLambda(),
-                              iterL1Track->getZ0(),
-                              iterL1Track->getD0(),
-                              iterL1Track->getChi2(),
-                              iterL1Track->getChi2RPhi(),
-                              iterL1Track->getChi2RZ(),
-                              iterL1Track->getBendChi2(),
-                              iterL1Track->getHitPattern(),
-                              iterL1Track->getMVAQuality(),
-                              iterL1Track->getMVAOther()
-                            );
-      track.trackWord_ = iterL1Track->getTrackWord();
+      //create a L1Track object from the TTTrack by using the float value constructor of the L1Track class itself
+      L1Track track = L1Track(iterL1Track->rInv(),
+                              iterL1Track->phi(),
+                              iterL1Track->tanL(),
+                              iterL1Track->z0(),
+                              iterL1Track->d0(),
+                              iterL1Track->chi2XY(), //or chi2XYRed()
+                              iterL1Track->chi2Z(), //or chi2ZRed()
+                              iterL1Track->trkMVA1(),
+                              iterL1Track->trkMVA2(),
+                              iterL1Track->trkMVA3(),
+                              iterL1Track->hitPattern(),
+                              iterL1Track->theNumFitPars_, //or L1Tk_nPar,
+                              iterL1Track->theBField_ //or 3.8
+      )
+      track.setTrackWordBits()
       //add the track to the output collection
       outputTracks->push_back(track);
     }
     else if(smartPixelsEmulatorMode_ == "passthroughHW") {
       //emulate the track
-      //create a L1Track object from the TTTrack by using the hw value constructor and copying the trackWord private member
-      //this type of track might be vulnerable to having the method trackRef.setTrackWordBits() being called on it, which is supposed to set the trackword from float constructor values; this misses some important member variables though and will fail, so e.g. GTTInputProducer needs to have the flag "setTrackWordBits" set to false
-      //FIXME: change L1Track collection type
+      //create a L1Track object from the TTTrack by using the hw value constructor of the TrackWord parent class and copying the trackWord private member
+      //this type of track might be vulnerable to having the method trackRef.setTrackWordBits() being called on it, which is 
+      // supposed to set the trackword from float constructor values; this misses some important member variables though and 
+      // will fail, so e.g. GTTInputProducer needs to have the flag "setTrackWordBits" set to false
       //From GTTFileReader.cc
       L1Track track = L1Track(trackword.getValidWord(),
                               iterL1Track->getRInv(),
@@ -690,6 +688,27 @@ void L1SmartPixelsTrackProducer::produce(const edm::Event& iEvent, const edm::Ev
     }
     else if(smartPixelsEmulatorMode_ == "trackingParticleTruth") {
       // replace the relevant track parameters with the tracking particle truth
+      if (my_tp.isNull())
+        //if no tracking particle is matched to the track, just continue
+        continue;
+      else {
+        //TODO: replace the float parameters with truth values where possible
+        //tmp_matchtp_pdgid = my_tp->pdgId();
+        // L1Track track = L1Track(trackword.getValidWord(),
+        //                         iterL1Track->getRInv(),
+        //                         iterL1Track->getPhi0(),
+        //                         iterL1Track->getTanLambda(),
+        //                         iterL1Track->getZ0(),
+        //                         iterL1Track->getD0(),
+        //                         iterL1Track->getChi2(),
+        //                         iterL1Track->getChi2RPhi(),
+        //                         iterL1Track->getChi2RZ(),
+        //                         iterL1Track->getBendChi2(),
+        //                         iterL1Track->getHitPattern(),
+        //                         iterL1Track->getMVAQuality(),
+        //                         iterL1Track->getMVAOther()
+        //                       );
+        // track.trackWord_ = iterL1Track->getTrackWord();
       continue;
     }
     else if(smartPixelsEmulatorMode_ == "toyDetectorParameterized") {
