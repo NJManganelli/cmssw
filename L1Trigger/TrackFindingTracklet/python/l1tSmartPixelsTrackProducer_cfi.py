@@ -21,6 +21,7 @@ l1tSmartPixelsTrackProducer = cms.EDAnalyzer('L1SmartPixelsTrackProducer',
     MCTruthStubInputTag = cms.InputTag("TTStubAssociatorFromPixelDigis", "StubAccepted"),
     TrackingParticleInputTag = cms.InputTag("mix", "MergedTrackTruth"),
     outputCollectionName = cms.string("Level1TTTracksEmulation"),
+    smartPixelsEmulatorMode = cms.string("passthrough"),  # passthrough, passthroughFloat, passthroughHW, trackingParticleTruth
 )
 
 l1tSmartPixelsTrackProducerExtended = l1tSmartPixelsTrackProducer.clone(
