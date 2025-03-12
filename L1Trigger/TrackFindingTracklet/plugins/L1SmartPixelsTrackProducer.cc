@@ -116,7 +116,7 @@ public:
   static void fillDescriptions(edm::ConfigurationDescriptions& descriptions);
   // void beginJob() override;
   // void endJob() override;
-  void produce(edm::StreamID, edm::Event&, const edm::EventSetup&) const override;
+  void produce(const edm::Event&, const edm::EventSetup&) const;
   // void analyze(const edm::Event& iEvent, const edm::EventSetup& iSetup) override;
   // void beginRun(const Run& iEvent, const EventSetup& iSetup) override {}
   // void endRun(const Run& iEvent, const EventSetup& iSetup) override {}
@@ -147,7 +147,8 @@ private:
   bool DebugMode;      // lots of debug printout statements
   int L1Tk_nPar;       // use 4 or 5 parameter track fit?
   int L1Tk_minNStub;     // require L1 tracks to have >= minNStub (this is mostly for tracklet purposes)
-  const std::string outputCollectionName_; // name of the output collection
+  std::string outputCollectionName_; // name of the output collection
+  std::string smartPixelsEmulatorMode_; // mode of the emulator, e.g. passthrough, passthroughFloat, passthroughHW, trackingParticleTruth, ...
 
   edm::InputTag L1TrackInputTag;       // L1 track collection
   edm::InputTag MCTruthTrackInputTag;  // MC truth collection
@@ -189,6 +190,7 @@ L1SmartPixelsTrackProducer::L1SmartPixelsTrackProducer(edm::ParameterSet const& 
   MCTruthTrackInputTag = iConfig.getParameter<edm::InputTag>("MCTruthTrackInputTag");
   L1Tk_minNStub = iConfig.getParameter<int>("L1Tk_minNStub");
   outputCollectionName_ = iConfig.getParameter<std::string>("outputCollectionName");
+  smartPixelsEmulatorMode_ = iConfig.getParameter<std::string>("smartPixelsEmulatorMode");
 
   L1StubInputTag = iConfig.getParameter<edm::InputTag>("L1StubInputTag");
   MCTruthClusterInputTag = iConfig.getParameter<edm::InputTag>("MCTruthClusterInputTag");
@@ -215,7 +217,7 @@ L1SmartPixelsTrackProducer::L1SmartPixelsTrackProducer(edm::ParameterSet const& 
 L1SmartPixelsTrackProducer::~L1SmartPixelsTrackProducer() {}
 
 // PRODUCE
-void L1SmartPixelsTrackProducer::produce(const edm::Event& iEvent, const edm::EventSetup& iSetup) {
+void L1SmartPixelsTrackProducer::produce(const edm::Event& iEvent, const edm::EventSetup& iSetup) const {
 
   if (!(MyProcess == 13 || MyProcess == 11 || MyProcess == 211 || MyProcess == 6 || MyProcess == 15 ||
         MyProcess == 1)) {
@@ -308,6 +310,10 @@ void L1SmartPixelsTrackProducer::produce(const edm::Event& iEvent, const edm::Ev
         layer = -1;
       }
 
+      if (DebugMode) {
+        edm::LogVerbatim("Tracklet") << "\n Stubs: layer = " << layer << "\n";
+      }
+
       int isPSmodule = 0;
       if (topol->nrows() == 960)
         isPSmodule = 1;
@@ -316,6 +322,11 @@ void L1SmartPixelsTrackProducer::produce(const edm::Event& iEvent, const edm::Ev
       int isTiltedBarrel = 0;
       if (isBarrel == 1 && (tobSide == 1 || tobSide == 2))
         isTiltedBarrel = 1;
+
+      if (DebugMode) {
+        edm::LogVerbatim("Tracklet") << "\n Stubs: isPSmodule = " << isPSmodule
+                                      << " isTiltedBarrel = " << isTiltedBarrel << "\n";
+      }
 
       MeasurementPoint coords = tempStubPtr->clusterRef(0)->findAverageLocalCoordinatesCentered();
       LocalPoint clustlp = topol->localPosition(coords);
@@ -350,16 +361,14 @@ void L1SmartPixelsTrackProducer::produce(const edm::Event& iEvent, const edm::Ev
         myTP_phi = my_tp->p4().phi();
       }
 
-      m_allstub_matchTP_pdgid->push_back(myTP_pdgid);
-      m_allstub_matchTP_pt->push_back(myTP_pt);
-      m_allstub_matchTP_eta->push_back(myTP_eta);
-      m_allstub_matchTP_phi->push_back(myTP_phi);
-
       int tmp_stub_genuine = 0;
       if (MCTruthTTStubHandle->isGenuine(tempStubPtr))
         tmp_stub_genuine = 1;
 
-      m_allstub_genuine->push_back(tmp_stub_genuine);
+      if (DebugMode)
+      edm::LogVerbatim("Tracklet")
+        << "myTP (pdgId, pt, eta, phi): " << myTP_pdgid << " " << myTP_pt << " " << myTP_eta << " " << myTP_phi
+        << " isGenuine: " << tmp_stub_genuine;
     }
   }
 
@@ -604,10 +613,10 @@ void L1SmartPixelsTrackProducer::produce(const edm::Event& iEvent, const edm::Ev
                               iterL1Track->trkMVA2(),
                               iterL1Track->trkMVA3(),
                               iterL1Track->hitPattern(),
-                              iterL1Track->theNumFitPars_, //or L1Tk_nPar,
-                              iterL1Track->theBField_ //or 3.8
-      )
-      track.setTrackWordBits()
+                              iterL1Track->nFitPars(), //or L1Tk_nPar,
+                              3.8
+      );
+      track.setTrackWordBits();
       //add the track to the output collection
       outputTracks->push_back(track);
     }
@@ -618,46 +627,48 @@ void L1SmartPixelsTrackProducer::produce(const edm::Event& iEvent, const edm::Ev
       // supposed to set the trackword from float constructor values; this misses some important member variables though and 
       // will fail, so e.g. GTTInputProducer needs to have the flag "setTrackWordBits" set to false
       //From GTTFileReader.cc
-      L1Track track = L1Track(trackword.getValidWord(),
-                              iterL1Track->getRInv(),
-                              iterL1Track->getPhi0(),
-                              iterL1Track->getTanLambda(),
-                              iterL1Track->getZ0(),
-                              iterL1Track->getD0(),
-                              iterL1Track->getChi2(),
-                              iterL1Track->getChi2RPhi(),
-                              iterL1Track->getChi2RZ(),
-                              iterL1Track->getBendChi2(),
+      L1Track track = L1Track(track.getValidWord(),
+                              iterL1Track->getRinvBits(),
+                              iterL1Track->getPhiBits(),
+                              iterL1Track->getTanlBits(),
+                              iterL1Track->getZ0Bits(),
+                              iterL1Track->getD0Bits(),
+                              iterL1Track->getChi2RPhiBits(),
+                              iterL1Track->getChi2RZBits(),
+                              iterL1Track->getBendChi2Bits(),
                               iterL1Track->getHitPattern(),
                               iterL1Track->getMVAQuality(),
                               iterL1Track->getMVAOther()
                             );
-      track.trackWord_ = iterL1Track->getTrackWord();
+      track.trackWord_ = static_cast<TTTrack_TrackWord::tkword_bs_t>(iterL1Track->getTrackWord());
       //add the track to the output collection
       outputTracks->push_back(track);
     }
     else if(smartPixelsEmulatorMode_ == "trackingParticleTruth") {
       // replace the relevant track parameters with the tracking particle truth
-      if (my_tp.isNull())
+      if (my_tp.isNull()) {
         //if no tracking particle is matched to the track, make no changes, i.e. passthroughFloat behavior
         L1Track track = L1Track(iterL1Track->rInv(),
-        iterL1Track->phi(),
-        iterL1Track->tanL(),
-        iterL1Track->z0(),
-        iterL1Track->d0(),
-        iterL1Track->chi2XY(), //or chi2XYRed()
-        iterL1Track->chi2Z(), //or chi2ZRed()
-        iterL1Track->trkMVA1(),
-        iterL1Track->trkMVA2(),
-        iterL1Track->trkMVA3(),
-        iterL1Track->hitPattern(),
-        iterL1Track->theNumFitPars_, //or L1Tk_nPar,
-        iterL1Track->theBField_ //or 3.8
-        )
-        track.setTrackWordBits()
+                                iterL1Track->phi(),
+                                iterL1Track->tanL(),
+                                iterL1Track->z0(),
+                                iterL1Track->d0(),
+                                iterL1Track->chi2XY(), //or chi2XYRed()
+                                iterL1Track->chi2Z(), //or chi2ZRed()
+                                iterL1Track->trkMVA1(),
+                                iterL1Track->trkMVA2(),
+                                iterL1Track->trkMVA3(),
+                                iterL1Track->hitPattern(),
+                                iterL1Track->nFitPars(), //or L1Tk_nPar,
+                                3.8
+        );
+        track.setTrackWordBits();
+        //add the track to the output collection
+        outputTracks->push_back(track);
+      }
       else {
         // double thePT = std::abs(MagConstant / theRInv_ * aBField / 100.0);  // Rinv is in cm-1
-        auto tmp_matcht_rInv = my_tp->charge() * L1Track::MagConstant * iterL1Track->theBField_ / (tmp_matchtp_pt * 100.0)
+        auto tmp_matcht_rInv = my_tp->charge() * L1Track::MagConstant * 3.8 / (tmp_matchtp_pt * 100.0);
         auto tmp_matchtp_tanL = my_tp->p4().pz() / tmp_matchtp_pt;
         L1Track track = L1Track(tmp_matcht_rInv,
                                 tmp_matchtp_phi,
@@ -670,11 +681,13 @@ void L1SmartPixelsTrackProducer::produce(const edm::Event& iEvent, const edm::Ev
                                 iterL1Track->trkMVA2(), // Keep from original track?
                                 iterL1Track->trkMVA3(), // Keep from original track?
                                 iterL1Track->hitPattern(), // Keep from original track?
-                                iterL1Track->theNumFitPars_, // Keep from original track?
-                                iterL1Track->theBField_ //or 3.8
-        )
-        track.setTrackWordBits()
-      continue;
+                                iterL1Track->nFitPars(), // Keep from original track?
+                                3.8
+        );
+        track.setTrackWordBits();
+        //add the track to the output collection
+        outputTracks->push_back(track);
+      }
     }
     else if(smartPixelsEmulatorMode_ == "toyDetectorParameterized") {
       // correct the track parameters towards the tracking particle truth level based on the parameterized toy detector
