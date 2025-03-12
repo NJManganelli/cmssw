@@ -116,7 +116,8 @@ public:
   static void fillDescriptions(edm::ConfigurationDescriptions& descriptions);
   // void beginJob() override;
   // void endJob() override;
-  void produce(const edm::Event&, const edm::EventSetup&) const;
+  void produce(edm::StreamID, edm::Event&, const edm::EventSetup&) const;
+
   // void analyze(const edm::Event& iEvent, const edm::EventSetup& iSetup) override;
   // void beginRun(const Run& iEvent, const EventSetup& iSetup) override {}
   // void endRun(const Run& iEvent, const EventSetup& iSetup) override {}
@@ -217,7 +218,7 @@ L1SmartPixelsTrackProducer::L1SmartPixelsTrackProducer(edm::ParameterSet const& 
 L1SmartPixelsTrackProducer::~L1SmartPixelsTrackProducer() {}
 
 // PRODUCE
-void L1SmartPixelsTrackProducer::produce(const edm::Event& iEvent, const edm::EventSetup& iSetup) const {
+void L1SmartPixelsTrackProducer::produce(edm::StreamID, edm::Event& iEvent, const edm::EventSetup& iSetup) const {
 
   if (!(MyProcess == 13 || MyProcess == 11 || MyProcess == 211 || MyProcess == 6 || MyProcess == 15 ||
         MyProcess == 1)) {
