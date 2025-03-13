@@ -708,44 +708,19 @@ void L1SmartPixelsTrackProducer::produce(edm::StreamID, edm::Event& iEvent, cons
 
 // FILLDESCRIPTIONS
 void L1SmartPixelsTrackProducer::fillDescriptions(edm::ConfigurationDescriptions& descriptions) {
-  //L1SmartPixelsTrackProducer
-  //TODO: modify from L1TrackSelectionProducer.cc plugin
   edm::ParameterSetDescription desc;
-  desc.add<edm::InputTag>("l1TracksInputTag", edm::InputTag("TTTracksFromTrackletEmulation", "Level1TTTracks"));
-  desc.add<std::string>("outputCollectionName", "Level1TTTracksSelected");
-  {
-    edm::ParameterSetDescription descCutSet;
-    descCutSet.add<double>("ptMin", 2.0)->setComment("pt must be greater than this value, [GeV]");
-    descCutSet.add<double>("absEtaMax", 2.4)->setComment("absolute value of eta must be less than this value");
-    descCutSet.add<double>("absZ0Max", 15.0)->setComment("z0 must be less than this value, [cm]");
-    descCutSet.add<int>("nStubsMin", 4)->setComment("number of stubs must be greater than or equal to this value");
-    descCutSet.add<int>("nPSStubsMin", 0)
-        ->setComment("number of stubs in the PS Modules must be greater than or equal to this value");
-
-    descCutSet.add<double>("promptMVAMin", -1.0)->setComment("MVA must be greater than this value");
-    descCutSet.add<double>("reducedBendChi2Max", 2.25)->setComment("bend chi2 must be less than this value");
-    descCutSet.add<double>("reducedChi2RZMax", 5.0)->setComment("chi2rz/dof must be less than this value");
-    descCutSet.add<double>("reducedChi2RPhiMax", 20.0)->setComment("chi2rphi/dof must be less than this value");
-    descCutSet.add<double>("reducedChi2RZMaxNstub4", 999.9)
-        ->setComment("chi2rz/dof must be less than this value in nstub==4");
-    descCutSet.add<double>("reducedChi2RZMaxNstub5", 999.9)
-        ->setComment("chi2rz/dof must be less than this value in nstub>4");
-    descCutSet.add<double>("reducedChi2RPhiMaxNstub4", 999.9)
-        ->setComment("chi2rphi/dof must be less than this value in nstub==4");
-    descCutSet.add<double>("reducedChi2RPhiMaxNstub5", 999.9)
-        ->setComment("chi2rphi/dof must be less than this value in nstub>4");
-    descCutSet.add<double>("reducedBendChi2MaxNstub4", 999.9)
-        ->setComment("bend chi2 must be less than this value in nstub==4");
-    descCutSet.add<double>("reducedBendChi2MaxNstub5", 999.9)
-        ->setComment("bend chi2 must be less than this value in nstub>4");
-
-    desc.add<edm::ParameterSetDescription>("cutSet", descCutSet);
-  }
-  desc.add<bool>("processSimulatedTracks", true)
-      ->setComment("return selected tracks after cutting on the floating point values");
-  desc.add<bool>("processEmulatedTracks", true)
-      ->setComment("return selected tracks after cutting on the bitwise emulated values");
-  desc.add<int>("debug", 0)->setComment("Verbosity levels: 0, 1, 2, 3");
+  desc.add<int>("MyProcess", 1)->setComment("Process ID");
+  desc.add<bool>("DebugMode", false)->setComment("Printout lots of debug statements");
+  desc.add<int>("L1Tk_nPar", 4)->setComment("Use 4 or 5-parameter L1 tracking?");
+  desc.add<int>("L1Tk_minNStub", 4)->setComment("L1 tracks with >= 4 stubs");
+  desc.add<edm::InputTag>("L1TrackInputTag", edm::InputTag("l1tTTTracksFromTrackletEmulation", "Level1TTTracks"))->setComment("TTTrack input");
+  desc.add<edm::InputTag>("MCTruthTrackInputTag", edm::InputTag("TTTrackAssociatorFromPixelDigis",  "Level1TTTracks"))->setComment("MCTruth input");
+  desc.add<edm::InputTag>("L1StubInputTag", edm::InputTag("TTStubsFromPhase2TrackerDigis", "StubAccepted"));
+  desc.add<edm::InputTag>("MCTruthClusterInputTag", edm::InputTag("TTClusterAssociatorFromPixelDigis", "ClusterAccepted"));
+  desc.add<edm::InputTag>("MCTruthStubInputTag", edm::InputTag("TTStubAssociatorFromPixelDigis", "StubAccepted"));
+  desc.add<edm::InputTag>("TrackingParticleInputTag", edm::InputTag("mix", "MergedTrackTruth"));
+  desc.add<std::string>("outputCollectionName", "Level1TTTracksEmulation");
+  desc.add<std::string>("smartPixelsEmulatorMode", "passthrough")->setComment("passthrough, passthroughFloat, passthroughHW, trackingParticleTruth");
   descriptions.addWithDefaultLabel(desc);
 }
 ///////////////////////////
