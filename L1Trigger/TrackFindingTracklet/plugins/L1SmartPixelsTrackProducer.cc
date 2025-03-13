@@ -27,6 +27,7 @@
 #include "FWCore/Framework/interface/Event.h"
 #include "FWCore/Framework/interface/ESHandle.h"
 #include "FWCore/Framework/interface/EventSetup.h"
+#include "FWCore/Framework/interface/MakerMacros.h"
 #include "FWCore/MessageLogger/interface/MessageLogger.h"
 #include "FWCore/Utilities/interface/InputTag.h"
 #include "FWCore/ParameterSet/interface/ParameterSet.h"
@@ -132,6 +133,8 @@ private:
   //   kEtaSize = TTTrack_TrackWord::TrackBitWidths::kTanlSize,     // Width of eta
   //   kEtaMagSize = 3,                                             // Width of eta magnitude (signed)
   // };
+  static constexpr float MagConstant =
+      CLHEP::c_light / 1.0E3;  //constant is 0.299792458; who knew c_light was in mm/ns?
 
   typedef TTTrack<Ref_Phase2TrackerDigi_> L1Track;
   typedef std::vector<L1Track> TTTrackCollection;
@@ -222,12 +225,12 @@ void L1SmartPixelsTrackProducer::produce(edm::StreamID, edm::Event& iEvent, cons
 
   if (!(MyProcess == 13 || MyProcess == 11 || MyProcess == 211 || MyProcess == 6 || MyProcess == 15 ||
         MyProcess == 1)) {
-    edm::LogVerbatim("Tracklet") << "The specified MyProcess is invalid! Exiting...";
+    edm::LogVerbatim("SmartPixelsTrackProducer") << "The specified MyProcess is invalid! Exiting...";
     return;
   }
 
   if (!(L1Tk_nPar == 4 || L1Tk_nPar == 5)) {
-    edm::LogVerbatim("Tracklet") << "Invalid number of track parameters, specified L1Tk_nPar == " << L1Tk_nPar
+    edm::LogVerbatim("SmartPixelsTrackProducer") << "Invalid number of track parameters, specified L1Tk_nPar == " << L1Tk_nPar
                                  << " but only 4/5 are valid options! Exiting...";
     return;
   }
@@ -307,12 +310,12 @@ void L1SmartPixelsTrackProducer::produce(edm::StreamID, edm::Event& iEvent, cons
         isBarrel = 0;
         layer = static_cast<int>(tTopo->layer(detid));
       } else {
-        edm::LogVerbatim("Tracklet") << "WARNING -- neither TOB or TID stub, shouldn't happen...";
+        edm::LogVerbatim("SmartPixelsTrackProducer") << "WARNING -- neither TOB or TID stub, shouldn't happen...";
         layer = -1;
       }
 
       if (DebugMode) {
-        edm::LogVerbatim("Tracklet") << "\n Stubs: layer = " << layer << "\n";
+        edm::LogVerbatim("SmartPixelsTrackProducer") << "\n Stubs: layer = " << layer << "\n";
       }
 
       int isPSmodule = 0;
@@ -325,7 +328,7 @@ void L1SmartPixelsTrackProducer::produce(edm::StreamID, edm::Event& iEvent, cons
         isTiltedBarrel = 1;
 
       if (DebugMode) {
-        edm::LogVerbatim("Tracklet") << "\n Stubs: isPSmodule = " << isPSmodule
+        edm::LogVerbatim("SmartPixelsTrackProducer") << "\n Stubs: isPSmodule = " << isPSmodule
                                       << " isTiltedBarrel = " << isTiltedBarrel << "\n";
       }
 
@@ -367,7 +370,7 @@ void L1SmartPixelsTrackProducer::produce(edm::StreamID, edm::Event& iEvent, cons
         tmp_stub_genuine = 1;
 
       if (DebugMode)
-      edm::LogVerbatim("Tracklet")
+      edm::LogVerbatim("SmartPixelsTrackProducer")
         << "myTP (pdgId, pt, eta, phi): " << myTP_pdgid << " " << myTP_pt << " " << myTP_eta << " " << myTP_phi
         << " isGenuine: " << tmp_stub_genuine;
     }
@@ -379,8 +382,8 @@ void L1SmartPixelsTrackProducer::produce(edm::StreamID, edm::Event& iEvent, cons
   // ----------------------------------------------------------------------------------------------
 
   if (DebugMode) {
-    edm::LogVerbatim("Tracklet") << "\n Loop over L1 tracks!";
-    edm::LogVerbatim("Tracklet") << "\n Looking at " << L1Tk_nPar << "-parameter tracks!";
+    edm::LogVerbatim("SmartPixelsTrackProducer") << "\n Loop over L1 tracks!";
+    edm::LogVerbatim("SmartPixelsTrackProducer") << "\n Looking at " << L1Tk_nPar << "-parameter tracks!";
   }
   //output collection
   auto outputTracks = std::make_unique<TTTrackCollection>();
@@ -448,8 +451,7 @@ void L1SmartPixelsTrackProducer::produce(edm::StreamID, edm::Event& iEvent, cons
     float tmp_trk_chi2rphi_dof = (float)tmp_trk_chi2rphi / ndofrphi;
     float tmp_trk_chi2rz_dof = (float)tmp_trk_chi2rz / ndofrz;
 
-    int tmp_trk_seed = 0;
-    tmp_trk_seed = (int)iterL1Track->trackSeedType();
+    int tmp_trk_seed = (int)iterL1Track->trackSeedType();
 
     unsigned int tmp_trk_phiSector = iterL1Track->phiSector();
     int tmp_trk_etaSector = hph.etaSector();
@@ -479,13 +481,13 @@ void L1SmartPixelsTrackProducer::produce(edm::StreamID, edm::Event& iEvent, cons
         if (detIdStub.subdetId() == StripSubdetector::TOB) {
           layer = static_cast<int>(tTopo->layer(detIdStub));
           if (DebugMode)
-            edm::LogVerbatim("Tracklet")
+            edm::LogVerbatim("SmartPixelsTrackProducer")
                 << "   stub in layer " << layer << " at position x y z = " << x << " " << y << " " << z;
           tmp_trk_lhits += pow(10, layer - 1);
         } else if (detIdStub.subdetId() == StripSubdetector::TID) {
           layer = static_cast<int>(tTopo->layer(detIdStub));
           if (DebugMode)
-            edm::LogVerbatim("Tracklet")
+            edm::LogVerbatim("SmartPixelsTrackProducer")
                 << "   stub in disk " << layer << " at position x y z = " << x << " " << y << " " << z;
           tmp_trk_dhits += pow(10, layer - 1);
         }
@@ -508,17 +510,19 @@ void L1SmartPixelsTrackProducer::produce(edm::StreamID, edm::Event& iEvent, cons
       tmp_trk_combinatoric = 1;
 
     if (DebugMode) {
-      edm::LogVerbatim("Tracklet") << "L1 track,"
+      edm::LogVerbatim("SmartPixelsTrackProducer") << "L1 track,"
                                     << " pt: " << tmp_trk_pt << " eta: " << tmp_trk_eta << " phi: " << tmp_trk_phi
-                                    << " z0: " << tmp_trk_z0 << " chi2: " << tmp_trk_chi2
+                                    << " z0: " << tmp_trk_z0 << " d0: " << tmp_trk_d0 << " chi2: " << tmp_trk_chi2
                                     << " chi2rphi: " << tmp_trk_chi2rphi << " chi2rz: " << tmp_trk_chi2rz
                                     << " nstub: " << tmp_trk_nstub;
       if (tmp_trk_genuine)
-        edm::LogVerbatim("Tracklet") << "    (is genuine)";
+        edm::LogVerbatim("SmartPixelsTrackProducer") << "    (is genuine)";
+      if (tmp_trk_loose)
+        edm::LogVerbatim("SmartPixelsTrackProducer") << "    (is loose)";
       if (tmp_trk_unknown)
-        edm::LogVerbatim("Tracklet") << "    (is unknown)";
+        edm::LogVerbatim("SmartPixelsTrackProducer") << "    (is unknown)";
       if (tmp_trk_combinatoric)
-        edm::LogVerbatim("Tracklet") << "    (is combinatoric)";
+        edm::LogVerbatim("SmartPixelsTrackProducer") << "    (is combinatoric)";
     }
 
     // ----------------------------------------------------------------------------------------------
@@ -537,8 +541,12 @@ void L1SmartPixelsTrackProducer::produce(edm::StreamID, edm::Event& iEvent, cons
     float tmp_matchtp_dxy = -999;
     float tmp_matchtp_d0 = -999;
 
-    if (my_tp.isNull())
+    if (my_tp.isNull()) {
       myFake = 0;
+      if (DebugMode) {
+        edm::LogVerbatim("SmartPixelsTrackProducer") << "TP not matched to track: myFake = " << myFake << " pdgId = " << tmp_matchtp_pdgid;
+      }
+    }
     else {
       int tmp_eventid = my_tp->eventId().event();
 
@@ -584,7 +592,7 @@ void L1SmartPixelsTrackProducer::produce(edm::StreamID, edm::Event& iEvent, cons
       // ----------------------------------------------------------------------------------------------
 
       if (DebugMode) {
-        edm::LogVerbatim("Tracklet") << "TP matched to track has pt = " << my_tp->p4().pt()
+        edm::LogVerbatim("SmartPixelsTrackProducer") << "TP matched to track has pt = " << my_tp->p4().pt()
                                       << " eta = " << my_tp->momentum().eta() << " phi = " << my_tp->momentum().phi()
                                       << " z0 = " << my_tp->vertex().z() << " pdgid = " << my_tp->pdgId()
                                       << " dxy = " << tmp_matchtp_dxy;
@@ -669,7 +677,7 @@ void L1SmartPixelsTrackProducer::produce(edm::StreamID, edm::Event& iEvent, cons
       }
       else {
         // double thePT = std::abs(MagConstant / theRInv_ * aBField / 100.0);  // Rinv is in cm-1
-        auto tmp_matcht_rInv = my_tp->charge() * L1Track::MagConstant * 3.8 / (tmp_matchtp_pt * 100.0);
+        auto tmp_matcht_rInv = my_tp->charge() * MagConstant * 3.8 / (tmp_matchtp_pt * 100.0);
         auto tmp_matchtp_tanL = my_tp->p4().pz() / tmp_matchtp_pt;
         L1Track track = L1Track(tmp_matcht_rInv,
                                 tmp_matchtp_phi,
