@@ -1,6 +1,6 @@
 import FWCore.ParameterSet.Config as cms
 
-l1tSmartPixelsTrackProducer = cms.EDAnalyzer('L1SmartPixelsTrackProducer',
+l1tSmartPixelsTrackProducer = cms.EDProducer('L1SmartPixelsTrackProducer',
     # MyProcess is the (unsigned) PDGID corresponding to the process which is run
     # e.g. single electron/positron = 11
     #      single pion+/pion- = 211
