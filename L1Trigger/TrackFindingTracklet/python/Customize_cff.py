@@ -31,3 +31,101 @@ def reducedConfig(process):
 # configures pure tracklet algorithm (as opposed to Hybrid algorithm)
 def trackletConfig(process):
     process.l1tTTTracksFromTrackletEmulation.fitPatternFile = cms.FileInPath('L1Trigger/TrackFindingTracklet/data/fitpattern.txt') 
+
+def injectSmartPixelsTrackProducer(process, smartPixelsEmulatorMode="passthrough", skipModuleTypes=None, printProcessInfo=False):
+  if skipModuleTypes is None:
+    skipModuleTypes = ["L1SmartPixelsTrackProducer", "TTTrackAssociator_Phase2TrackerDigi_", "L1FPGATrackProducer"]
+  #print(help(cms.Process))
+  def print_helper(item):
+    if hasattr(item, "items"):
+      for key, value in item.items():
+        print("\t>>", key, "== ", value)
+    else:
+      print("\t==", item)
+
+  if printProcessInfo:
+    print("====Process Info====")
+    print("source_\n")
+    print_helper(process.source_())
+    print("schedule_\n")
+    print_helper(process.schedule_())
+    print("sequences_\n")
+    print_helper(process.sequences_())
+    print("paths_\n")
+    print_helper(process.paths_())
+    print("endpaths_\n")
+    print_helper(process.endpaths_())
+    print("producers_\n")
+    print_helper(process.producers_())
+    print("filters_\n")
+    print_helper(process.filters_())
+    print("analyzers_\n")
+    print_helper(process.analyzers_())
+
+  for modname, module in process.producers_().items():
+    if hasattr(module, '_TypedParameterizable__type') and module._TypedParameterizable__type in skipModuleTypes:
+      print("Skipping module type ", module._TypedParameterizable__type, " with module name ", modname)
+      continue
+    for param_name in module.parameterNames_():
+      param = getattr(module, param_name)
+      if isinstance(param, cms.InputTag):
+        if param.getModuleLabel() == "l1tTTTracksFromTracklet":
+          print("l1tTTTracksFromTracklet --> ", modname, param_name, param)
+        if param.getModuleLabel() == "l1tTTTracksFromExtendedTrack":
+          print("l1tTTTracksFromExtendedTracklet --> ", modname, param_name, param)
+        if param.getModuleLabel() == "l1tTTTracksFromTrackletEmulation":
+          print("module._TypedParameterizable__type --> ", module._TypedParameterizable__type)
+          print("l1tTTTracksFromTrackletEmulation --> ", modname, param_name, param)
+          setattr(module, param_name, cms.InputTag("l1tSmartPixelsTrackProducer", "Level1TTTracks"))
+          new_param = getattr(module, param_name)
+          print("                                 --> ", modname, param_name, new_param)
+        if param.getModuleLabel() == "l1tTTTracksFromExtendedTrackletEmulation":
+          print("l1tTTTracksFromExtendedTrackletEmulation --> ", modname, param_name, param)
+          setattr(module, param_name, cms.InputTag("l1tSmartPixelsTrackProducerExtended", "Level1TTTracks"))
+          new_param = getattr(module, param_name)
+          print("                                         --> ", modname, param_name, new_param)
+
+
+  # globalReplace(self, label, new) -> "Replace the item with label 'label' by object 'new' in the process and all sequences/paths/tasks"
+  #for label, module in process.producers_().items():
+  #  print(label, module)
+
+  # Ensure L1TrackTrigger is run
+  #process.load('Configuration.StandardSequences.L1TrackTrigger_cff')
+  #from L1Trigger.TrackTrigger.TrackTrigger_cff import *
+  #from SimTracker.TrackTriggerAssociation.TrackTriggerAssociator_cff import *
+  #from L1Trigger.TrackerDTC.ProducerED_cff import *
+  #from L1Trigger.TrackFindingTracklet.L1HybridEmulationTracks_cff import *
+
+  #L1TrackTrigger=cms.Sequence(TrackTriggerClustersStubs*TrackTriggerAssociatorClustersStubs*TrackerDTCProducer)
+
+
+  # We Indiana-Jones idol-swap the l1tTTTracksFromTrackletEmulation and our L1SmartPixelsTrackProducer
+  # Hahaha no we don't, we get the boulder instead, lets make an auto-scalpel instead...
+  #process.load('L1Trigger.TrackFindingTracklet.l1tTTTracksFromTrackletEmulation_cfi')
+  #process.l1tTTTracksFromTrackletEmulationOriginal = process.l1tTTTracksFromTrackletEmulation.clone()
+  #process.l1tTTTracksFromExtendedTrackletEmulationOriginal = process.l1tTTTracksFromExtendedTrackletEmulation.clone()
+
+  # this should stick to the original tracks, as we use these as input to l1tSmartPixelsTrackProducer/Extended
+  #process.load('SimTracker.TrackTriggerAssociation.TTTrackAssociation_cfi')
+  #process.TTTrackAssociatorFromPixelDigis.TTTracks = cms.VInputTag(cms.InputTag("l1tTTTracksFromTrackletEmulationOriginal", "Level1TTTracks"))
+  #process.TTTrackAssociatorFromPixelDigisExtended = process.TTTrackAssociatorFromPixelDigis.clone(
+  #    TTTracks = cms.VInputTag(cms.InputTag("l1tTTTracksFromExtendedTrackletEmulationOriginal", "Level1TTTracks") )
+  #)
+
+  process.load('L1Trigger.TrackFindingTracklet.l1tSmartPixelsTrackProducer_cfi')
+  #process.l1tTTTracksFromTrackletEmulation = process.l1tSmartPixelsTrackProducer.clone()
+  #process.l1tTTTracksFromTrackletEmulation.L1TrackInputTag = cms.InputTag("l1tTTTracksFromTrackletEmulationOriginal", "Level1TTTracks")
+  #process.l1tTTTracksFromExtendedTrackletEmulation = process.l1tSmartPixelsTrackProducerExtended.clone()
+  #process.l1tTTTracksFromExtendedTrackletEmulation.L1TrackInputTag = cms.InputTag("l1tTTTracksFromExtendedTrackletEmulationOriginal", "Level1TTTracks")
+  process.l1tSmartPixelsTrackProducer.smartPixelsEmulatorMode = cms.string(smartPixelsEmulatorMode)
+  process.l1tSmartPixelsTrackProducerExtended.smartPixelsEmulatorMode = cms.string(smartPixelsEmulatorMode)
+  process.l1tSmartPixelsTrackProducerTask = cms.Task(process.l1tSmartPixelsTrackProducer, process.l1tSmartPixelsTrackProducerExtended)
+  #process.l1tSmartPixelsTrackProducerPath = cms.Path(process.l1tSmartPixelsTrackProducerTask)
+
+  print("Associating L1SmartPixelsTrackProducer into the process")
+  #process.p.associate(process.l1tSmartPixelsTrackProducerTask)
+  for pathname, cmspath in process.paths_().items():
+    cmspath.associate(process.l1tSmartPixelsTrackProducerTask)
+
+  return process
