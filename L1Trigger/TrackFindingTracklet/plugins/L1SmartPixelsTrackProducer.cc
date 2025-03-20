@@ -256,10 +256,10 @@ void L1SmartPixelsTrackProducer::produce(edm::StreamID, edm::Event& iEvent, cons
   iEvent.getByToken(ttTrackMCTruthToken_, MCTruthTTTrackHandle);
 
   // tracking particles
-  edm::Handle<std::vector<TrackingParticle> > TrackingParticleHandle;
-  edm::Handle<std::vector<TrackingVertex> > TrackingVertexHandle;
-  iEvent.getByToken(TrackingParticleToken_, TrackingParticleHandle);
-  iEvent.getByToken(TrackingVertexToken_, TrackingVertexHandle);
+  //edm::Handle<std::vector<TrackingParticle> > TrackingParticleHandle;
+  //edm::Handle<std::vector<TrackingVertex> > TrackingVertexHandle;
+  //iEvent.getByToken(TrackingParticleToken_, TrackingParticleHandle);
+  //iEvent.getByToken(TrackingVertexToken_, TrackingVertexHandle);
 
   // -----------------------------------------------------------------------------------------------
   // more for TTStubs
@@ -603,7 +603,8 @@ void L1SmartPixelsTrackProducer::produce(edm::StreamID, edm::Event& iEvent, cons
     // ----------------------------------------------------------------------------------------------
     // create new L1Tracks through one of the valid modes
     // ----------------------------------------------------------------------------------------------
-
+    // Need all of https://github.com/cms-sw/cmssw/blob/b043e2f617238b96701cf4ffa10531133d1f3f7c/L1Trigger/TrackFindingTracklet/plugins/L1FPGATrackProducer.cc#L702-L764
+    // to be able to create a new L1Track object from the TTTrack object in a completely functional way
     if(smartPixelsEmulatorMode_ == "passthrough") {
       //add the track to the output collection
       outputTracks->push_back(*iterL1Track);
@@ -628,6 +629,83 @@ void L1SmartPixelsTrackProducer::produce(edm::StreamID, edm::Event& iEvent, cons
       track.setTrackWordBits();
       //add the track to the output collection
       outputTracks->push_back(track);
+
+      // target implementation
+      
+      // this is where we create the TTTrack object
+      double tmp_rinv = track.rinv(settings_);
+      double tmp_phi = track.phi0(settings_);
+      double tmp_tanL = track.tanL(settings_);
+      double tmp_z0 = track.z0(settings_);
+      double tmp_d0 = track.d0(settings_);
+      double tmp_chi2rphi = track.chisqrphi();
+      double tmp_chi2rz = track.chisqrz();
+      unsigned int tmp_hit = track.hitpattern();
+
+      TTTrack<Ref_Phase2TrackerDigi_> aTrack(tmp_rinv,
+                                            tmp_phi,
+                                            tmp_tanL,
+                                            tmp_z0,
+                                            tmp_d0,
+                                            tmp_chi2rphi,
+                                            tmp_chi2rz,
+                                            0,
+                                            0,
+                                            0,
+                                            tmp_hit,
+                                            settings_.nHelixPar(),
+                                            settings_.bfield());
+
+      unsigned int trksector = track.sector();
+      unsigned int trkseed = (unsigned int)abs(track.seed());
+
+      aTrack.setPhiSector(trksector);
+      aTrack.setTrackSeedType(trkseed);
+
+      const vector<trklet::L1TStub>& stubptrs = track.stubs();
+      vector<trklet::L1TStub> stubs;
+
+      stubs.reserve(stubptrs.size());
+      for (const auto& stubptr : stubptrs) {
+        stubs.push_back(stubptr);
+      }
+
+      int countStubs = 0;
+      stubMapType::const_iterator it;
+      stubIndexMapType::const_iterator itIndex;
+      for (const auto& itstubs : stubs) {
+        itIndex = stubIndexMap.find(itstubs.uniqueIndex());
+        if (itIndex != stubIndexMap.end()) {
+          aTrack.addStubRef(itIndex->second);
+          countStubs = countStubs + 1;
+        } else {
+          // could not find stub in stub map
+        }
+      }
+
+      // pt consistency
+      aTrack.setStubPtConsistency(
+          StubPtConsistency::getConsistency(aTrack, theTrackerGeom, tTopo, settings_.bfield(), settings_.nHelixPar()));
+
+      // set track word before TQ MVA calculated which uses track word variables
+      aTrack.setTrackWordBits();
+
+      if (trackQuality_) {
+        trackQualityModel_->setL1TrackQuality(aTrack);
+      }
+
+      //    hph::HitPatternHelper hph(setupHPH_, tmp_hit, tmp_tanL, tmp_z0);
+      //    if (trackQuality_) {
+      //      trackQualityModel_->setBonusFeatures(hph.bonusFeatures());
+      //    }
+
+      // set track word again to set MVA variable from TTTrack into track word
+      aTrack.setTrackWordBits();
+      // test track word
+      //aTrack.testTrackWordBits();
+
+      L1TkTracksForOutput->push_back(aTrack);
+  }
     }
     else if(smartPixelsEmulatorMode_ == "passthroughHW") {
       //emulate the track
@@ -703,6 +781,8 @@ void L1SmartPixelsTrackProducer::produce(edm::StreamID, edm::Event& iEvent, cons
       continue;
     }
   }  //end track loop
+  std::cout << "this_l1track counter = " << this_l1track << std::endl;
+  std::cout << "outputTracks->size() = " << outputTracks->size() << std::endl;
   iEvent.put(std::move(outputTracks), outputCollectionName_);
 }  // end of produce()
 
