@@ -626,86 +626,25 @@ void L1SmartPixelsTrackProducer::produce(edm::StreamID, edm::Event& iEvent, cons
                               iterL1Track->nFitPars(), //or L1Tk_nPar,
                               3.8
       );
-      track.setTrackWordBits();
-      //add the track to the output collection
-      outputTracks->push_back(track);
-
-      // target implementation
-      
-      // this is where we create the TTTrack object
-      double tmp_rinv = track.rinv(settings_);
-      double tmp_phi = track.phi0(settings_);
-      double tmp_tanL = track.tanL(settings_);
-      double tmp_z0 = track.z0(settings_);
-      double tmp_d0 = track.d0(settings_);
-      double tmp_chi2rphi = track.chisqrphi();
-      double tmp_chi2rz = track.chisqrz();
-      unsigned int tmp_hit = track.hitpattern();
-
-      TTTrack<Ref_Phase2TrackerDigi_> aTrack(tmp_rinv,
-                                            tmp_phi,
-                                            tmp_tanL,
-                                            tmp_z0,
-                                            tmp_d0,
-                                            tmp_chi2rphi,
-                                            tmp_chi2rz,
-                                            0,
-                                            0,
-                                            0,
-                                            tmp_hit,
-                                            settings_.nHelixPar(),
-                                            settings_.bfield());
-
-      unsigned int trksector = track.sector();
-      unsigned int trkseed = (unsigned int)abs(track.seed());
-
-      aTrack.setPhiSector(trksector);
-      aTrack.setTrackSeedType(trkseed);
-
-      const vector<trklet::L1TStub>& stubptrs = track.stubs();
-      vector<trklet::L1TStub> stubs;
-
-      stubs.reserve(stubptrs.size());
-      for (const auto& stubptr : stubptrs) {
-        stubs.push_back(stubptr);
-      }
-
-      int countStubs = 0;
-      stubMapType::const_iterator it;
-      stubIndexMapType::const_iterator itIndex;
-      for (const auto& itstubs : stubs) {
-        itIndex = stubIndexMap.find(itstubs.uniqueIndex());
-        if (itIndex != stubIndexMap.end()) {
-          aTrack.addStubRef(itIndex->second);
-          countStubs = countStubs + 1;
-        } else {
-          // could not find stub in stub map
-        }
-      }
-
+      track.setPhiSector(iterL1Track->phiSector());
+      track.setTrackSeedType(iterL1Track->trackSeedType());
+      track.setStubRefs(iterL1Track->getStubRefs());
       // pt consistency
-      aTrack.setStubPtConsistency(
-          StubPtConsistency::getConsistency(aTrack, theTrackerGeom, tTopo, settings_.bfield(), settings_.nHelixPar()));
+      /*track.setStubPtConsistency(
+        StubPtConsistency::getConsistency(track, theTrackerGeom, tTopo, settings_.bfield(), settings_.nHelixPar()));*/ //TOTEST w/ settings
+      track.setTrackWordBits();
 
-      // set track word before TQ MVA calculated which uses track word variables
-      aTrack.setTrackWordBits();
-
+      // redo track quality?
+      /*
       if (trackQuality_) {
         trackQualityModel_->setL1TrackQuality(aTrack);
       }
-
-      //    hph::HitPatternHelper hph(setupHPH_, tmp_hit, tmp_tanL, tmp_z0);
-      //    if (trackQuality_) {
-      //      trackQualityModel_->setBonusFeatures(hph.bonusFeatures());
-      //    }
-
       // set track word again to set MVA variable from TTTrack into track word
-      aTrack.setTrackWordBits();
-      // test track word
-      //aTrack.testTrackWordBits();
+      track.setTrackWordBits();
+      */
 
-      L1TkTracksForOutput->push_back(aTrack);
-  }
+      //add the track to the output collection
+      outputTracks->push_back(track);
     }
     else if(smartPixelsEmulatorMode_ == "passthroughHW") {
       //emulate the track
@@ -714,20 +653,40 @@ void L1SmartPixelsTrackProducer::produce(edm::StreamID, edm::Event& iEvent, cons
       // supposed to set the trackword from float constructor values; this misses some important member variables though and 
       // will fail, so e.g. GTTInputProducer needs to have the flag "setTrackWordBits" set to false
       //From GTTFileReader.cc
-      L1Track track = L1Track(track.getValidWord(),
-                              iterL1Track->getRinvBits(),
-                              iterL1Track->getPhiBits(),
-                              iterL1Track->getTanlBits(),
-                              iterL1Track->getZ0Bits(),
-                              iterL1Track->getD0Bits(),
-                              iterL1Track->getChi2RPhiBits(),
-                              iterL1Track->getChi2RZBits(),
-                              iterL1Track->getBendChi2Bits(),
-                              iterL1Track->getHitPattern(),
-                              iterL1Track->getMVAQuality(),
-                              iterL1Track->getMVAOther()
-                            );
+      L1Track track = L1Track(iterL1Track->rInv(),
+                              iterL1Track->phi(),
+                              iterL1Track->tanL(),
+                              iterL1Track->z0(),
+                              iterL1Track->d0(),
+                              iterL1Track->chi2XY(), //or chi2XYRed()
+                              iterL1Track->chi2Z(), //or chi2ZRed()
+                              iterL1Track->trkMVA1(),
+                              iterL1Track->trkMVA2(),
+                              iterL1Track->trkMVA3(),
+                              iterL1Track->hitPattern(),
+                              iterL1Track->nFitPars(), //or L1Tk_nPar,
+                              3.8
+      );
+      track.setPhiSector(iterL1Track->phiSector());
+      track.setTrackSeedType(iterL1Track->trackSeedType());
+      track.setStubRefs(iterL1Track->getStubRefs());
+      // pt consistency
+      /*track.setStubPtConsistency(
+        StubPtConsistency::getConsistency(track, theTrackerGeom, tTopo, settings_.bfield(), settings_.nHelixPar()));*/ //TOTEST w/ settings
+      track.setTrackWordBits();
+
+      // different from passthroughFloat we directly reset the trackWord_ member variable
       track.trackWord_ = static_cast<TTTrack_TrackWord::tkword_bs_t>(iterL1Track->getTrackWord());
+
+      // redo track quality?
+      /*
+      if (trackQuality_) {
+        trackQualityModel_->setL1TrackQuality(aTrack);
+      }
+      // set track word again to set MVA variable from TTTrack into track word
+      // Instead of setTrackWordBits(), directly update the track word...
+      */
+
       //add the track to the output collection
       outputTracks->push_back(track);
     }
@@ -749,6 +708,12 @@ void L1SmartPixelsTrackProducer::produce(edm::StreamID, edm::Event& iEvent, cons
                                 iterL1Track->nFitPars(), //or L1Tk_nPar,
                                 3.8
         );
+        track.setPhiSector(iterL1Track->phiSector());
+        track.setTrackSeedType(iterL1Track->trackSeedType());
+        track.setStubRefs(iterL1Track->getStubRefs());
+        // pt consistency
+        /*track.setStubPtConsistency(
+          StubPtConsistency::getConsistency(track, theTrackerGeom, tTopo, settings_.bfield(), settings_.nHelixPar()));*/ //TOTEST w/ settings
         track.setTrackWordBits();
         //add the track to the output collection
         outputTracks->push_back(track);
@@ -771,9 +736,18 @@ void L1SmartPixelsTrackProducer::produce(edm::StreamID, edm::Event& iEvent, cons
                                 iterL1Track->nFitPars(), // Keep from original track?
                                 3.8
         );
+        track.setPhiSector(iterL1Track->phiSector());
+        track.setTrackSeedType(iterL1Track->trackSeedType());
+        track.setStubRefs(iterL1Track->getStubRefs());
+        // pt consistency
+        /*track.setStubPtConsistency(
+          StubPtConsistency::getConsistency(track, theTrackerGeom, tTopo, settings_.bfield(), settings_.nHelixPar()));*/ //TOTEST w/ settings
         track.setTrackWordBits();
         //add the track to the output collection
         outputTracks->push_back(track);
+        std::cout << "track input pt: " << iterL1Track->momentum().perp() << " rInv: " << iterL1Track->rInv() << std::endl
+                  << "tp input pt: " << tmp_matchtp_pt << " rInv: " << tmp_matcht_rInv << std::endl
+                  << " track output pt: " << track.momentum().perp() << " rInv: " << track.rInv() << std::endl;
       }
     }
     else if(smartPixelsEmulatorMode_ == "toyDetectorParameterized") {
