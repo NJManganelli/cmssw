@@ -56,8 +56,8 @@
 
 ////////////////////////////
 // DETECTOR GEOMETRY HEADERS
-// #include "MagneticField/Engine/interface/MagneticField.h"
-// #include "MagneticField/Records/interface/IdealMagneticFieldRecord.h"
+#include "MagneticField/Engine/interface/MagneticField.h"
+#include "MagneticField/Records/interface/IdealMagneticFieldRecord.h"
 // #include "Geometry/TrackerGeometryBuilder/interface/TrackerGeometry.h"
 // #include "Geometry/Records/interface/TrackerDigiGeometryRecord.h"
 // #include "Geometry/TrackerGeometryBuilder/interface/RectangularPixelTopology.h"
@@ -74,6 +74,8 @@
 #include "L1Trigger/TrackFindingTracklet/interface/HitPatternHelper.h"
 // #include "CommonTools/UtilAlgos/interface/TFileService.h"
 #include "CLHEP/Units/PhysicalConstants.h"
+#include "L1Trigger/TrackTrigger/interface/StubPtConsistency.h"
+#include "L1Trigger/TrackTrigger/interface/L1TrackQuality.h"
 
 ///////////////
 // ROOT HEADERS
@@ -149,7 +151,6 @@ private:
 
   int MyProcess;       // 11/13/211 for single electrons/muons/pions, 6/15 for pions from ttbar/taus, 1 for inclusive
   bool DebugMode;      // lots of debug printout statements
-  int L1Tk_nPar;       // use 4 or 5 parameter track fit?
   int L1Tk_minNStub;     // require L1 tracks to have >= minNStub (this is mostly for tracklet purposes)
   std::string outputCollectionName_; // name of the output collection
   std::string smartPixelsEmulatorMode_; // mode of the emulator, e.g. passthrough, passthroughFloat, passthroughHW, trackingParticleTruth, ...
@@ -189,7 +190,6 @@ private:
 L1SmartPixelsTrackProducer::L1SmartPixelsTrackProducer(edm::ParameterSet const& iConfig) : config(iConfig) {
   MyProcess = iConfig.getParameter<int>("MyProcess");
   DebugMode = iConfig.getParameter<bool>("DebugMode");
-  L1Tk_nPar = iConfig.getParameter<int>("L1Tk_nPar");
   L1TrackInputTag = iConfig.getParameter<edm::InputTag>("L1TrackInputTag");
   MCTruthTrackInputTag = iConfig.getParameter<edm::InputTag>("MCTruthTrackInputTag");
   L1Tk_minNStub = iConfig.getParameter<int>("L1Tk_minNStub");
@@ -229,12 +229,6 @@ void L1SmartPixelsTrackProducer::produce(edm::StreamID, edm::Event& iEvent, cons
     return;
   }
 
-  if (!(L1Tk_nPar == 4 || L1Tk_nPar == 5)) {
-    edm::LogVerbatim("SmartPixelsTrackProducer") << "Invalid number of track parameters, specified L1Tk_nPar == " << L1Tk_nPar
-                                 << " but only 4/5 are valid options! Exiting...";
-    return;
-  }
-
   // -----------------------------------------------------------------------------------------------
   // retrieve various containers
   // -----------------------------------------------------------------------------------------------
@@ -268,6 +262,7 @@ void L1SmartPixelsTrackProducer::produce(edm::StreamID, edm::Event& iEvent, cons
   edm::ESHandle<TrackerTopology> tTopoHandle = iSetup.getHandle(getTokenTrackerTopo_);
 
   edm::ESHandle<MagneticField> bFieldHandle = iSetup.getHandle(getTokenBField_);
+  float b_field = bFieldHandle.product()->inTesla(GlobalPoint(0, 0, 0)).z();
 
   edm::ESHandle<hph::Setup> hphHandle = iSetup.getHandle(getTokenHPHSetup_);
 
@@ -383,7 +378,6 @@ void L1SmartPixelsTrackProducer::produce(edm::StreamID, edm::Event& iEvent, cons
 
   if (DebugMode) {
     edm::LogVerbatim("SmartPixelsTrackProducer") << "\n Loop over L1 tracks!";
-    edm::LogVerbatim("SmartPixelsTrackProducer") << "\n Looking at " << L1Tk_nPar << "-parameter tracks!";
   }
   //output collection
   auto outputTracks = std::make_unique<TTTrackCollection>();
@@ -429,7 +423,7 @@ void L1SmartPixelsTrackProducer::produce(edm::StreamID, edm::Event& iEvent, cons
     int tmp_trk_nLoststub_V2_hitpattern = hph.numMissingInterior2();
 
     float tmp_trk_d0 = -999;
-    if (L1Tk_nPar == 5) {
+    if (iterL1Track->nFitPars() == 5) {
       float tmp_trk_x0 = iterL1Track->POCA().x();
       float tmp_trk_y0 = iterL1Track->POCA().y();
       tmp_trk_d0 = tmp_trk_x0 * sin(tmp_trk_phi) - tmp_trk_y0 * cos(tmp_trk_phi);
@@ -444,8 +438,8 @@ void L1SmartPixelsTrackProducer::produce(edm::StreamID, edm::Event& iEvent, cons
     std::vector<edm::Ref<edmNew::DetSetVector<TTStub<Ref_Phase2TrackerDigi_> >, TTStub<Ref_Phase2TrackerDigi_> > >
         stubRefs = iterL1Track->getStubRefs();
     int tmp_trk_nstub = (int)stubRefs.size();
-    int ndof = 2 * tmp_trk_nstub - L1Tk_nPar;
-    int ndofrphi = tmp_trk_nstub - L1Tk_nPar + 2;
+    int ndof = 2 * tmp_trk_nstub - iterL1Track->nFitPars();
+    int ndofrphi = tmp_trk_nstub - iterL1Track->nFitPars() + 2;
     int ndofrz = tmp_trk_nstub - 2;
     float tmp_trk_chi2_dof = (float)tmp_trk_chi2 / ndof;
     float tmp_trk_chi2rphi_dof = (float)tmp_trk_chi2rphi / ndofrphi;
@@ -573,7 +567,6 @@ void L1SmartPixelsTrackProducer::produce(edm::StreamID, edm::Event& iEvent, cons
       float delx = -tmp_matchtp_vx;
       float dely = -tmp_matchtp_vy;
 
-      float b_field = bFieldHandle.product()->inTesla(GlobalPoint(0, 0, 0)).z();
       float c_converted = CLHEP::c_light / 1.0E5;
       float r2_inv = my_tp->charge() * c_converted * b_field / tmp_matchtp_pt / 2.0;
 
@@ -623,8 +616,8 @@ void L1SmartPixelsTrackProducer::produce(edm::StreamID, edm::Event& iEvent, cons
                               iterL1Track->trkMVA2(),
                               iterL1Track->trkMVA3(),
                               iterL1Track->hitPattern(),
-                              iterL1Track->nFitPars(), //or L1Tk_nPar,
-                              3.8
+                              iterL1Track->nFitPars(),
+                              b_field
       );
       track.setPhiSector(iterL1Track->phiSector());
       track.setTrackSeedType(iterL1Track->trackSeedType());
@@ -664,8 +657,8 @@ void L1SmartPixelsTrackProducer::produce(edm::StreamID, edm::Event& iEvent, cons
                               iterL1Track->trkMVA2(),
                               iterL1Track->trkMVA3(),
                               iterL1Track->hitPattern(),
-                              iterL1Track->nFitPars(), //or L1Tk_nPar,
-                              3.8
+                              iterL1Track->nFitPars(),
+                              b_field
       );
       track.setPhiSector(iterL1Track->phiSector());
       track.setTrackSeedType(iterL1Track->trackSeedType());
@@ -692,7 +685,9 @@ void L1SmartPixelsTrackProducer::produce(edm::StreamID, edm::Event& iEvent, cons
     }
     else if(smartPixelsEmulatorMode_ == "trackingParticleTruth") {
       // replace the relevant track parameters with the tracking particle truth
-      if (my_tp.isNull()) {
+      // NOTE: L1 Tracks should be valid only above 2GeV; the spec permits forming tracks below this, but around 1.9GeV there's conversion failures picked up 
+      // by GTTInputProducer, so we should avoid altering any such tracks and leave them as-is. Physics wise there should be no impact, only tracks above 2GeV should be used
+      if (my_tp.isNull() || (!my_tp.isNull() && my_tp->pt() <= 1.95)) {
         //if no tracking particle is matched to the track, make no changes, i.e. passthroughFloat behavior
         L1Track track = L1Track(iterL1Track->rInv(),
                                 iterL1Track->phi(),
@@ -705,8 +700,8 @@ void L1SmartPixelsTrackProducer::produce(edm::StreamID, edm::Event& iEvent, cons
                                 iterL1Track->trkMVA2(),
                                 iterL1Track->trkMVA3(),
                                 iterL1Track->hitPattern(),
-                                iterL1Track->nFitPars(), //or L1Tk_nPar,
-                                3.8
+                                iterL1Track->nFitPars(),
+                                b_field
         );
         track.setPhiSector(iterL1Track->phiSector());
         track.setTrackSeedType(iterL1Track->trackSeedType());
@@ -720,7 +715,7 @@ void L1SmartPixelsTrackProducer::produce(edm::StreamID, edm::Event& iEvent, cons
       }
       else {
         // double thePT = std::abs(MagConstant / theRInv_ * aBField / 100.0);  // Rinv is in cm-1
-        auto tmp_matcht_rInv = my_tp->charge() * MagConstant * 3.8 / (tmp_matchtp_pt * 100.0);
+        auto tmp_matcht_rInv = my_tp->charge() * MagConstant * b_field / (tmp_matchtp_pt * 100.0);
         auto tmp_matchtp_tanL = my_tp->p4().pz() / tmp_matchtp_pt;
         L1Track track = L1Track(tmp_matcht_rInv,
                                 tmp_matchtp_phi,
@@ -734,20 +729,31 @@ void L1SmartPixelsTrackProducer::produce(edm::StreamID, edm::Event& iEvent, cons
                                 iterL1Track->trkMVA3(), // Keep from original track?
                                 iterL1Track->hitPattern(), // Keep from original track?
                                 iterL1Track->nFitPars(), // Keep from original track?
-                                3.8
+                                b_field
         );
         track.setPhiSector(iterL1Track->phiSector());
+        track.setEtaSector(iterL1Track->etaSector());
         track.setTrackSeedType(iterL1Track->trackSeedType());
         track.setStubRefs(iterL1Track->getStubRefs());
         // pt consistency
-        /*track.setStubPtConsistency(
-          StubPtConsistency::getConsistency(track, theTrackerGeom, tTopo, settings_.bfield(), settings_.nHelixPar()));*/ //TOTEST w/ settings
+        track.setChi2BendRed(
+          StubPtConsistency::getConsistency(track, theTrackerGeom, tTopo, b_field, iterL1Track->nFitPars()));
         track.setTrackWordBits();
+        //auto oldChi2Bend = iterL1Track->stubPtConsistency();
+        //auto newChi2Bend = track.stubPtConsistency();
+        //std::cout << "change bendChi2 % " << ((newChi2Bend - oldChi2Bend) / oldChi2Bend) << std::endl;
+        /* bchi2 = pd.read_csv("change_bendchi2.txt")
+        bchi2 = bchi2.tp_bendch2_minus_oldchi2_dividedby_oldchi2
+        np.min(bchi2), np.max(bchi2), np.mean(bchi2), np.std(bchi2)
+        (np.float64(-0.945288), np.float64(7.85453), np.float64(0.01088359448426543), np.float64(0.2033839357486676)) */
         //add the track to the output collection
         outputTracks->push_back(track);
-        std::cout << "track input pt: " << iterL1Track->momentum().perp() << " rInv: " << iterL1Track->rInv() << std::endl
-                  << "tp input pt: " << tmp_matchtp_pt << " rInv: " << tmp_matcht_rInv << std::endl
-                  << " track output pt: " << track.momentum().perp() << " rInv: " << track.rInv() << std::endl;
+        /*
+        if (tmp_matchtp_pt > 1.95 && abs(iterL1Track->momentum().perp() - tmp_matchtp_pt)/tmp_matchtp_pt > 0.5)
+          std::cout << "track input pt: " << iterL1Track->momentum().perp() << " rInv: " << iterL1Track->rInv() << std::endl
+                    << "tp input pt: " << tmp_matchtp_pt << " rInv: " << tmp_matcht_rInv << std::endl
+                    << " track output pt: " << track.momentum().perp() << " rInv: " << track.rInv() << std::endl;
+        */
       }
     }
     else if(smartPixelsEmulatorMode_ == "toyDetectorParameterized") {
@@ -755,8 +761,9 @@ void L1SmartPixelsTrackProducer::produce(edm::StreamID, edm::Event& iEvent, cons
       continue;
     }
   }  //end track loop
-  std::cout << "this_l1track counter = " << this_l1track << std::endl;
-  std::cout << "outputTracks->size() = " << outputTracks->size() << std::endl;
+  if ((long unsigned int)this_l1track != outputTracks->size())
+    std::cout << "Mismatch!!\n\tthis_l1track counter = " << this_l1track << std::endl
+              << "\n\toutputTracks->size() = " << outputTracks->size() << std::endl;
   iEvent.put(std::move(outputTracks), outputCollectionName_);
 }  // end of produce()
 
@@ -765,7 +772,6 @@ void L1SmartPixelsTrackProducer::fillDescriptions(edm::ConfigurationDescriptions
   edm::ParameterSetDescription desc;
   desc.add<int>("MyProcess", 1)->setComment("Process ID");
   desc.add<bool>("DebugMode", false)->setComment("Printout lots of debug statements");
-  desc.add<int>("L1Tk_nPar", 4)->setComment("Use 4 or 5-parameter L1 tracking?");
   desc.add<int>("L1Tk_minNStub", 4)->setComment("L1 tracks with >= 4 stubs");
   desc.add<edm::InputTag>("L1TrackInputTag", edm::InputTag("l1tTTTracksFromTrackletEmulation", "Level1TTTracks"))->setComment("TTTrack input");
   desc.add<edm::InputTag>("MCTruthTrackInputTag", edm::InputTag("TTTrackAssociatorFromPixelDigis",  "Level1TTTracks"))->setComment("MCTruth input");
