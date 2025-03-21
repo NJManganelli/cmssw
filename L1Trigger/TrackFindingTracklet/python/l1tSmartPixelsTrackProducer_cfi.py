@@ -10,7 +10,6 @@ l1tSmartPixelsTrackProducer = cms.EDProducer('L1SmartPixelsTrackProducer',
     #      all TPs = 1 (pp collisions)
     MyProcess = cms.int32(1),
     DebugMode = cms.bool(False),      # printout lots of debug statements
-    L1Tk_nPar = cms.int32(4),         # use 4 or 5-parameter L1 tracking?
     L1Tk_minNStub = cms.int32(4),     # L1 tracks with >= 4 stubs
     # 4Param Fit Tracks, HYBRID
     L1TrackInputTag = cms.InputTag("l1tTTTracksFromTrackletEmulation",  "Level1TTTracks"),         # TTTrack input
@@ -25,7 +24,6 @@ l1tSmartPixelsTrackProducer = cms.EDProducer('L1SmartPixelsTrackProducer',
 )
 
 l1tSmartPixelsTrackProducerExtended = l1tSmartPixelsTrackProducer.clone(
-    L1Tk_nPar = cms.int32(5),         # use 4 or 5-parameter L1 tracking?
     # 5Param Fit Tracks, HYBRID
     L1TrackInputTag = cms.InputTag("l1tTTTracksFromExtendedTrackletEmulation",  "Level1TTTracks"),         # TTTrack input
     MCTruthTrackInputTag = cms.InputTag( "TTTrackAssociatorFromPixelDigisExtended",  "Level1TTTracks"),  # MCTruth input
