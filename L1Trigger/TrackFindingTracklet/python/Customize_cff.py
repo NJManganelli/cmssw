@@ -125,3 +125,15 @@ def injectSmartPixelsTrackProducer(process, smartPixelsEmulatorMode="passthrough
     cmspath.associate(process.l1tSmartPixelsTrackProducerTask)
 
   return process
+
+def injectSmartPixelsTrackProducer_passthrough(process):
+  return injectSmartPixelsTrackProducer(process, smartPixelsEmulatorMode="passthrough", skipModuleTypes=None, printProcessInfo=False)
+
+def injectSmartPixelsTrackProducer_passthroughFloat(process):
+  return injectSmartPixelsTrackProducer(process, smartPixelsEmulatorMode="passthroughFloat", skipModuleTypes=None, printProcessInfo=False)
+
+def injectSmartPixelsTrackProducer_passthroughHW(process):
+  return injectSmartPixelsTrackProducer(process, smartPixelsEmulatorMode="passthroughHW", skipModuleTypes=None, printProcessInfo=False)
+
+def injectSmartPixelsTrackProducer_trackingParticleTruth(process):
+  return injectSmartPixelsTrackProducer(process, smartPixelsEmulatorMode="trackingParticleTruth", skipModuleTypes=None, printProcessInfo=False)
