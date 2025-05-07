@@ -76,7 +76,7 @@ process.L1TInputTask = cms.Task(
 from L1Trigger.Phase2L1ParticleFlow.l1tJetFileWriter_cfi import l1tSeededConeJetFileWriter
 l1ctLayer2SCJetsProducts = cms.VPSet([cms.PSet(jets = cms.InputTag("l1tSC4NGJetProducer","l1tSC4NGJets"),
                                                nJets = cms.uint32(12),
-                                               mht  = cms.InputTag("l1tSC4PFL1PuppiNGJetEmulatorMHT"),
+                                               mht  = cms.InputTag("l1tMHTPFProducer"),
                                                nSums = cms.uint32(2)),
                                       cms.PSet(jets = cms.InputTag("l1tSC8PFL1PuppiCorrectedEmulator"),
                                                nJets = cms.uint32(12))
@@ -135,7 +135,7 @@ process.l1tSC4NGJetProducer.l1tSC4NGJetModelPath = cms.string(os.environ['CMSSW_
 process.l1tSC4NGJetProducer.jets = cms.InputTag("l1tSC4PFL1PuppiEmulator")
 
 from L1Trigger.Phase2L1ParticleFlow.l1tMHTPFProducer_cfi import l1tMHTPFProducer
-l1tSC4PFL1PuppiNGJetEmulatorMHT = l1tMHTPFProducer.clone(jets = cms.InputTag("l1tSC4NGJetProducer","l1tSC4NGJets"))
+process.l1tMHTPFProducer.jets = cms.InputTag("l1tSC4NGJetProducer","l1tSC4NGJets")
 
 process.runPF = cms.Path( 
         # process.l1tSAMuonsGmt + 
@@ -156,7 +156,7 @@ process.runPF = cms.Path(
         process.l1tSC4PFL1PuppiCorrectedEmulator +
         process.l1tSC4PFL1PuppiEmulator +
         process.l1tSC4NGJetProducer +
-        process.l1tSC4PFL1PuppiNGJetEmulatorMHT +
+        process.l1tMHTPFProducer +
         process.l1tSC8PFL1PuppiCorrectedEmulator +
         # process.l1tLayer2SeedConeJetWriter +
         process.l1tLayer2EG
