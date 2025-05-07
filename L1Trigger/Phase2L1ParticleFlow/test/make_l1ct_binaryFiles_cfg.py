@@ -132,7 +132,7 @@ if not args.patternFilesOFF:
     process.l1tLayer1HF.patternWriters = cms.untracked.VPSet(*hfWriterConfigs)
 
 process.l1tSC4NGJetProducer.l1tSC4NGJetModelPath = cms.string(os.environ['CMSSW_BASE']+"/src/L1TSC4NGJetModel/L1TSC4NGJetModel_v0")
-process.l1tSC4NGJetProducer.jets = cms.InputTag("l1tSC4PFL1PuppiCorrectedEmulator")
+process.l1tSC4NGJetProducer.jets = cms.InputTag("l1tSC4PFL1PuppiEmulator")
 
 process.runPF = cms.Path( 
         # process.l1tSAMuonsGmt + 
@@ -151,6 +151,7 @@ process.runPF = cms.Path(
         process.l1tLayer1 +
         process.l1tLayer2Deregionizer +
         process.l1tSC4PFL1PuppiCorrectedEmulator +
+        process.l1tSC4PFL1PuppiEmulator +
         process.l1tSC4NGJetProducer +
         process.l1tSC4PFL1PuppiCorrectedEmulatorMHT +
         process.l1tSC8PFL1PuppiCorrectedEmulator +
