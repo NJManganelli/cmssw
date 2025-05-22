@@ -34,7 +34,7 @@ def trackletConfig(process):
 
 def injectSmartPixelsTrackProducer(process, smartPixelsEmulatorMode="passthrough", skipModuleTypes=None, printProcessInfo=False):
   if skipModuleTypes is None:
-    skipModuleTypes = ["L1SmartPixelsTrackProducer", "TTTrackAssociator_Phase2TrackerDigi_", "L1FPGATrackProducer"]
+    skipModuleTypes = ["L1SmartPixelsTrackProducer", "TTTrackAssociator_Phase2TrackerDigi_", "L1FPGATrackProducer", "SimpleL1TTTrackCandidateFlatTableProducer"]
   #print(help(cms.Process))
   def print_helper(item):
     if hasattr(item, "items"):
