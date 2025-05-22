@@ -715,9 +715,9 @@ void L1SmartPixelsTrackProducer::produce(edm::StreamID, edm::Event& iEvent, cons
       }
       else {
         // double thePT = std::abs(MagConstant / theRInv_ * aBField / 100.0);  // Rinv is in cm-1
-        auto tmp_matcht_rInv = my_tp->charge() * MagConstant * b_field / (tmp_matchtp_pt * 100.0);
+        auto tmp_matchtp_rInv = my_tp->charge() * MagConstant * b_field / (tmp_matchtp_pt * 100.0);
         auto tmp_matchtp_tanL = my_tp->p4().pz() / tmp_matchtp_pt;
-        L1Track track = L1Track(tmp_matcht_rInv,
+        L1Track track = L1Track(tmp_matchtp_rInv,
                                 tmp_matchtp_phi,
                                 tmp_matchtp_tanL, //TODO: replace
                                 tmp_matchtp_z0,
