@@ -20,7 +20,9 @@ l1tSmartPixelsTrackProducer = cms.EDProducer('L1SmartPixelsTrackProducer',
     MCTruthStubInputTag = cms.InputTag("TTStubAssociatorFromPixelDigis", "StubAccepted"),
     TrackingParticleInputTag = cms.InputTag("mix", "MergedTrackTruth"),
     outputCollectionName = cms.string("Level1TTTracks"),
-    smartPixelsEmulatorMode = cms.string("passthrough"),  # passthrough, passthroughFloat, passthroughHW, trackingParticleTruth
+    smartPixelsEmulatorMode = cms.string("passthrough"),  # passthrough, passthroughFloat, passthroughHW, trackingParticleTruth, correctionlibTPMatchTrack, correctionlibTPToySmear
+    smartPixelsActiveLayers = cms.string("0000"),
+    smartPixelsCorrectionSet = cms.string("spixel_smear_all_configs_labeled_json_compound.json")
 )
 
 l1tSmartPixelsTrackProducerExtended = l1tSmartPixelsTrackProducer.clone(
