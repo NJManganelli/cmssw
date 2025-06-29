@@ -91,6 +91,9 @@
 #include <ap_fixed.h>
 #include <ap_int.h>
 
+// Correctionlib headers
+#include "correction.h"
+
 //////////////
 // STD HEADERS
 #include <memory>
@@ -153,7 +156,9 @@ private:
   bool DebugMode;      // lots of debug printout statements
   int L1Tk_minNStub;     // require L1 tracks to have >= minNStub (this is mostly for tracklet purposes)
   std::string outputCollectionName_; // name of the output collection
-  std::string smartPixelsEmulatorMode_; // mode of the emulator, e.g. passthrough, passthroughFloat, passthroughHW, trackingParticleTruth, ...
+  std::string smartPixelsEmulatorMode_; // mode of the emulator, e.g. passthrough, passthroughFloat, passthroughHW, trackingParticleTruth, correctionlibTPMatchTrack, correctionlibTPToySmear...
+  std::string smartPixelsActiveLayers_;
+  std::string smartPixelsCorrectionSet_;
 
   edm::InputTag L1TrackInputTag;       // L1 track collection
   edm::InputTag MCTruthTrackInputTag;  // MC truth collection
@@ -177,6 +182,9 @@ private:
   edm::ESGetToken<TrackerTopology, TrackerTopologyRcd> getTokenTrackerTopo_;
   edm::ESGetToken<MagneticField, IdealMagneticFieldRecord> getTokenBField_;
   edm::ESGetToken<hph::Setup, hph::SetupRcd> getTokenHPHSetup_;
+
+  // correction::Correction::Ref cMap_pt, cMap_phi, cMap_d0;
+  correction::CompoundCorrection::Ref cMap_pt, cMap_phi, cMap_d0;
 };
 
 //////////////////////////////////
@@ -195,6 +203,8 @@ L1SmartPixelsTrackProducer::L1SmartPixelsTrackProducer(edm::ParameterSet const& 
   L1Tk_minNStub = iConfig.getParameter<int>("L1Tk_minNStub");
   outputCollectionName_ = iConfig.getParameter<std::string>("outputCollectionName");
   smartPixelsEmulatorMode_ = iConfig.getParameter<std::string>("smartPixelsEmulatorMode");
+  smartPixelsActiveLayers_ = iConfig.getParameter<std::string>("smartPixelsActiveLayers");
+  smartPixelsCorrectionSet_ = iConfig.getParameter<std::string>("smartPixelsCorrectionSet");
 
   L1StubInputTag = iConfig.getParameter<edm::InputTag>("L1StubInputTag");
   MCTruthClusterInputTag = iConfig.getParameter<edm::InputTag>("MCTruthClusterInputTag");
@@ -215,6 +225,27 @@ L1SmartPixelsTrackProducer::L1SmartPixelsTrackProducer(edm::ParameterSet const& 
   getTokenHPHSetup_ = esConsumes<hph::Setup, hph::SetupRcd>();
 
   produces<TTTrackCollection>(outputCollectionName_);
+
+  // -----------------------------------------------------------------------------------------------
+  // Correctionlib loading
+  if( smartPixelsEmulatorMode_ == "correctionlibTPMatchTrack") {
+    auto cSet = correction::CorrectionSet::from_file(smartPixelsCorrectionSet_);
+    std::string cmap_pt_name = "pt_relative_smear_compound_" + smartPixelsActiveLayers_;
+    std::string cmap_phi_name = "phi_relative_smear_compound_" + smartPixelsActiveLayers_;
+    std::string cmap_d0_name = "d0_relative_smear_compound_" + smartPixelsActiveLayers_;
+    cMap_pt = cSet->compound().at(cmap_pt_name);
+    cMap_phi = cSet->compound().at(cmap_phi_name);
+    cMap_d0 = cSet->compound().at(cmap_d0_name);
+  }
+  else if( smartPixelsEmulatorMode_ == "correctionlibTPToySmear") {
+    auto cSet = correction::CorrectionSet::from_file(smartPixelsCorrectionSet_);
+    std::string cmap_pt_name = "pt_smear_compound_" + smartPixelsActiveLayers_;
+    std::string cmap_phi_name = "phi_smear_compound_" + smartPixelsActiveLayers_;
+    std::string cmap_d0_name = "d0_smear_compound_" + smartPixelsActiveLayers_;
+    cMap_pt = cSet->compound().at(cmap_pt_name);
+    cMap_phi = cSet->compound().at(cmap_phi_name);
+    cMap_d0 = cSet->compound().at(cmap_d0_name);
+  }
 }
 
 // DESTRUCTOR
@@ -494,14 +525,24 @@ void L1SmartPixelsTrackProducer::produce(edm::StreamID, edm::Event& iEvent, cons
     int tmp_trk_loose = 0;
     int tmp_trk_unknown = 0;
     int tmp_trk_combinatoric = 0;
-    if (MCTruthTTTrackHandle->isLooselyGenuine(l1track_ptr))
-      tmp_trk_loose = 1;
-    if (MCTruthTTTrackHandle->isGenuine(l1track_ptr))
-      tmp_trk_genuine = 1;
-    if (MCTruthTTTrackHandle->isUnknown(l1track_ptr))
+    int tp_track_match = 0;
+    if (MCTruthTTTrackHandle->isUnknown(l1track_ptr)) {
       tmp_trk_unknown = 1;
-    if (MCTruthTTTrackHandle->isCombinatoric(l1track_ptr))
+      tp_track_match += (1 << 0);
+    }
+    // Reserve tp_track_match += (1 << 1) for isFake if this is distinguishable
+    if (MCTruthTTTrackHandle->isLooselyGenuine(l1track_ptr)) {
+      tmp_trk_loose = 1;
+      tp_track_match += (1 << 2);
+    }
+    if (MCTruthTTTrackHandle->isGenuine(l1track_ptr)) {
+      tmp_trk_genuine = 1;
+      tp_track_match += (1 << 3);
+    }
+    if (MCTruthTTTrackHandle->isCombinatoric(l1track_ptr)) {
       tmp_trk_combinatoric = 1;
+      tp_track_match += (1 << 4);
+    }
 
     if (DebugMode) {
       edm::LogVerbatim("SmartPixelsTrackProducer") << "L1 track,"
@@ -756,9 +797,127 @@ void L1SmartPixelsTrackProducer::produce(edm::StreamID, edm::Event& iEvent, cons
         */
       }
     }
-    else if(smartPixelsEmulatorMode_ == "toyDetectorParameterized") {
-      // correct the track parameters towards the tracking particle truth level based on the parameterized toy detector
-      continue;
+    else if(smartPixelsEmulatorMode_ == "correctionlibTPMatchTrack") {
+      if (my_tp.isNull() || (!my_tp.isNull() && my_tp->pt() <= 1.95)) {
+        //if no tracking particle is matched to the track, make no changes, i.e. passthroughFloat behavior
+        L1Track track = L1Track(iterL1Track->rInv(),
+                                iterL1Track->phi(),
+                                iterL1Track->tanL(),
+                                iterL1Track->z0(),
+                                iterL1Track->d0(),
+                                iterL1Track->chi2XY(), //or chi2XYRed()
+                                iterL1Track->chi2Z(), //or chi2ZRed()
+                                iterL1Track->trkMVA1(),
+                                iterL1Track->trkMVA2(),
+                                iterL1Track->trkMVA3(),
+                                iterL1Track->hitPattern(),
+                                iterL1Track->nFitPars(),
+                                b_field
+        );
+        track.setPhiSector(iterL1Track->phiSector());
+        track.setTrackSeedType(iterL1Track->trackSeedType());
+        track.setStubRefs(iterL1Track->getStubRefs());
+        // pt consistency
+        /*track.setStubPtConsistency(
+          StubPtConsistency::getConsistency(track, theTrackerGeom, tTopo, settings_.bfield(), settings_.nHelixPar()));*/ //TOTEST w/ settings
+        track.setTrackWordBits();
+        //add the track to the output collection
+        outputTracks->push_back(track);
+      }
+      else {
+	// correct the track parameters towards the tracking particle truth level based on the parameterized toy detector
+        // double thePT = std::abs(MagConstant / theRInv_ * aBField / 100.0);  // Rinv is in cm-1
+
+        // auto tmp_matchtp_rInv = my_tp->charge() * MagConstant * b_field / (tmp_matchtp_pt * 100.0);
+        double iterL1Track_pt = my_tp->charge() * MagConstant * b_field / (iterL1Track->rInv() * 100.0);
+        // auto tmp_matchtp_tanL = my_tp->p4().pz() / tmp_matchtp_pt;
+        double iterL1Track_eta = std::asinh(iterL1Track->tanL());;
+
+	std::vector<std::variant<int,double,std::string>> inputs = {};
+	// inputs.emplace_back(fast_relevant_syst_for_shape_corr.at(hadronFlavour.at(i)));
+	// inputs.emplace_back(std::clamp(abs(static_cast<double>(eta.at(i))), 0., eta_max-0.001)); //copy nanoAOD-tools clamping, but give it the proper eta max... eps=1.e-3
+	// inputs.emplace_back(std::clamp(static_cast<double>(pt.at(i)), 20.0001, 9999.9999)); //need to parse the corrector to get the true pt bounds...eps=1.e-4
+	// inputs.emplace_back(disc.at(i));
+	// auto val = cMap->evaluate(inputs);
+	inputs.emplace_back(tmp_matchtp_pt);
+	inputs.emplace_back(tmp_matchtp_eta);
+	inputs.emplace_back(tmp_matchtp_phi);
+	inputs.emplace_back(tmp_matchtp_z0);
+	inputs.emplace_back(tmp_matchtp_d0);
+	inputs.emplace_back(tp_track_match); //encodes the matching flags as bits, 0:isUnknown,1:isLooselyGenuine,2:isGenuine,3:isCombinatoric
+	// inputs.emplace_back(iterL1Track->pt());
+	inputs.emplace_back(iterL1Track_pt);
+	// inputs.emplace_back(iterL1Track->eta());
+	inputs.emplace_back(iterL1Track_eta);
+	inputs.emplace_back(iterL1Track->phi());
+	inputs.emplace_back(iterL1Track->z0());
+	inputs.emplace_back(iterL1Track->d0());
+	if( this_l1track < 3) {
+	  std::cout << "track " << this_l1track << " inputs: ";
+	  for (auto&& inp : inputs)
+	    std::visit([](auto&& arg){ std::cout << arg;}, inp);
+	  std::cout << std::endl;
+	}
+
+
+	// match the original tp phi
+	auto clib_phi = tmp_matchtp_phi;
+
+	// match the original tanL under the assumption that the pt_new / pt_old scaling applies to the pz_new / pz_old, ergo cancelling in tanL calculation
+	auto clib_tanL = my_tp->p4().pz() / my_tp->p4().pt();
+
+	// FIXME: remove continue statement
+	continue;
+
+	// auto tmp_pt = tmp_matchtp_pt; //cMap_pt->evaluate(inputs);
+	auto clib_pt = cMap_pt->evaluate(inputs);
+	auto clib_rInv = my_tp->charge() * MagConstant * b_field / (clib_pt * 100.0);
+
+	// auto tmp_z0 = tmp_matchtp_z0; //cMap_z0->evaluate(inputs);
+	double clib_z0_to_d0_estimate = 1.0;
+	auto clib_z0 = clib_z0_to_d0_estimate * cMap_d0->evaluate(inputs);
+
+	// auto tmp_d0 = tmp_matchtp_d0; //cMap_d0->evaluate(inputs);
+	auto clib_d0 = cMap_d0->evaluate(inputs);
+
+        L1Track track = L1Track(clib_rInv,
+                                clib_phi,
+                                clib_tanL,
+                                clib_z0,
+                                clib_d0,
+                                iterL1Track->chi2XY(), // Keep from original track?
+                                iterL1Track->chi2Z(), // Keep from original track?
+                                iterL1Track->trkMVA1(), // Keep from original track?
+                                iterL1Track->trkMVA2(), // Keep from original track?
+                                iterL1Track->trkMVA3(), // Keep from original track?
+                                iterL1Track->hitPattern(), // Keep from original track?
+                                iterL1Track->nFitPars(), // Keep from original track for sure
+                                b_field
+        );
+        track.setPhiSector(iterL1Track->phiSector());
+        track.setEtaSector(iterL1Track->etaSector());
+        track.setTrackSeedType(iterL1Track->trackSeedType());
+        track.setStubRefs(iterL1Track->getStubRefs());
+        // pt consistency
+        track.setChi2BendRed(
+			     StubPtConsistency::getConsistency(track, theTrackerGeom, tTopo, b_field, iterL1Track->nFitPars()));
+        track.setTrackWordBits();
+        //auto oldChi2Bend = iterL1Track->stubPtConsistency();
+        //auto newChi2Bend = track.stubPtConsistency();
+        //std::cout << "change bendChi2 % " << ((newChi2Bend - oldChi2Bend) / oldChi2Bend) << std::endl;
+        /* bchi2 = pd.read_csv("change_bendchi2.txt")
+        bchi2 = bchi2.tp_bendch2_minus_oldchi2_dividedby_oldchi2
+        np.min(bchi2), np.max(bchi2), np.mean(bchi2), np.std(bchi2)
+        (np.float64(-0.945288), np.float64(7.85453), np.float64(0.01088359448426543), np.float64(0.2033839357486676)) */
+        //add the track to the output collection
+        outputTracks->push_back(track);
+        /*
+        if (tmp_matchtp_pt > 1.95 && abs(iterL1Track->momentum().perp() - tmp_matchtp_pt)/tmp_matchtp_pt > 0.5)
+          std::cout << "track input pt: " << iterL1Track->momentum().perp() << " rInv: " << iterL1Track->rInv() << std::endl
+                    << "tp input pt: " << tmp_matchtp_pt << " rInv: " << tmp_matcht_rInv << std::endl
+                    << " track output pt: " << track.momentum().perp() << " rInv: " << track.rInv() << std::endl;
+        */
+      }
     }
   }  //end track loop
   if ((long unsigned int)this_l1track != outputTracks->size())
@@ -780,7 +939,9 @@ void L1SmartPixelsTrackProducer::fillDescriptions(edm::ConfigurationDescriptions
   desc.add<edm::InputTag>("MCTruthStubInputTag", edm::InputTag("TTStubAssociatorFromPixelDigis", "StubAccepted"));
   desc.add<edm::InputTag>("TrackingParticleInputTag", edm::InputTag("mix", "MergedTrackTruth"));
   desc.add<std::string>("outputCollectionName", "Level1TTTracksEmulation");
-  desc.add<std::string>("smartPixelsEmulatorMode", "passthrough")->setComment("passthrough, passthroughFloat, passthroughHW, trackingParticleTruth");
+  desc.add<std::string>("smartPixelsEmulatorMode", "passthrough")->setComment("passthrough, passthroughFloat, passthroughHW, trackingParticleTruth, correctionlibTPMatchTrack, correctionlibTPToySmear");
+  desc.add<std::string>("smartPixelsActiveLayers", "0000")->setComment("Active layers of SmartPixels, '0000' is none active, '1111' is all active, '0110' has active 2nd and 3rd layers, and '1000' is only innermost layer active");
+  desc.add<std::string>("smartPixelsCorrectionSet", "spixel_smear_all_configs_labeled_json_compound.json")->setComment("Name of json file containing the correctionlib set used for smartPixelsEmulatorMode (correctionlibTPMatchTrack | correctionlibTPToySmear )");
   descriptions.addWithDefaultLabel(desc);
 }
 ///////////////////////////
