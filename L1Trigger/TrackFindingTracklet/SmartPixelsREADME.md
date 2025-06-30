@@ -1,6 +1,6 @@
 
 ### Ensure good correctionlib version
-You must have correctionlib version > 2.2, this has been tested (as of writing) with 2.5 as available in CMSSW_14_2_0_pre1. Ensure that an older version is not being picked up or linked against.
+You must have correctionlib version > 2.2, this has been tested (as of writing) with 2.7 installed in-place of the default available with CMSSW 14. Ensure that an older version is not being picked up or linked against.
 
 ### Setup CMSSW
 ```bash
