@@ -26,6 +26,7 @@ git clone git@github.com:cms-l1-dpg/Phase2-L1Nano.git PhysicsTools/L1Nano
 cd PhysicsTools/L1Nano
 git remote add njmanganelli-fork git@github.com:NJManganelli/Phase2-L1Nano
 git fetch njmanganelli-fork vX_1420pre1_gtttracks
+get checkout vX_1420pre1_gtttracks
 cd -
 
 # compile with C++20, override correctionlib in case it returns -std=c++17
