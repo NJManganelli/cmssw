@@ -29,7 +29,7 @@ git fetch njmanganelli-fork vX_1420pre1_gtttracks
 get checkout vX_1420pre1_gtttracks
 cd -
 
-# compile with C++20, override correctionlib in case it returns -std=c++17
+# compile with C++20, override correctionlib in case it returns -std=c++17, this is a hack until the necessary flags are in a BuildFile.xml
 cd $CMSSW_BASE/src
-export SCRAM_CXX_STANDARD=20 export USER_CXXFLAGS="$(correction config --cflags)" export USER_CXXFLAGS=${USER_CXXFLAGS:s/17/20/} export USER_LDFLAGS="$(correction config --ldflags --rpath)"; print $SCRAM_CXX_STANDARD "\n" ${USER_CXXFLAGS} "\n" $USER_LDFLAGS; scram b clean && scram b -j8
+export SCRAM_CXX_STANDARD=20; export USER_CXXFLAGS="$(correction config --cflags)"; export USER_CXXFLAGS=${USER_CXXFLAGS:s/17/20/};export USER_LDFLAGS="$(correction con\fig --ldflags --rpath)"; env | grep 'USER_CXXFLAGS\|USER_LDFLAGS\|SCRAM_CXX_STANDARD'; scram b clean && scram b -j8
 ```
