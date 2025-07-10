@@ -19,10 +19,6 @@
 // Original Author:  Nick Manganelli
 //         Created:  Thu, 24 Feb 2025 12:01:32 GMT
 
-//#include "FWCore/PluginManager/interface/ModuleDef.h"
-//#include "FWCore/Framework/interface/MakerMacros.h"
-// #include "FWCore/Framework/interface/one/EDAnalyzer.h"
-// #include "FWCore/Framework/interface/global/EDProducer.h"
 #include "FWCore/Framework/interface/stream/EDProducer.h"
 #include "FWCore/Framework/interface/Run.h"
 #include "FWCore/Framework/interface/Event.h"
@@ -114,10 +110,6 @@ using namespace edm;
 //                          //
 //////////////////////////////
 
-// class L1TrackNtupleMaker : public one::EDAnalyzer<one::WatchRuns, one::SharedResources> {
-// class L1SmartPixelsTrackProducer : public global::EDProducer<> {
-// class L1SmartPixelsTrackProducer : public edm::stream::EDProducer<> { //works
-// class L1SmartPixelsTrackProducer : public edm::stream::EDProducer<edm::GlobalCache< std::map< std::string, std::map< int, double > > >,
 class L1SmartPixelsTrackProducer : public edm::stream::EDProducer<edm::RunSummaryCache< std::map< std::string, std::map< int, double > > > > {
 public:
   // Constructor/destructor
@@ -126,9 +118,6 @@ public:
 
   // Mandatory methods
   static void fillDescriptions(edm::ConfigurationDescriptions& descriptions);
-  // void beginJob() override;
-  // void endJob() override;
-  // void produce(edm::StreamID, edm::Event&, const edm::EventSetup&) const;
 
   void beginStream(edm::StreamID) override;
   void endStream() override;
@@ -158,24 +147,17 @@ public:
 	});
   }
 
-  // void endRunSummary(edm::Run const& iRun, 
+  // void endRunSummary(edm::Run const& iRun,
   void endRunSummary(edm::Run const&,
 		     edm::EventSetup const&,
 		     std::map< std::string, std::map < int, double > >* iSummary) const override {
     //add the Stream's partial information to the full information
     for (const auto& outer_map : track_summary_) {
       for (const auto& inner_map : outer_map.second) {
-	// std::cout << "(L1SmartPixelsTrackProducer.cc) Stream endRunSummary track_summary_[" << outer_map.first << "][" << inner_map.first << "] = " << inner_map.second << std::endl;
 	iSummary->at(outer_map.first).at(inner_map.first) += inner_map.second; // add the resolution_map's summary statistic to the global summary map
 	track_summary_[outer_map.first][inner_map.first] = 0; // reset the resolution_map at the end of the run
-	// std::cout << "Resetting counter: track_summary_[" << outer_map.first << "][" << inner_map.first << "] = 0" << std::endl;
       }
     }
-    // std::cout << "(L1SmartPixelsTrackProducer.cc) Stream endRunSummary tp_match_track_set:" << std::endl;
-    // for (int num : tp_track_match_set_) {
-    //     // Process each integer
-    //   std::cout << "  " << num;
-    // }
     std::cout << std::endl;
   }
   static void globalEndRunSummary(edm::Run const&,
@@ -210,21 +192,11 @@ protected:
 private:
   // // ----------constants, enums and typedefs ---------
   // // Relevant constants for the converted track word
-  // enum TrackBitWidths {
-  //   kPtSize = TTTrack_TrackWord::TrackBitWidths::kRinvSize - 1,  // Width of pt
-  //   kPtMagSize = 9,                                              // Width of pt magnitude (unsigned)
-  //   kEtaSize = TTTrack_TrackWord::TrackBitWidths::kTanlSize,     // Width of eta
-  //   kEtaMagSize = 3,                                             // Width of eta magnitude (signed)
-  // };
   static constexpr float MagConstant =
       CLHEP::c_light / 1.0E3;  //constant is 0.299792458; who knew c_light was in mm/ns?
 
   typedef TTTrack<Ref_Phase2TrackerDigi_> L1Track;
   typedef std::vector<L1Track> TTTrackCollection;
-  // typedef edm::Handle<TTTrackCollection> TTTrackCollectionHandle;
-  // typedef edm::Ref<TTTrackCollection> TTTrackRef;
-  // typedef edm::RefVector<TTTrackCollection> TTTrackRefCollection;
-  // typedef std::unique_ptr<TTTrackRefCollection> TTTrackRefCollectionUPtr;
   
   //-----------------------------------------------------------------------------------------------
   // Containers of parameters passed by python configuration file
@@ -232,9 +204,10 @@ private:
 
   int MyProcess;       // 11/13/211 for single electrons/muons/pions, 6/15 for pions from ttbar/taus, 1 for inclusive
   bool DebugMode;      // lots of debug printout statements
+  bool DebugModeDetailed; // extremely detailed information printouts
   int L1Tk_minNStub;     // require L1 tracks to have >= minNStub (this is mostly for tracklet purposes)
   std::string outputCollectionName_; // name of the output collection
-  std::string smartPixelsEmulatorMode_; // mode of the emulator, e.g. passthrough, passthroughFloat, passthroughHW, trackingParticleTruth, correctionlibTPMatchTrack, correctionlibTPToySmear...
+  std::string smartPixelsEmulatorMode_; // mode of the emulator, e.g. passthrough, passthroughFloat, passthroughHW, trackingParticleTruth, correctionlibRegression, correctionlibTPToySmear...
   std::string smartPixelsActiveLayers_;
   std::string smartPixelsCorrectionSet_;
 
@@ -265,10 +238,7 @@ private:
   correction::CompoundCorrection::Ref cMap_pt, cMap_phi, cMap_d0;
 
   // diagnostics
-  // std::map<int, double> pt_resolution_orig_, d0_resolution_orig_, z0_resolution_orig_, phi_resolution_orig_;
-  // std::map<int, double> pt_resolution_, d0_resolution_, z0_resolution_, phi_resolution_;
-  // std::map<int, int> resolution_entries_;
-  mutable std::set<int> tp_track_match_set_ = {};                        
+  mutable std::set<int> tp_track_match_set_ = {};
   mutable std::map< std::string, std::map< int, double > > track_summary_ = {
     { "pt_resolution_orig", {
 	{0, 0},
@@ -374,6 +344,7 @@ private:
 L1SmartPixelsTrackProducer::L1SmartPixelsTrackProducer(edm::ParameterSet const& iConfig) : config(iConfig) {
   MyProcess = iConfig.getParameter<int>("MyProcess");
   DebugMode = iConfig.getParameter<bool>("DebugMode");
+  DebugModeDetailed = iConfig.getParameter<bool>("DebugModeDetailed");
   L1TrackInputTag = iConfig.getParameter<edm::InputTag>("L1TrackInputTag");
   MCTruthTrackInputTag = iConfig.getParameter<edm::InputTag>("MCTruthTrackInputTag");
   L1Tk_minNStub = iConfig.getParameter<int>("L1Tk_minNStub");
@@ -404,7 +375,7 @@ L1SmartPixelsTrackProducer::L1SmartPixelsTrackProducer(edm::ParameterSet const& 
 
   // -----------------------------------------------------------------------------------------------
   // Correctionlib loading
-  if( smartPixelsEmulatorMode_ == "correctionlibTPMatchTrack") {
+  if( smartPixelsEmulatorMode_ == "correctionlibRegression") {
     auto cSet = correction::CorrectionSet::from_file(smartPixelsCorrectionSet_);
     std::string cmap_pt_name = "pt_relative_smear_compound_" + smartPixelsActiveLayers_;
     std::string cmap_phi_name = "phi_relative_smear_compound_" + smartPixelsActiveLayers_;
@@ -553,6 +524,12 @@ void L1SmartPixelsTrackProducer::produce(edm::Event& iEvent, const edm::EventSet
       float trigPos = tempStubPtr->innerClusterPosition();
       float trigBend = tempStubPtr->bendFE();
 
+      if (DebugModeDetailed)
+	edm::LogVerbatim("SmartPixelsTrackProducer")
+	  << "stub info " << stubIter << " tmp_stub (x,y,z) = (" << tmp_stub_x << ", " << tmp_stub_y << ", " << tmp_stub_z << ")\t"
+	  << "trigDisplace= " << trigDisplace << " trigOffset= " << trigOffset  << " trigPos= " << trigPos << " trigBend= " << trigBend << std::endl;
+      
+
       // matched to tracking particle?
       edm::Ptr<TrackingParticle> my_tp = MCTruthTTStubHandle->findTrackingParticlePtr(tempStubPtr);
 
@@ -663,6 +640,19 @@ void L1SmartPixelsTrackProducer::produce(edm::Event& iEvent, const edm::EventSet
 
     unsigned int tmp_trk_phiSector = iterL1Track->phiSector();
     int tmp_trk_etaSector = hph.etaSector();
+
+    if (DebugModeDetailed)
+	edm::LogVerbatim("SmartPixelsTrackProducer")
+	  << "tmp_trk_nPSstub_hitpattern\ttmp_trk_n2Sstub_hitpattern\ttmp_trk_nLostPSstub_hitpattern\ttmp_trk_nLost2Sstub_hitpattern"
+	  << tmp_trk_nPSstub_hitpattern << "\t" << tmp_trk_n2Sstub_hitpattern << "\t" << tmp_trk_nLostPSstub_hitpattern << "\t" << tmp_trk_nLost2Sstub_hitpattern << "\t"
+	  << std::endl
+	  << "\ttmp_trk_nLoststub_V1_hitpattern\ttmp_trk_nLoststub_V2_hitpattern\ttmp_trk_bendchi2\ttmp_trk_MVA1"
+	  << "\t" << tmp_trk_nLoststub_V1_hitpattern << "\t" << tmp_trk_nLoststub_V2_hitpattern << "\t" << tmp_trk_bendchi2 << "\t" << tmp_trk_MVA1
+	  << std::endl
+	  << "\ttmp_trk_chi2_dof\ttmp_trk_chi2rphi_dof\ttmp_trk_chi2rz_dof\ttmp_trk_seed\ttmp_trk_phiSector\ttmp_trk_etaSector"
+	  << "\t" << tmp_trk_chi2_dof << "\t" << tmp_trk_chi2rphi_dof << "\t" << tmp_trk_chi2rz_dof << "\t" << tmp_trk_seed
+	  << "\t" << tmp_trk_phiSector << "\t" << tmp_trk_etaSector
+	  << std::endl;
 
     // ----------------------------------------------------------------------------------------------
     // loop over stubs on tracks
@@ -984,7 +974,7 @@ void L1SmartPixelsTrackProducer::produce(edm::Event& iEvent, const edm::EventSet
         */
       }
     }
-    else if(smartPixelsEmulatorMode_ == "correctionlibTPMatchTrack") {
+    else if(smartPixelsEmulatorMode_ == "correctionlibRegression") {
       if (my_tp.isNull() || (!my_tp.isNull() && my_tp->pt() <= 1.95)) {
         //if no tracking particle is matched to the track, make no changes, i.e. passthroughFloat behavior
         L1Track track = L1Track(iterL1Track->rInv(),
@@ -1099,50 +1089,50 @@ void L1SmartPixelsTrackProducer::produce(edm::Event& iEvent, const edm::EventSet
         */
 
 	//DEBUG prints
-	// if( this_l1track < 5) {
-	//   std::cout << "track " << this_l1track << " inputs:"
-	// 	    << "(pt_tp, eta_tp, phi_tp, z0_tp, d0_tp, tp_track_match, pt_track, eta_track, phi_track, z0_track, d0_track)";
-	//   unsigned int visit_counter = 0;
-	//   for (auto&& inp : inputs) {
-	//     if (visit_counter == 0 || visit_counter == 5 || visit_counter == 6)
-	//       std::cout << std::endl;
-	//     std::visit([](auto&& arg){ std::cout << " " << arg;}, inp);
-	//     visit_counter++;
-	//   }
-	//   std::cout << std::endl;
-	//   std::cout << "outputs:"
-	// 	    // << " clib_pt=" << cMap_pt->evaluate(inputs) << " clib_rInv=" <<  my_tp->charge() * MagConstant * b_field / (cMap_pt->evaluate(inputs) * 100.0)
-	// 	    // << " clib_phi=" << cMap_phi->evaluate(inputs)		    
-	// 	    // << " clib_d0" << cMap_d0->evaluate(inputs)
-	// 	    << " clib_pt= " << clib_pt << " clib_rInv= " <<  clib_rInv
-	// 	    << " clib_phi= " << clib_phi
-	// 	    << " clib_d0= " << clib_d0
-	// 	    << " clib_z0= " << clib_z0
-	// 	    << std::endl;
-	//   std::cout << "input track " << this_l1track << " L1Track parameters:" << std::endl;
+	if( DebugMode && this_l1track < 5 ) {
+	  edm::LogVerbatim("SmartPixelsTrackProducer") << "track " << this_l1track << " inputs:"
+		    << "(pt_tp, eta_tp, phi_tp, z0_tp, d0_tp, tp_track_match, pt_track, eta_track, phi_track, z0_track, d0_track)";
+	  unsigned int visit_counter = 0;
+	  for (auto&& inp : inputs) {
+	    if (visit_counter == 0 || visit_counter == 5 || visit_counter == 6)
+	      edm::LogVerbatim("SmartPixelsTrackProducer") << std::endl;
+	    std::visit([](auto&& arg){ edm::LogVerbatim("SmartPixelsTrackProducer") << " " << arg;}, inp);
+	    visit_counter++;
+	  }
+	  edm::LogVerbatim("SmartPixelsTrackProducer") << std::endl;
+	  edm::LogVerbatim("SmartPixelsTrackProducer") << "outputs:"
+		    // << " clib_pt=" << cMap_pt->evaluate(inputs) << " clib_rInv=" <<  my_tp->charge() * MagConstant * b_field / (cMap_pt->evaluate(inputs) * 100.0)
+		    // << " clib_phi=" << cMap_phi->evaluate(inputs)
+		    // << " clib_d0" << cMap_d0->evaluate(inputs)
+		    << " clib_pt= " << clib_pt << " clib_rInv= " <<  clib_rInv
+		    << " clib_phi= " << clib_phi
+		    << " clib_d0= " << clib_d0
+		    << " clib_z0= " << clib_z0
+		    << std::endl;
+	  edm::LogVerbatim("SmartPixelsTrackProducer") << "input track " << this_l1track << " L1Track parameters:" << std::endl;
 	  
-	//   std::cout << "\trInv original :: new\t"
-	// 	    << (iterL1Track->rInv()) << "    -    "
-	// 	    << (track.rInv()) << std::endl;
-	//   std::cout << "\tpt original :: new\t"
-	// 	    << (my_tp->charge() * MagConstant * b_field / (iterL1Track->rInv() * 100.0)) << "    -    "
-	// 	    << (my_tp->charge() * MagConstant * b_field / (track.rInv() * 100.0)) << std::endl;
-	//   std::cout << "\ttanL original :: new\t"
-	// 	    << (iterL1Track->tanL()) << "    -    "
-	// 	    << (track.tanL()) << std::endl;
-	//   std::cout << "\teta original :: new\t"
-	// 	    << (std::asinh(iterL1Track->tanL())) << "    -    "
-	// 	    << (std::asinh(track.tanL())) << std::endl;
-	//   std::cout << "\tphi original :: new\t"
-	// 	    << (iterL1Track->phi()) << "    -    "
-	// 	    << (track.phi()) << std::endl;
-	//   std::cout << "\tz0 original :: new\t"
-	// 	    << (iterL1Track->z0()) << "    -    "
-	// 	    << (track.z0()) << std::endl;
-	//   std::cout << "\td0 original :: new\t"
-	// 	    << (iterL1Track->d0()) << "    -    "
-	// 	    << (track.d0()) << std::endl;
-	// }
+	  edm::LogVerbatim("SmartPixelsTrackProducer") << "\trInv original :: new\t"
+		    << (iterL1Track->rInv()) << "    -    "
+		    << (track.rInv()) << std::endl;
+	  edm::LogVerbatim("SmartPixelsTrackProducer") << "\tpt original :: new\t"
+		    << (my_tp->charge() * MagConstant * b_field / (iterL1Track->rInv() * 100.0)) << "    -    "
+		    << (my_tp->charge() * MagConstant * b_field / (track.rInv() * 100.0)) << std::endl;
+	  edm::LogVerbatim("SmartPixelsTrackProducer") << "\ttanL original :: new\t"
+		    << (iterL1Track->tanL()) << "    -    "
+		    << (track.tanL()) << std::endl;
+	  edm::LogVerbatim("SmartPixelsTrackProducer") << "\teta original :: new\t"
+		    << (std::asinh(iterL1Track->tanL())) << "    -    "
+		    << (std::asinh(track.tanL())) << std::endl;
+	  edm::LogVerbatim("SmartPixelsTrackProducer") << "\tphi original :: new\t"
+		    << (iterL1Track->phi()) << "    -    "
+		    << (track.phi()) << std::endl;
+	  edm::LogVerbatim("SmartPixelsTrackProducer") << "\tz0 original :: new\t"
+		    << (iterL1Track->z0()) << "    -    "
+		    << (track.z0()) << std::endl;
+	  edm::LogVerbatim("SmartPixelsTrackProducer") << "\td0 original :: new\t"
+		    << (iterL1Track->d0()) << "    -    "
+		    << (track.d0()) << std::endl;
+	}
       if (my_tp->pt() > 2.5) //FIXME: reduce to more modest value
 	track_summary_["pt_resolution_crosscheck"][tp_track_match] += std::fabs(my_tp->charge() * MagConstant * b_field / (track.getRinv() * 100.0)) - std::fabs(my_tp->pt());
       }
@@ -1173,13 +1163,13 @@ void L1SmartPixelsTrackProducer::produce(edm::Event& iEvent, const edm::EventSet
     } // end if (
   }  //end track loop
   //DEBUG
-  // if ((long unsigned int)this_l1track != outputTracks->size())
-  //   std::cout << "(L1SmartPixelsTrackProducer.cc) Mismatch!!\n\tthis_l1track counter = " << this_l1track << std::endl
-  //             << "\n\toutputTracks->size() = " << outputTracks->size() << std::endl;
+  if (DebugMode && (long unsigned int)this_l1track != outputTracks->size()){
+    edm::LogVerbatim("SmartPixelsTrackProducer") << "(L1SmartPixelsTrackProducer.cc) Mismatch!!\n\tthis_l1track counter = " << this_l1track << std::endl
+						 << "\n\toutputTracks->size() = " << outputTracks->size() << std::endl;
   
-  // std::cout << "Final track resolution_entries for tp_track_match=1: " << track_summary_["resolution_entries"][1] << std::endl;
   //DEBUG
-  // std::cout << "(L1SmartPixelsTrackProducer.cc) Event unmatched_tracks: " << unmatched_tracks << " matched_tracks: " << matched_tracks << std::endl;
+    edm::LogVerbatim("SmartPixelsTrackProducer") << "(L1SmartPixelsTrackProducer.cc) Event unmatched_tracks: " << unmatched_tracks << " matched_tracks: " << matched_tracks << std::endl;
+  }
   iEvent.put(std::move(outputTracks), outputCollectionName_);
 }  // end of produce()
 
@@ -1188,6 +1178,7 @@ void L1SmartPixelsTrackProducer::fillDescriptions(edm::ConfigurationDescriptions
   edm::ParameterSetDescription desc;
   desc.add<int>("MyProcess", 1)->setComment("Process ID");
   desc.add<bool>("DebugMode", false)->setComment("Printout lots of debug statements");
+  desc.add<bool>("DebugModeDetailed", false)->setComment("Printout extremely detailed information");
   desc.add<int>("L1Tk_minNStub", 4)->setComment("L1 tracks with >= 4 stubs");
   desc.add<edm::InputTag>("L1TrackInputTag", edm::InputTag("l1tTTTracksFromTrackletEmulation", "Level1TTTracks"))->setComment("TTTrack input");
   desc.add<edm::InputTag>("MCTruthTrackInputTag", edm::InputTag("TTTrackAssociatorFromPixelDigis",  "Level1TTTracks"))->setComment("MCTruth input");
@@ -1196,9 +1187,9 @@ void L1SmartPixelsTrackProducer::fillDescriptions(edm::ConfigurationDescriptions
   desc.add<edm::InputTag>("MCTruthStubInputTag", edm::InputTag("TTStubAssociatorFromPixelDigis", "StubAccepted"));
   desc.add<edm::InputTag>("TrackingParticleInputTag", edm::InputTag("mix", "MergedTrackTruth"));
   desc.add<std::string>("outputCollectionName", "Level1TTTracksEmulation");
-  desc.add<std::string>("smartPixelsEmulatorMode", "passthrough")->setComment("passthrough, passthroughFloat, passthroughHW, trackingParticleTruth, correctionlibTPMatchTrack, correctionlibTPToySmear");
+  desc.add<std::string>("smartPixelsEmulatorMode", "passthrough")->setComment("passthrough, passthroughFloat, passthroughHW, trackingParticleTruth, correctionlibRegression, correctionlibTPToySmear");
   desc.add<std::string>("smartPixelsActiveLayers", "0000")->setComment("Active layers of SmartPixels, '0000' is none active, '1111' is all active, '0110' has active 2nd and 3rd layers, and '1000' is only innermost layer active");
-  desc.add<std::string>("smartPixelsCorrectionSet", "spixel_smear_all_configs_labeled_json_compound.json")->setComment("Name of json file containing the correctionlib set used for smartPixelsEmulatorMode (correctionlibTPMatchTrack | correctionlibTPToySmear )");
+  desc.add<std::string>("smartPixelsCorrectionSet", "spixel_smear_all_configs_labeled_json_compound.json")->setComment("Name of json file containing the correctionlib set used for smartPixelsEmulatorMode (correctionlibRegression | correctionlibTPToySmear )");
   descriptions.addWithDefaultLabel(desc);
 }
 ///////////////////////////
