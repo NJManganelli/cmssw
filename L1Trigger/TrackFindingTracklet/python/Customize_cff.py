@@ -142,5 +142,5 @@ def injectSmartPixelsTrackProducer_passthroughHW(process):
 def injectSmartPixelsTrackProducer_trackingParticleTruth(process):
   return injectSmartPixelsTrackProducer(process, smartPixelsEmulatorMode="trackingParticleTruth", skipModuleTypes=None, printProcessInfo=False)
 
-def injectSmartPixelsTrackProducer_correctionlibTPMatchTrack(process):
-  return injectSmartPixelsTrackProducer(process, smartPixelsEmulatorMode="correctionlibTPMatchTrack", skipModuleTypes=None, printProcessInfo=False)
+def injectSmartPixelsTrackProducer_correctionlibRegression(process):
+  return injectSmartPixelsTrackProducer(process, smartPixelsEmulatorMode="correctionlibRegression", skipModuleTypes=None, printProcessInfo=False)
