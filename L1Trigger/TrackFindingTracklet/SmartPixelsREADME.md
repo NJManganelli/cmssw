@@ -13,6 +13,9 @@ cmsenv
 scram-venv cmsenv
 cmsenv
 
+# install correctionlib
+python3 -m pip install --no-binary=correctionlib 'correctionlib>2.6'
+
 # Setup packages
 git cms-init
 git cms-addpkg DQMOffline/L1Trigger DataFormats/L1TCalorimeterPhase2 DataFormats/L1TCorrelator DataFormats/L1TParticleFlow DataFormats/L1TrackTrigger DataFormats/L1Trigger DataFormats/StdDictionaries L1Trigger/Configuration L1Trigger/DemonstratorTools L1Trigger/L1TNtuples L1Trigger/L1TTrackMatch L1Trigger/Phase2L1ParticleFlow L1Trigger/Phase2L1Taus L1Trigger/TrackFindingTracklet L1Trigger/TrackTrigger L1Trigger/VertexFinder PhysicsTools/NanoAOD SimTracker/TrackTriggerAssociation
