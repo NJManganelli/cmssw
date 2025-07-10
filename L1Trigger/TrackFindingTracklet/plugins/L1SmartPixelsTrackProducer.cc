@@ -22,7 +22,8 @@
 //#include "FWCore/PluginManager/interface/ModuleDef.h"
 //#include "FWCore/Framework/interface/MakerMacros.h"
 // #include "FWCore/Framework/interface/one/EDAnalyzer.h"
-#include "FWCore/Framework/interface/global/EDProducer.h"
+// #include "FWCore/Framework/interface/global/EDProducer.h"
+#include "FWCore/Framework/interface/stream/EDProducer.h"
 #include "FWCore/Framework/interface/Run.h"
 #include "FWCore/Framework/interface/Event.h"
 #include "FWCore/Framework/interface/ESHandle.h"
@@ -96,6 +97,8 @@
 
 //////////////
 // STD HEADERS
+#include <map>
+#include <set>
 #include <memory>
 #include <string>
 #include <iostream>
@@ -112,7 +115,10 @@ using namespace edm;
 //////////////////////////////
 
 // class L1TrackNtupleMaker : public one::EDAnalyzer<one::WatchRuns, one::SharedResources> {
-class L1SmartPixelsTrackProducer : public global::EDProducer<> {
+// class L1SmartPixelsTrackProducer : public global::EDProducer<> {
+// class L1SmartPixelsTrackProducer : public edm::stream::EDProducer<> { //works
+// class L1SmartPixelsTrackProducer : public edm::stream::EDProducer<edm::GlobalCache< std::map< std::string, std::map< int, double > > >,
+class L1SmartPixelsTrackProducer : public edm::stream::EDProducer<edm::RunSummaryCache< std::map< std::string, std::map< int, double > > > > {
 public:
   // Constructor/destructor
   explicit L1SmartPixelsTrackProducer(const edm::ParameterSet& iConfig);
@@ -122,7 +128,79 @@ public:
   static void fillDescriptions(edm::ConfigurationDescriptions& descriptions);
   // void beginJob() override;
   // void endJob() override;
-  void produce(edm::StreamID, edm::Event&, const edm::EventSetup&) const;
+  // void produce(edm::StreamID, edm::Event&, const edm::EventSetup&) const;
+
+  void beginStream(edm::StreamID) override;
+  void endStream() override;
+  void produce(edm::Event&, const edm::EventSetup&) override;
+
+  static std::unique_ptr< std::map< std::string, std::map< int, double > > > initializeGlobalCache(edm::ParameterSet const& iPSet) {
+    return std::unique_ptr< std::map< std::string, std::map< int, double > > >( new std::map< std::string, std::map< int, double > >);
+  }
+
+  static std::shared_ptr< std::map< std::string, std::map< int, double > > > globalBeginRunSummary(edm::Run const&,
+												   edm::EventSetup const&,
+												   RunContext const*) {
+    // std::unique_ptr< std::map< std::string, std::map< int, double > > > myMapPtr = std::make_unique< std::map< std::string, std::map< int, double > > >();
+    // return myMapPtr;
+    return std::make_unique< std::map< std::string, std::map< int, double > > >(
+	std::map<std::string, std::map<int, double>>{
+	  {"pt_resolution_orig", {{0, 0}, {1, 0}, {2, 0}, {4, 0}, {8, 0}, {12, 0}, {16, 0}}},
+	  {"d0_resolution_orig", {{0, 0}, {1, 0}, {2, 0}, {4, 0}, {8, 0}, {12, 0}, {16, 0}}},
+	  {"z0_resolution_orig", {{0, 0}, {1, 0}, {2, 0}, {4, 0}, {8, 0}, {12, 0}, {16, 0}}},
+	  {"phi_resolution_orig", {{0, 0}, {1, 0}, {2, 0}, {4, 0}, {8, 0}, {12, 0}, {16, 0}}},
+	  {"pt_resolution", {{0, 0}, {1, 0}, {2, 0}, {4, 0}, {8, 0}, {12, 0}, {16, 0}}},
+	  {"pt_resolution_crosscheck", {{0, 0}, {1, 0}, {2, 0}, {4, 0}, {8, 0}, {12, 0}, {16, 0}}},
+	  {"d0_resolution", {{0, 0}, {1, 0}, {2, 0}, {4, 0}, {8, 0}, {12, 0}, {16, 0}}},
+	  {"z0_resolution", {{0, 0}, {1, 0}, {2, 0}, {4, 0}, {8, 0}, {12, 0}, {16, 0}}},
+	  {"phi_resolution", {{0, 0}, {1, 0}, {2, 0}, {4, 0}, {8, 0}, {12, 0}, {16, 0}}},
+	  {"resolution_entries", {{0, 0}, {1, 0}, {2, 0}, {4, 0}, {8, 0}, {12, 0}, {16, 0}}}
+	});
+  }
+
+  // void endRunSummary(edm::Run const& iRun, 
+  void endRunSummary(edm::Run const&,
+		     edm::EventSetup const&,
+		     std::map< std::string, std::map < int, double > >* iSummary) const override {
+    //add the Stream's partial information to the full information
+    for (const auto& outer_map : track_summary_) {
+      for (const auto& inner_map : outer_map.second) {
+	// std::cout << "(L1SmartPixelsTrackProducer.cc) Stream endRunSummary track_summary_[" << outer_map.first << "][" << inner_map.first << "] = " << inner_map.second << std::endl;
+	iSummary->at(outer_map.first).at(inner_map.first) += inner_map.second; // add the resolution_map's summary statistic to the global summary map
+	track_summary_[outer_map.first][inner_map.first] = 0; // reset the resolution_map at the end of the run
+	// std::cout << "Resetting counter: track_summary_[" << outer_map.first << "][" << inner_map.first << "] = 0" << std::endl;
+      }
+    }
+    // std::cout << "(L1SmartPixelsTrackProducer.cc) Stream endRunSummary tp_match_track_set:" << std::endl;
+    // for (int num : tp_track_match_set_) {
+    //     // Process each integer
+    //   std::cout << "  " << num;
+    // }
+    std::cout << std::endl;
+  }
+  static void globalEndRunSummary(edm::Run const&,
+				  edm::EventSetup const&,
+				  RunContext const* iContext,
+				  std::map< std::string, std::map < int, double > >* iSummary) {
+    std::cout << "===L1SmartPixelsTrackProducer Track Resolution Global Summary Start===" << std::endl;
+    unsigned int skip_counter = 0;
+    unsigned int print_counter = 0;
+    for (const auto& outer_map : *iSummary) {
+      for (const auto& inner_map : outer_map.second) {
+	if (iSummary->at("resolution_entries").at(inner_map.first) < 0.1){
+	  skip_counter++;
+	  continue;
+	}
+	print_counter++;
+	std::cout << "\ttotal_track_resolution[" << outer_map.first << "][" << inner_map.first << "] = "
+		  << inner_map.second << " / " << iSummary->at("resolution_entries").at(inner_map.first)
+		  << " = " << iSummary->at(outer_map.first).at(inner_map.first) / iSummary->at("resolution_entries").at(inner_map.first) << std::endl;
+      }
+    }
+    if (print_counter == 0)
+      std::cout << "Skipped " << skip_counter << " resolution summary statistics because their corresponding resolution_entries were less than 1" << std::endl;
+    std::cout << "===L1SmartPixelsTrackProducer Track Resolution Global Summary End===" << std::endl;
+  }
 
   // void analyze(const edm::Event& iEvent, const edm::EventSetup& iSetup) override;
   // void beginRun(const Run& iEvent, const EventSetup& iSetup) override {}
@@ -185,6 +263,104 @@ private:
 
   // correction::Correction::Ref cMap_pt, cMap_phi, cMap_d0;
   correction::CompoundCorrection::Ref cMap_pt, cMap_phi, cMap_d0;
+
+  // diagnostics
+  // std::map<int, double> pt_resolution_orig_, d0_resolution_orig_, z0_resolution_orig_, phi_resolution_orig_;
+  // std::map<int, double> pt_resolution_, d0_resolution_, z0_resolution_, phi_resolution_;
+  // std::map<int, int> resolution_entries_;
+  mutable std::set<int> tp_track_match_set_ = {};                        
+  mutable std::map< std::string, std::map< int, double > > track_summary_ = {
+    { "pt_resolution_orig", {
+	{0, 0},
+	{1, 0},
+	{2, 0},
+	{4, 0},
+	{8, 0},
+	{12, 0},
+	{16, 0},
+      }},
+    { "d0_resolution_orig", {
+	{0, 0},
+	{1, 0},
+	{2, 0},
+	{4, 0},
+	{8, 0},
+	{12, 0},
+	{16, 0},
+      }},
+    { "z0_resolution_orig", {
+	{0, 0},
+	{1, 0},
+	{2, 0},
+	{4, 0},
+	{8, 0},
+	{12, 0},
+	{16, 0},
+      }},
+    { "phi_resolution_orig", {
+	{0, 0},
+	{1, 0},
+	{2, 0},
+	{4, 0},
+	{8, 0},
+	{12, 0},
+	{16, 0},
+      }},
+    { "pt_resolution", {
+	{0, 0},
+	{1, 0},
+	{2, 0},
+	{4, 0},
+	{8, 0},
+	{12, 0},
+	{16, 0},
+      }},
+    { "pt_resolution_crosscheck", {
+	{0, 0},
+	{1, 0},
+	{2, 0},
+	{4, 0},
+	{8, 0},
+	{12, 0},
+	{16, 0},
+      }},
+    { "d0_resolution", {
+	{0, 0},
+	{1, 0},
+	{2, 0},
+	{4, 0},
+	{8, 0},
+	{12, 0},
+	{16, 0},
+      }},
+    { "z0_resolution", {
+	{0, 0},
+	{1, 0},
+	{2, 0},
+	{4, 0},
+	{8, 0},
+	{12, 0},
+	{16, 0},
+      }},
+    { "phi_resolution", {
+	{0, 0},
+	{1, 0},
+	{2, 0},
+	{4, 0},
+	{8, 0},
+	{12, 0},
+	{16, 0},
+      }},
+    { "resolution_entries", {
+	{0, 0},
+	{1, 0},
+	{2, 0},
+	{4, 0},
+	{8, 0},
+	{12, 0},
+	{16, 0},
+      }},
+  };
 };
 
 //////////////////////////////////
@@ -249,10 +425,16 @@ L1SmartPixelsTrackProducer::L1SmartPixelsTrackProducer(edm::ParameterSet const& 
 }
 
 // DESTRUCTOR
-L1SmartPixelsTrackProducer::~L1SmartPixelsTrackProducer() {}
+L1SmartPixelsTrackProducer::~L1SmartPixelsTrackProducer() {
+}
+void L1SmartPixelsTrackProducer::beginStream(edm::StreamID) {
+}
+void L1SmartPixelsTrackProducer::endStream() {
+}
 
 // PRODUCE
-void L1SmartPixelsTrackProducer::produce(edm::StreamID, edm::Event& iEvent, const edm::EventSetup& iSetup) const {
+// void L1SmartPixelsTrackProducer::produce(edm::StreamID, edm::Event& iEvent, const edm::EventSetup& iSetup) const {
+void L1SmartPixelsTrackProducer::produce(edm::Event& iEvent, const edm::EventSetup& iSetup) {
 
   if (!(MyProcess == 13 || MyProcess == 11 || MyProcess == 211 || MyProcess == 6 || MyProcess == 15 ||
         MyProcess == 1)) {
@@ -406,10 +588,11 @@ void L1SmartPixelsTrackProducer::produce(edm::StreamID, edm::Event& iEvent, cons
   // ----------------------------------------------------------------------------------------------
   // loop over L1 tracks
   // ----------------------------------------------------------------------------------------------
-
   if (DebugMode) {
     edm::LogVerbatim("SmartPixelsTrackProducer") << "\n Loop over L1 tracks!";
   }
+  unsigned int matched_tracks = 0;
+  unsigned int unmatched_tracks = 0;
   //output collection
   auto outputTracks = std::make_unique<TTTrackCollection>();
   int this_l1track = 0;
@@ -527,6 +710,7 @@ void L1SmartPixelsTrackProducer::produce(edm::StreamID, edm::Event& iEvent, cons
     int tmp_trk_combinatoric = 0;
     int tp_track_match = 0;
     if (MCTruthTTTrackHandle->isUnknown(l1track_ptr)) {
+      // Appears that EVERY track is this class, no isLooselyGenuine or isGenuine or isCombinatoric yet seen in SmartPixelsTrackProducer. Is this a bug or the current state of this function everywhere?
       tmp_trk_unknown = 1;
       tp_track_match += (1 << 0);
     }
@@ -543,6 +727,7 @@ void L1SmartPixelsTrackProducer::produce(edm::StreamID, edm::Event& iEvent, cons
       tmp_trk_combinatoric = 1;
       tp_track_match += (1 << 4);
     }
+    tp_track_match_set_.insert(tp_track_match);
 
     if (DebugMode) {
       edm::LogVerbatim("SmartPixelsTrackProducer") << "L1 track,"
@@ -577,12 +762,14 @@ void L1SmartPixelsTrackProducer::produce(edm::StreamID, edm::Event& iEvent, cons
     float tmp_matchtp_d0 = -999;
 
     if (my_tp.isNull()) {
+      unmatched_tracks++;
       myFake = 0;
       if (DebugMode) {
         edm::LogVerbatim("SmartPixelsTrackProducer") << "TP not matched to track: myFake = " << myFake << " pdgId = " << tmp_matchtp_pdgid;
       }
     }
     else {
+      matched_tracks++;
       int tmp_eventid = my_tp->eventId().event();
 
       if (tmp_eventid > 0)
@@ -852,33 +1039,26 @@ void L1SmartPixelsTrackProducer::produce(edm::StreamID, edm::Event& iEvent, cons
 	inputs.emplace_back(iterL1Track->phi());
 	inputs.emplace_back(iterL1Track->z0());
 	inputs.emplace_back(iterL1Track->d0());
-	if( this_l1track < 3) {
-	  std::cout << "track " << this_l1track << " inputs: ";
-	  for (auto&& inp : inputs)
-	    std::visit([](auto&& arg){ std::cout << arg;}, inp);
-	  std::cout << std::endl;
-	}
 
 
 	// match the original tp phi
-	auto clib_phi = tmp_matchtp_phi;
+	// auto clib_phi = tmp_matchtp_phi;
+	auto clib_phi = tmp_matchtp_phi + cMap_phi->evaluate(inputs);
 
 	// match the original tanL under the assumption that the pt_new / pt_old scaling applies to the pz_new / pz_old, ergo cancelling in tanL calculation
 	auto clib_tanL = my_tp->p4().pz() / my_tp->p4().pt();
 
-	// FIXME: remove continue statement
-	continue;
-
 	// auto tmp_pt = tmp_matchtp_pt; //cMap_pt->evaluate(inputs);
-	auto clib_pt = cMap_pt->evaluate(inputs);
+	auto clib_pt = tmp_matchtp_pt + cMap_pt->evaluate(inputs);
 	auto clib_rInv = my_tp->charge() * MagConstant * b_field / (clib_pt * 100.0);
 
 	// auto tmp_z0 = tmp_matchtp_z0; //cMap_z0->evaluate(inputs);
 	double clib_z0_to_d0_estimate = 1.0;
-	auto clib_z0 = clib_z0_to_d0_estimate * cMap_d0->evaluate(inputs);
+	auto clib_z0 = tmp_matchtp_z0 + clib_z0_to_d0_estimate * cMap_d0->evaluate(inputs); //FIXME: update to dedicated z0 esimtate if possible
 
 	// auto tmp_d0 = tmp_matchtp_d0; //cMap_d0->evaluate(inputs);
-	auto clib_d0 = cMap_d0->evaluate(inputs);
+	auto clib_d0 = tmp_matchtp_d0 + cMap_d0->evaluate(inputs);
+
 
         L1Track track = L1Track(clib_rInv,
                                 clib_phi,
@@ -917,12 +1097,89 @@ void L1SmartPixelsTrackProducer::produce(edm::StreamID, edm::Event& iEvent, cons
                     << "tp input pt: " << tmp_matchtp_pt << " rInv: " << tmp_matcht_rInv << std::endl
                     << " track output pt: " << track.momentum().perp() << " rInv: " << track.rInv() << std::endl;
         */
+
+	//DEBUG prints
+	// if( this_l1track < 5) {
+	//   std::cout << "track " << this_l1track << " inputs:"
+	// 	    << "(pt_tp, eta_tp, phi_tp, z0_tp, d0_tp, tp_track_match, pt_track, eta_track, phi_track, z0_track, d0_track)";
+	//   unsigned int visit_counter = 0;
+	//   for (auto&& inp : inputs) {
+	//     if (visit_counter == 0 || visit_counter == 5 || visit_counter == 6)
+	//       std::cout << std::endl;
+	//     std::visit([](auto&& arg){ std::cout << " " << arg;}, inp);
+	//     visit_counter++;
+	//   }
+	//   std::cout << std::endl;
+	//   std::cout << "outputs:"
+	// 	    // << " clib_pt=" << cMap_pt->evaluate(inputs) << " clib_rInv=" <<  my_tp->charge() * MagConstant * b_field / (cMap_pt->evaluate(inputs) * 100.0)
+	// 	    // << " clib_phi=" << cMap_phi->evaluate(inputs)		    
+	// 	    // << " clib_d0" << cMap_d0->evaluate(inputs)
+	// 	    << " clib_pt= " << clib_pt << " clib_rInv= " <<  clib_rInv
+	// 	    << " clib_phi= " << clib_phi
+	// 	    << " clib_d0= " << clib_d0
+	// 	    << " clib_z0= " << clib_z0
+	// 	    << std::endl;
+	//   std::cout << "input track " << this_l1track << " L1Track parameters:" << std::endl;
+	  
+	//   std::cout << "\trInv original :: new\t"
+	// 	    << (iterL1Track->rInv()) << "    -    "
+	// 	    << (track.rInv()) << std::endl;
+	//   std::cout << "\tpt original :: new\t"
+	// 	    << (my_tp->charge() * MagConstant * b_field / (iterL1Track->rInv() * 100.0)) << "    -    "
+	// 	    << (my_tp->charge() * MagConstant * b_field / (track.rInv() * 100.0)) << std::endl;
+	//   std::cout << "\ttanL original :: new\t"
+	// 	    << (iterL1Track->tanL()) << "    -    "
+	// 	    << (track.tanL()) << std::endl;
+	//   std::cout << "\teta original :: new\t"
+	// 	    << (std::asinh(iterL1Track->tanL())) << "    -    "
+	// 	    << (std::asinh(track.tanL())) << std::endl;
+	//   std::cout << "\tphi original :: new\t"
+	// 	    << (iterL1Track->phi()) << "    -    "
+	// 	    << (track.phi()) << std::endl;
+	//   std::cout << "\tz0 original :: new\t"
+	// 	    << (iterL1Track->z0()) << "    -    "
+	// 	    << (track.z0()) << std::endl;
+	//   std::cout << "\td0 original :: new\t"
+	// 	    << (iterL1Track->d0()) << "    -    "
+	// 	    << (track.d0()) << std::endl;
+	// }
+      if (my_tp->pt() > 2.5) //FIXME: reduce to more modest value
+	track_summary_["pt_resolution_crosscheck"][tp_track_match] += std::fabs(my_tp->charge() * MagConstant * b_field / (track.getRinv() * 100.0)) - std::fabs(my_tp->pt());
       }
     }
+    if (my_tp.isNull() == false) {
+      // if (my_tp->pt() > 1.95) {
+      if (my_tp->pt() > 2.5) { //FIXME: reduce to more modest value
+	
+	track_summary_["resolution_entries"][tp_track_match]++;
+	// resolution_entries_[tp_track_match] = 1;
+	// pt_resolution_orig_[tp_track_match] += (my_tp->charge() * MagConstant * b_field / (iterL1Track->rInv() * 100.0) - my_tp->pt());
+	// pt_resolution_[tp_track_match] += (my_tp->charge() * MagConstant * b_field / (outputTracks->back()->rInv() * 100.0) - my_tp->pt());
+	
+	// track_summary_["pt_resolution_orig"][tp_track_match] += std::fabs(my_tp->charge() * MagConstant * b_field / (iterL1Track->getRinv() * 100.0) - my_tp->pt()); //use trackword rInv converted to double
+	// track_summary_["pt_resolution"][tp_track_match] += std::fabs(my_tp->charge() * MagConstant * b_field / (outputTracks->back().getRinv() * 100.0) - my_tp->pt());
+	track_summary_["pt_resolution_orig"][tp_track_match] += std::fabs(my_tp->charge() * MagConstant * b_field / (iterL1Track->getRinv() * 100.0)) - std::fabs(my_tp->pt()); //use trackword rInv converted to double
+	track_summary_["pt_resolution"][tp_track_match] += std::fabs(my_tp->charge() * MagConstant * b_field / (outputTracks->back().getRinv() * 100.0)) - std::fabs(my_tp->pt());
+	track_summary_["d0_resolution_orig"][tp_track_match] += std::fabs(iterL1Track->getD0() - tmp_matchtp_d0); //use trackword d0 converted to double
+	track_summary_["d0_resolution"][tp_track_match] += std::fabs(outputTracks->back().getD0() - tmp_matchtp_z0);
+	track_summary_["z0_resolution_orig"][tp_track_match] += std::fabs(iterL1Track->getZ0() - tmp_matchtp_z0); //use trackword z0 converted to double
+	track_summary_["z0_resolution"][tp_track_match] += std::fabs(outputTracks->back().getZ0() - tmp_matchtp_z0);
+	track_summary_["phi_resolution_orig"][tp_track_match] += std::fabs(iterL1Track->phi() - tmp_matchtp_phi); //use float phi
+	track_summary_["phi_resolution"][tp_track_match] += std::fabs(outputTracks->back().phi() - tmp_matchtp_phi);
+      }
+      else {
+	// std::cout << "Skipping matched track resolution for pt below threshold: pt=" << my_tp->pt() << " eta=" << my_tp->eta() << std::endl;
+      }
+    } // end if (
   }  //end track loop
-  if ((long unsigned int)this_l1track != outputTracks->size())
-    std::cout << "Mismatch!!\n\tthis_l1track counter = " << this_l1track << std::endl
-              << "\n\toutputTracks->size() = " << outputTracks->size() << std::endl;
+  //DEBUG
+  // if ((long unsigned int)this_l1track != outputTracks->size())
+  //   std::cout << "(L1SmartPixelsTrackProducer.cc) Mismatch!!\n\tthis_l1track counter = " << this_l1track << std::endl
+  //             << "\n\toutputTracks->size() = " << outputTracks->size() << std::endl;
+  
+  // std::cout << "Final track resolution_entries for tp_track_match=1: " << track_summary_["resolution_entries"][1] << std::endl;
+  //DEBUG
+  // std::cout << "(L1SmartPixelsTrackProducer.cc) Event unmatched_tracks: " << unmatched_tracks << " matched_tracks: " << matched_tracks << std::endl;
   iEvent.put(std::move(outputTracks), outputCollectionName_);
 }  // end of produce()
 
