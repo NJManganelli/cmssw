@@ -130,21 +130,44 @@ public:
   static std::shared_ptr< std::map< std::string, std::map< int, double > > > globalBeginRunSummary(edm::Run const&,
 												   edm::EventSetup const&,
 												   RunContext const*) {
-    // std::unique_ptr< std::map< std::string, std::map< int, double > > > myMapPtr = std::make_unique< std::map< std::string, std::map< int, double > > >();
-    // return myMapPtr;
     return std::make_unique< std::map< std::string, std::map< int, double > > >(
-	std::map<std::string, std::map<int, double>>{
-	  {"pt_resolution_orig", {{0, 0}, {1, 0}, {2, 0}, {4, 0}, {8, 0}, {12, 0}, {16, 0}}},
-	  {"d0_resolution_orig", {{0, 0}, {1, 0}, {2, 0}, {4, 0}, {8, 0}, {12, 0}, {16, 0}}},
-	  {"z0_resolution_orig", {{0, 0}, {1, 0}, {2, 0}, {4, 0}, {8, 0}, {12, 0}, {16, 0}}},
-	  {"phi_resolution_orig", {{0, 0}, {1, 0}, {2, 0}, {4, 0}, {8, 0}, {12, 0}, {16, 0}}},
-	  {"pt_resolution", {{0, 0}, {1, 0}, {2, 0}, {4, 0}, {8, 0}, {12, 0}, {16, 0}}},
-	  {"pt_resolution_crosscheck", {{0, 0}, {1, 0}, {2, 0}, {4, 0}, {8, 0}, {12, 0}, {16, 0}}},
-	  {"d0_resolution", {{0, 0}, {1, 0}, {2, 0}, {4, 0}, {8, 0}, {12, 0}, {16, 0}}},
-	  {"z0_resolution", {{0, 0}, {1, 0}, {2, 0}, {4, 0}, {8, 0}, {12, 0}, {16, 0}}},
-	  {"phi_resolution", {{0, 0}, {1, 0}, {2, 0}, {4, 0}, {8, 0}, {12, 0}, {16, 0}}},
-	  {"resolution_entries", {{0, 0}, {1, 0}, {2, 0}, {4, 0}, {8, 0}, {12, 0}, {16, 0}}}
-	});
+      std::map<std::string, std::map<int, double>>{
+	{"npars_4_entries", {{0, 0}, {1, 0}, {2, 0}, {4, 0}, {8, 0}, {12, 0}, {16, 0}}},
+	{"npars_5_entries", {{0, 0}, {1, 0}, {2, 0}, {4, 0}, {8, 0}, {12, 0}, {16, 0}}},
+	{"resolution_entries", {{0, 0}, {1, 0}, {2, 0}, {4, 0}, {8, 0}, {12, 0}, {16, 0}}},
+	{"float_pt_diff_sum_orig", {{0, 0}, {1, 0}, {2, 0}, {4, 0}, {8, 0}, {12, 0}, {16, 0}}},
+	{"float_pt_diff_sum2_orig", {{0, 0}, {1, 0}, {2, 0}, {4, 0}, {8, 0}, {12, 0}, {16, 0}}},
+	{"float_pt_diff_sum_new", {{0, 0}, {1, 0}, {2, 0}, {4, 0}, {8, 0}, {12, 0}, {16, 0}}},
+	{"float_pt_diff_sum2_new", {{0, 0}, {1, 0}, {2, 0}, {4, 0}, {8, 0}, {12, 0}, {16, 0}}},
+	{"float_eta_diff_sum_orig", {{0, 0}, {1, 0}, {2, 0}, {4, 0}, {8, 0}, {12, 0}, {16, 0}}},
+	{"float_eta_diff_sum2_orig", {{0, 0}, {1, 0}, {2, 0}, {4, 0}, {8, 0}, {12, 0}, {16, 0}}},
+	{"float_eta_diff_sum_new", {{0, 0}, {1, 0}, {2, 0}, {4, 0}, {8, 0}, {12, 0}, {16, 0}}},
+	{"float_eta_diff_sum2_new", {{0, 0}, {1, 0}, {2, 0}, {4, 0}, {8, 0}, {12, 0}, {16, 0}}},
+	{"float_phi_diff_sum_orig", {{0, 0}, {1, 0}, {2, 0}, {4, 0}, {8, 0}, {12, 0}, {16, 0}}},
+	{"float_phi_diff_sum2_orig", {{0, 0}, {1, 0}, {2, 0}, {4, 0}, {8, 0}, {12, 0}, {16, 0}}},
+	{"float_phi_diff_sum_new", {{0, 0}, {1, 0}, {2, 0}, {4, 0}, {8, 0}, {12, 0}, {16, 0}}},
+	{"float_phi_diff_sum2_new", {{0, 0}, {1, 0}, {2, 0}, {4, 0}, {8, 0}, {12, 0}, {16, 0}}},
+	{"float_z0_diff_sum_orig", {{0, 0}, {1, 0}, {2, 0}, {4, 0}, {8, 0}, {12, 0}, {16, 0}}},
+	{"float_z0_diff_sum2_orig", {{0, 0}, {1, 0}, {2, 0}, {4, 0}, {8, 0}, {12, 0}, {16, 0}}},
+	{"float_z0_diff_sum_new", {{0, 0}, {1, 0}, {2, 0}, {4, 0}, {8, 0}, {12, 0}, {16, 0}}},
+	{"float_z0_diff_sum2_new", {{0, 0}, {1, 0}, {2, 0}, {4, 0}, {8, 0}, {12, 0}, {16, 0}}},
+	{"float_d0_diff_sum_orig", {{0, 0}, {1, 0}, {2, 0}, {4, 0}, {8, 0}, {12, 0}, {16, 0}}},
+	{"float_d0_diff_sum2_orig", {{0, 0}, {1, 0}, {2, 0}, {4, 0}, {8, 0}, {12, 0}, {16, 0}}},
+	{"float_d0_diff_sum_new", {{0, 0}, {1, 0}, {2, 0}, {4, 0}, {8, 0}, {12, 0}, {16, 0}}},
+	{"float_d0_diff_sum2_new", {{0, 0}, {1, 0}, {2, 0}, {4, 0}, {8, 0}, {12, 0}, {16, 0}}},
+	{"hw_pt_diff_sum_orig", {{0, 0}, {1, 0}, {2, 0}, {4, 0}, {8, 0}, {12, 0}, {16, 0}}},
+	{"hw_pt_diff_sum2_orig", {{0, 0}, {1, 0}, {2, 0}, {4, 0}, {8, 0}, {12, 0}, {16, 0}}},
+	{"hw_pt_diff_sum_new", {{0, 0}, {1, 0}, {2, 0}, {4, 0}, {8, 0}, {12, 0}, {16, 0}}},
+	{"hw_pt_diff_sum2_new", {{0, 0}, {1, 0}, {2, 0}, {4, 0}, {8, 0}, {12, 0}, {16, 0}}},
+	{"hw_z0_diff_sum_orig", {{0, 0}, {1, 0}, {2, 0}, {4, 0}, {8, 0}, {12, 0}, {16, 0}}},
+	{"hw_z0_diff_sum2_orig", {{0, 0}, {1, 0}, {2, 0}, {4, 0}, {8, 0}, {12, 0}, {16, 0}}},
+	{"hw_z0_diff_sum_new", {{0, 0}, {1, 0}, {2, 0}, {4, 0}, {8, 0}, {12, 0}, {16, 0}}},
+	{"hw_z0_diff_sum2_new", {{0, 0}, {1, 0}, {2, 0}, {4, 0}, {8, 0}, {12, 0}, {16, 0}}},
+	{"hw_d0_diff_sum_orig", {{0, 0}, {1, 0}, {2, 0}, {4, 0}, {8, 0}, {12, 0}, {16, 0}}},
+	{"hw_d0_diff_sum2_orig", {{0, 0}, {1, 0}, {2, 0}, {4, 0}, {8, 0}, {12, 0}, {16, 0}}},
+	{"hw_d0_diff_sum_new", {{0, 0}, {1, 0}, {2, 0}, {4, 0}, {8, 0}, {12, 0}, {16, 0}}},
+	{"hw_d0_diff_sum2_new", {{0, 0}, {1, 0}, {2, 0}, {4, 0}, {8, 0}, {12, 0}, {16, 0}}},
+      });
   }
 
   // void endRunSummary(edm::Run const& iRun,
@@ -167,16 +190,35 @@ public:
     std::cout << "===L1SmartPixelsTrackProducer Track Resolution Global Summary Start===" << std::endl;
     unsigned int skip_counter = 0;
     unsigned int print_counter = 0;
+    std::string std_tag = "sum2";
+    std::map<int, std::string> match_class_to_name = {
+      {0, "//UNKNOWN[0]"},
+      {1, "//UNKNOWN[1]"},
+      {2, "//UNKNOWN[2]"},
+      {4, "isLooselyGenuine"},
+      {8, "isGenuine"}, // but is not isLooselyGenuine, may not occur due to tight/loose being inclusive
+      {12, "isGenuine"},
+      {16, "//UNKNOWN[16]"}
+    };
     for (const auto& outer_map : *iSummary) {
+      bool do_std = (outer_map.first.find(std_tag) != std::string::npos);
       for (const auto& inner_map : outer_map.second) {
 	if (iSummary->at("resolution_entries").at(inner_map.first) < 0.1){
 	  skip_counter++;
 	  continue;
 	}
 	print_counter++;
-	std::cout << "\ttotal_track_resolution[" << outer_map.first << "][" << inner_map.first << "] = "
-		  << inner_map.second << " / " << iSummary->at("resolution_entries").at(inner_map.first)
-		  << " = " << iSummary->at(outer_map.first).at(inner_map.first) / iSummary->at("resolution_entries").at(inner_map.first) << std::endl;
+	double output = 0;
+	if( do_std )
+	  output = std::sqrt(iSummary->at(outer_map.first).at(inner_map.first) / iSummary->at("resolution_entries").at(inner_map.first));
+	else
+	  output = iSummary->at(outer_map.first).at(inner_map.first) / iSummary->at("resolution_entries").at(inner_map.first);    
+	std::cout << "\ttrack_summary[" << outer_map.first << "][" << match_class_to_name[inner_map.first] << "] = ";
+	if( do_std )
+	  std::cout << "std(";
+	else
+	  std::cout << "mean(";	
+	std::cout << inner_map.second << ", nsamples = " << iSummary->at("resolution_entries").at(inner_map.first) << ") = " << output << std::endl;
       }
     }
     if (print_counter == 0)
@@ -240,97 +282,43 @@ private:
   // diagnostics
   mutable std::set<int> tp_track_match_set_ = {};
   mutable std::map< std::string, std::map< int, double > > track_summary_ = {
-    { "pt_resolution_orig", {
-	{0, 0},
-	{1, 0},
-	{2, 0},
-	{4, 0},
-	{8, 0},
-	{12, 0},
-	{16, 0},
-      }},
-    { "d0_resolution_orig", {
-	{0, 0},
-	{1, 0},
-	{2, 0},
-	{4, 0},
-	{8, 0},
-	{12, 0},
-	{16, 0},
-      }},
-    { "z0_resolution_orig", {
-	{0, 0},
-	{1, 0},
-	{2, 0},
-	{4, 0},
-	{8, 0},
-	{12, 0},
-	{16, 0},
-      }},
-    { "phi_resolution_orig", {
-	{0, 0},
-	{1, 0},
-	{2, 0},
-	{4, 0},
-	{8, 0},
-	{12, 0},
-	{16, 0},
-      }},
-    { "pt_resolution", {
-	{0, 0},
-	{1, 0},
-	{2, 0},
-	{4, 0},
-	{8, 0},
-	{12, 0},
-	{16, 0},
-      }},
-    { "pt_resolution_crosscheck", {
-	{0, 0},
-	{1, 0},
-	{2, 0},
-	{4, 0},
-	{8, 0},
-	{12, 0},
-	{16, 0},
-      }},
-    { "d0_resolution", {
-	{0, 0},
-	{1, 0},
-	{2, 0},
-	{4, 0},
-	{8, 0},
-	{12, 0},
-	{16, 0},
-      }},
-    { "z0_resolution", {
-	{0, 0},
-	{1, 0},
-	{2, 0},
-	{4, 0},
-	{8, 0},
-	{12, 0},
-	{16, 0},
-      }},
-    { "phi_resolution", {
-	{0, 0},
-	{1, 0},
-	{2, 0},
-	{4, 0},
-	{8, 0},
-	{12, 0},
-	{16, 0},
-      }},
-    { "resolution_entries", {
-	{0, 0},
-	{1, 0},
-	{2, 0},
-	{4, 0},
-	{8, 0},
-	{12, 0},
-	{16, 0},
-      }},
+    {"npars_4_entries", {{0, 0}, {1, 0}, {2, 0}, {4, 0}, {8, 0}, {12, 0}, {16, 0}}},
+    {"npars_5_entries", {{0, 0}, {1, 0}, {2, 0}, {4, 0}, {8, 0}, {12, 0}, {16, 0}}},
+    {"resolution_entries", {{0, 0}, {1, 0}, {2, 0}, {4, 0}, {8, 0}, {12, 0}, {16, 0}}},
+    {"float_pt_diff_sum_orig", {{0, 0}, {1, 0}, {2, 0}, {4, 0}, {8, 0}, {12, 0}, {16, 0}}},
+    {"float_pt_diff_sum2_orig", {{0, 0}, {1, 0}, {2, 0}, {4, 0}, {8, 0}, {12, 0}, {16, 0}}},
+    {"float_pt_diff_sum_new", {{0, 0}, {1, 0}, {2, 0}, {4, 0}, {8, 0}, {12, 0}, {16, 0}}},
+    {"float_pt_diff_sum2_new", {{0, 0}, {1, 0}, {2, 0}, {4, 0}, {8, 0}, {12, 0}, {16, 0}}},
+    {"float_eta_diff_sum_orig", {{0, 0}, {1, 0}, {2, 0}, {4, 0}, {8, 0}, {12, 0}, {16, 0}}},
+    {"float_eta_diff_sum2_orig", {{0, 0}, {1, 0}, {2, 0}, {4, 0}, {8, 0}, {12, 0}, {16, 0}}},
+    {"float_eta_diff_sum_new", {{0, 0}, {1, 0}, {2, 0}, {4, 0}, {8, 0}, {12, 0}, {16, 0}}},
+    {"float_eta_diff_sum2_new", {{0, 0}, {1, 0}, {2, 0}, {4, 0}, {8, 0}, {12, 0}, {16, 0}}},
+    {"float_phi_diff_sum_orig", {{0, 0}, {1, 0}, {2, 0}, {4, 0}, {8, 0}, {12, 0}, {16, 0}}},
+    {"float_phi_diff_sum2_orig", {{0, 0}, {1, 0}, {2, 0}, {4, 0}, {8, 0}, {12, 0}, {16, 0}}},
+    {"float_phi_diff_sum_new", {{0, 0}, {1, 0}, {2, 0}, {4, 0}, {8, 0}, {12, 0}, {16, 0}}},
+    {"float_phi_diff_sum2_new", {{0, 0}, {1, 0}, {2, 0}, {4, 0}, {8, 0}, {12, 0}, {16, 0}}},
+    {"float_z0_diff_sum_orig", {{0, 0}, {1, 0}, {2, 0}, {4, 0}, {8, 0}, {12, 0}, {16, 0}}},
+    {"float_z0_diff_sum2_orig", {{0, 0}, {1, 0}, {2, 0}, {4, 0}, {8, 0}, {12, 0}, {16, 0}}},
+    {"float_z0_diff_sum_new", {{0, 0}, {1, 0}, {2, 0}, {4, 0}, {8, 0}, {12, 0}, {16, 0}}},
+    {"float_z0_diff_sum2_new", {{0, 0}, {1, 0}, {2, 0}, {4, 0}, {8, 0}, {12, 0}, {16, 0}}},
+    {"float_d0_diff_sum_orig", {{0, 0}, {1, 0}, {2, 0}, {4, 0}, {8, 0}, {12, 0}, {16, 0}}},
+    {"float_d0_diff_sum2_orig", {{0, 0}, {1, 0}, {2, 0}, {4, 0}, {8, 0}, {12, 0}, {16, 0}}},
+    {"float_d0_diff_sum_new", {{0, 0}, {1, 0}, {2, 0}, {4, 0}, {8, 0}, {12, 0}, {16, 0}}},
+    {"float_d0_diff_sum2_new", {{0, 0}, {1, 0}, {2, 0}, {4, 0}, {8, 0}, {12, 0}, {16, 0}}},
+    {"hw_pt_diff_sum_orig", {{0, 0}, {1, 0}, {2, 0}, {4, 0}, {8, 0}, {12, 0}, {16, 0}}},
+    {"hw_pt_diff_sum2_orig", {{0, 0}, {1, 0}, {2, 0}, {4, 0}, {8, 0}, {12, 0}, {16, 0}}},
+    {"hw_pt_diff_sum_new", {{0, 0}, {1, 0}, {2, 0}, {4, 0}, {8, 0}, {12, 0}, {16, 0}}},
+    {"hw_pt_diff_sum2_new", {{0, 0}, {1, 0}, {2, 0}, {4, 0}, {8, 0}, {12, 0}, {16, 0}}},
+    {"hw_z0_diff_sum_orig", {{0, 0}, {1, 0}, {2, 0}, {4, 0}, {8, 0}, {12, 0}, {16, 0}}},
+    {"hw_z0_diff_sum2_orig", {{0, 0}, {1, 0}, {2, 0}, {4, 0}, {8, 0}, {12, 0}, {16, 0}}},
+    {"hw_z0_diff_sum_new", {{0, 0}, {1, 0}, {2, 0}, {4, 0}, {8, 0}, {12, 0}, {16, 0}}},
+    {"hw_z0_diff_sum2_new", {{0, 0}, {1, 0}, {2, 0}, {4, 0}, {8, 0}, {12, 0}, {16, 0}}},
+    {"hw_d0_diff_sum_orig", {{0, 0}, {1, 0}, {2, 0}, {4, 0}, {8, 0}, {12, 0}, {16, 0}}},
+    {"hw_d0_diff_sum2_orig", {{0, 0}, {1, 0}, {2, 0}, {4, 0}, {8, 0}, {12, 0}, {16, 0}}},
+    {"hw_d0_diff_sum_new", {{0, 0}, {1, 0}, {2, 0}, {4, 0}, {8, 0}, {12, 0}, {16, 0}}},
+    {"hw_d0_diff_sum2_new", {{0, 0}, {1, 0}, {2, 0}, {4, 0}, {8, 0}, {12, 0}, {16, 0}}},
   };
+  
 };
 
 //////////////////////////////////
@@ -1048,6 +1036,8 @@ void L1SmartPixelsTrackProducer::produce(edm::Event& iEvent, const edm::EventSet
 
 	// auto tmp_d0 = tmp_matchtp_d0; //cMap_d0->evaluate(inputs);
 	auto clib_d0 = tmp_matchtp_d0 + cMap_d0->evaluate(inputs);
+	// if (iterL1Track->nFitPars() == 4)
+	//   clib_d0 = 0; // Reset to 0 if we're looking at a 4-parameter track
 
 
         L1Track track = L1Track(clib_rInv,
@@ -1132,30 +1122,66 @@ void L1SmartPixelsTrackProducer::produce(edm::Event& iEvent, const edm::EventSet
 	  edm::LogVerbatim("SmartPixelsTrackProducer") << "\td0 original :: new\t"
 		    << (iterL1Track->d0()) << "    -    "
 		    << (track.d0()) << std::endl;
-	}
-      if (my_tp->pt() > 2.5) //FIXME: reduce to more modest value
-	track_summary_["pt_resolution_crosscheck"][tp_track_match] += std::fabs(my_tp->charge() * MagConstant * b_field / (track.getRinv() * 100.0)) - std::fabs(my_tp->pt());
+	} // end debug logging
       }
-    }
+    } // end correctionlibRegression path
+
+    // Summary info for track changes
     if (my_tp.isNull() == false) {
-      // if (my_tp->pt() > 1.95) {
-      if (my_tp->pt() > 2.5) { //FIXME: reduce to more modest value
-	
+      if (my_tp->pt() > 1.95) {
+	auto o_trk = *iterL1Track;
+	auto n_trk = outputTracks->back();
+	if( o_trk.nFitPars() == 4 )
+	  track_summary_["npars_4_entries"][tp_track_match]++;
+	if( o_trk.nFitPars() == 5 )
+	  track_summary_["npars_5_entries"][tp_track_match]++;
 	track_summary_["resolution_entries"][tp_track_match]++;
-	// resolution_entries_[tp_track_match] = 1;
-	// pt_resolution_orig_[tp_track_match] += (my_tp->charge() * MagConstant * b_field / (iterL1Track->rInv() * 100.0) - my_tp->pt());
-	// pt_resolution_[tp_track_match] += (my_tp->charge() * MagConstant * b_field / (outputTracks->back()->rInv() * 100.0) - my_tp->pt());
 	
-	// track_summary_["pt_resolution_orig"][tp_track_match] += std::fabs(my_tp->charge() * MagConstant * b_field / (iterL1Track->getRinv() * 100.0) - my_tp->pt()); //use trackword rInv converted to double
-	// track_summary_["pt_resolution"][tp_track_match] += std::fabs(my_tp->charge() * MagConstant * b_field / (outputTracks->back().getRinv() * 100.0) - my_tp->pt());
-	track_summary_["pt_resolution_orig"][tp_track_match] += std::fabs(my_tp->charge() * MagConstant * b_field / (iterL1Track->getRinv() * 100.0)) - std::fabs(my_tp->pt()); //use trackword rInv converted to double
-	track_summary_["pt_resolution"][tp_track_match] += std::fabs(my_tp->charge() * MagConstant * b_field / (outputTracks->back().getRinv() * 100.0)) - std::fabs(my_tp->pt());
-	track_summary_["d0_resolution_orig"][tp_track_match] += std::fabs(iterL1Track->getD0() - tmp_matchtp_d0); //use trackword d0 converted to double
-	track_summary_["d0_resolution"][tp_track_match] += std::fabs(outputTracks->back().getD0() - tmp_matchtp_z0);
-	track_summary_["z0_resolution_orig"][tp_track_match] += std::fabs(iterL1Track->getZ0() - tmp_matchtp_z0); //use trackword z0 converted to double
-	track_summary_["z0_resolution"][tp_track_match] += std::fabs(outputTracks->back().getZ0() - tmp_matchtp_z0);
-	track_summary_["phi_resolution_orig"][tp_track_match] += std::fabs(iterL1Track->phi() - tmp_matchtp_phi); //use float phi
-	track_summary_["phi_resolution"][tp_track_match] += std::fabs(outputTracks->back().phi() - tmp_matchtp_phi);
+	track_summary_["float_pt_diff_sum_orig"][tp_track_match] += (o_trk.momentum().perp() - my_tp->pt());
+	track_summary_["float_pt_diff_sum2_orig"][tp_track_match] += std::pow((o_trk.momentum().perp() - my_tp->pt()), 2);
+	track_summary_["float_pt_diff_sum_new"][tp_track_match] += (n_trk.momentum().perp() - my_tp->pt());
+	track_summary_["float_pt_diff_sum2_new"][tp_track_match] += std::pow((n_trk.momentum().perp() - my_tp->pt()), 2);
+	
+	track_summary_["float_eta_diff_sum_orig"][tp_track_match] += (o_trk.eta() - my_tp->eta());
+	track_summary_["float_eta_diff_sum2_orig"][tp_track_match] += std::pow((o_trk.eta() - my_tp->eta()), 2);
+	track_summary_["float_eta_diff_sum_new"][tp_track_match] += (n_trk.eta() - my_tp->eta());
+	track_summary_["float_eta_diff_sum2_new"][tp_track_match] += std::pow((n_trk.eta() - my_tp->eta()), 2);
+
+	track_summary_["float_phi_diff_sum_orig"][tp_track_match] += (o_trk.phi() - my_tp->phi());
+	track_summary_["float_phi_diff_sum2_orig"][tp_track_match] += std::pow((o_trk.phi() - my_tp->phi()), 2);
+	track_summary_["float_phi_diff_sum_new"][tp_track_match] += (n_trk.phi() - my_tp->phi());
+	track_summary_["float_phi_diff_sum2_new"][tp_track_match] += std::pow((n_trk.phi() - my_tp->phi()), 2);
+
+	track_summary_["float_z0_diff_sum_orig"][tp_track_match] += (o_trk.z0() - my_tp->z0());
+	track_summary_["float_z0_diff_sum2_orig"][tp_track_match] += std::pow((o_trk.z0() - my_tp->z0()), 2);
+	track_summary_["float_z0_diff_sum_new"][tp_track_match] += (n_trk.z0() - my_tp->z0());
+	track_summary_["float_z0_diff_sum2_new"][tp_track_match] += std::pow((n_trk.z0() - my_tp->z0()), 2);	
+	
+	track_summary_["float_d0_diff_sum_orig"][tp_track_match] += (o_trk.d0() - my_tp->d0());
+	track_summary_["float_d0_diff_sum2_orig"][tp_track_match] += std::pow((o_trk.d0() - my_tp->d0()), 2);
+	track_summary_["float_d0_diff_sum_new"][tp_track_match] += (n_trk.d0() - my_tp->d0());
+	track_summary_["float_d0_diff_sum2_new"][tp_track_match] += std::pow((n_trk.d0() - my_tp->d0()), 2);
+
+	auto o_trk_pt_diff = (my_tp->charge() * MagConstant * b_field / (o_trk.getRinv() * 100.0) - my_tp->pt());
+	auto n_trk_pt_diff = (my_tp->charge() * MagConstant * b_field / (n_trk.getRinv() * 100.0) - my_tp->pt());
+	track_summary_["hw_pt_diff_sum_orig"][tp_track_match] += o_trk_pt_diff;
+	track_summary_["hw_pt_diff_sum2_orig"][tp_track_match] += std::pow(o_trk_pt_diff, 2);
+	track_summary_["hw_pt_diff_sum_new"][tp_track_match] += n_trk_pt_diff;
+	track_summary_["hw_pt_diff_sum2_new"][tp_track_match] += std::pow(n_trk_pt_diff, 2);
+
+	auto o_trk_z0_diff = o_trk.getZ0() - tmp_matchtp_z0;
+	auto n_trk_z0_diff = n_trk.getZ0() - tmp_matchtp_z0;
+	track_summary_["hw_z0_diff_sum_orig"][tp_track_match] += o_trk_z0_diff;
+	track_summary_["hw_z0_diff_sum2_orig"][tp_track_match] += std::pow(o_trk_z0_diff, 2);
+	track_summary_["hw_z0_diff_sum_new"][tp_track_match] += n_trk_z0_diff;
+	track_summary_["hw_z0_diff_sum2_new"][tp_track_match] += std::pow(n_trk_z0_diff, 2);	
+	
+	auto o_trk_d0_diff = o_trk.getD0() - tmp_matchtp_d0;
+	auto n_trk_d0_diff = n_trk.getD0() - tmp_matchtp_d0;
+	track_summary_["hw_d0_diff_sum_orig"][tp_track_match] += o_trk_d0_diff;
+	track_summary_["hw_d0_diff_sum2_orig"][tp_track_match] += std::pow(o_trk_d0_diff, 2);
+	track_summary_["hw_d0_diff_sum_new"][tp_track_match] += n_trk_d0_diff;
+	track_summary_["hw_d0_diff_sum2_new"][tp_track_match] += std::pow(n_trk_d0_diff, 2);
       }
       else {
 	// std::cout << "Skipping matched track resolution for pt below threshold: pt=" << my_tp->pt() << " eta=" << my_tp->eta() << std::endl;
