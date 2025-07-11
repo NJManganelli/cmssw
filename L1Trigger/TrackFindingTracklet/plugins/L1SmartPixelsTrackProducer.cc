@@ -277,7 +277,7 @@ private:
   edm::ESGetToken<hph::Setup, hph::SetupRcd> getTokenHPHSetup_;
 
   // correction::Correction::Ref cMap_pt, cMap_phi, cMap_d0;
-  correction::CompoundCorrection::Ref cMap_pt, cMap_phi, cMap_d0;
+  correction::CompoundCorrection::Ref cMap_pt, cMap_phi, cMap_z0, cMap_d0;
 
   // diagnostics
   mutable std::set<int> tp_track_match_set_ = {};
@@ -367,18 +367,22 @@ L1SmartPixelsTrackProducer::L1SmartPixelsTrackProducer(edm::ParameterSet const& 
     auto cSet = correction::CorrectionSet::from_file(smartPixelsCorrectionSet_);
     std::string cmap_pt_name = "pt_relative_smear_compound_" + smartPixelsActiveLayers_;
     std::string cmap_phi_name = "phi_relative_smear_compound_" + smartPixelsActiveLayers_;
+    std::string cmap_z0_name = "z0_relative_smear_compound_" + smartPixelsActiveLayers_;
     std::string cmap_d0_name = "d0_relative_smear_compound_" + smartPixelsActiveLayers_;
     cMap_pt = cSet->compound().at(cmap_pt_name);
     cMap_phi = cSet->compound().at(cmap_phi_name);
+    cMap_z0 = cSet->compound().at(cmap_z0_name);
     cMap_d0 = cSet->compound().at(cmap_d0_name);
   }
   else if( smartPixelsEmulatorMode_ == "correctionlibTPToySmear") {
     auto cSet = correction::CorrectionSet::from_file(smartPixelsCorrectionSet_);
     std::string cmap_pt_name = "pt_smear_compound_" + smartPixelsActiveLayers_;
     std::string cmap_phi_name = "phi_smear_compound_" + smartPixelsActiveLayers_;
+    std::string cmap_z0_name = "z0_smear_compound_" + smartPixelsActiveLayers_;
     std::string cmap_d0_name = "d0_smear_compound_" + smartPixelsActiveLayers_;
     cMap_pt = cSet->compound().at(cmap_pt_name);
     cMap_phi = cSet->compound().at(cmap_phi_name);
+    cMap_z0 = cSet->compound().at(cmap_z0_name);
     cMap_d0 = cSet->compound().at(cmap_d0_name);
   }
 }
@@ -1032,12 +1036,17 @@ void L1SmartPixelsTrackProducer::produce(edm::Event& iEvent, const edm::EventSet
 
 	// auto tmp_z0 = tmp_matchtp_z0; //cMap_z0->evaluate(inputs);
 	double clib_z0_to_d0_estimate = 1.0;
-	auto clib_z0 = tmp_matchtp_z0 + clib_z0_to_d0_estimate * cMap_d0->evaluate(inputs); //FIXME: update to dedicated z0 esimtate if possible
+	// if (iterL1Track->nFitPars() == 4)
+	//   clib_z0_to_d0_estimate = 0.488787 / 0.305956;
+	// if (iterL1Track->nFitPars() == 5)
+	//   clib_z0_to_d0_estimate = 0.545489/0.305956;
+	//FIXME: update to dedicated z0 estimate when not using swizzled d0_smear * z0_track_tp_difference
+	auto clib_z0 = tmp_matchtp_z0 + clib_z0_to_d0_estimate * cMap_z0->evaluate(inputs); 
 
 	// auto tmp_d0 = tmp_matchtp_d0; //cMap_d0->evaluate(inputs);
 	auto clib_d0 = tmp_matchtp_d0 + cMap_d0->evaluate(inputs);
-	// if (iterL1Track->nFitPars() == 4)
-	//   clib_d0 = 0; // Reset to 0 if we're looking at a 4-parameter track
+	if (iterL1Track->nFitPars() == 4)
+	  clib_d0 = 0; // Reset to 0 if we're looking at a 4-parameter track
 
 
         L1Track track = L1Track(clib_rInv,
