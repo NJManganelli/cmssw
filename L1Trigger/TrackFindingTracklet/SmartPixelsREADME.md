@@ -1,13 +1,13 @@
 
 ### Ensure good correctionlib version
-You must have correctionlib version > 2.2, this has been tested (as of writing) with 2.7 installed in-place of the default available with CMSSW 14. Ensure that an older version is not being picked up or linked against.
+You must have correctionlib version > 2.2, this has been tested (as of writing) with 2.7 installed in-place of the default available with CMSSW 15. Ensure that an older version is not being picked up or linked against.
 
 ### Setup CMSSW
 ```bash
 # Get CMSSW
 echo $SCRAM_ARCH
-cmsrel CMSSW_14_2_0_pre1
-cd CMSSW_14_2_0_pre1/src
+cmsrel CMSSW_15_1_0_pre4
+cd CMSSW_15_1_0_pre4/src
 cmsenv
 # Activate venv
 scram-venv cmsenv
@@ -23,14 +23,14 @@ git remote add njmanganelli-fork git@github.com:NJManganelli/cmssw.git
 git fetch njmanganelli-fork cmssw_14_2_0_pre1_smartpixelstrackproducer
 git checkout cmssw_14_2_0_pre1_smartpixelstrackproducer
 
-# Add L1Nano repo (since merged into CMSSW, but code and instructions need to be adapted to central variation)
-cd $CMSSW_BASE/src
-git clone git@github.com:cms-l1-dpg/Phase2-L1Nano.git PhysicsTools/L1Nano
-cd PhysicsTools/L1Nano
-git remote add njmanganelli-fork git@github.com:NJManganelli/Phase2-L1Nano
-git fetch njmanganelli-fork vX_1420pre1_gtttracks
-get checkout vX_1420pre1_gtttracks
-cd -
+# Add L1Nano repo (since merged into CMSSW, but code and instructions need to be adapted to central variation) - TODO: update for CMSSW_15_1_0_pre4
+# cd $CMSSW_BASE/src
+# git clone git@github.com:cms-l1-dpg/Phase2-L1Nano.git PhysicsTools/L1Nano
+# cd PhysicsTools/L1Nano
+# git remote add njmanganelli-fork git@github.com:NJManganelli/Phase2-L1Nano
+# git fetch njmanganelli-fork vX_1420pre1_gtttracks
+# get checkout vX_1420pre1_gtttracks
+# cd -
 
 # compile with C++20, override correctionlib in case it returns -std=c++17, this is a hack until the necessary flags are in a BuildFile.xml
 cd $CMSSW_BASE/src
