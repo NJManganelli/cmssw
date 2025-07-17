@@ -106,7 +106,7 @@ def oldKFConfig(process):
   # Larger number has more debug printout. "1" is useful for understanding why tracks are lost, best combined with TrackFitCheat=True.
   process.ProducerKF.TrackFitSettings.KalmanDebugLevel        = 0
 
-def injectSmartPixelsTrackProducer(process, smartPixelsEmulatorMode="passthrough", skipModuleTypes=None, printProcessInfo=False):
+def injectSmartPixelsTrackProducer(process, smartPixelsEmulatorMode="passthrough", addAssociation=True, skipModuleTypes=None, printProcessInfo=False):
   if skipModuleTypes is None:
     skipModuleTypes = ["L1SmartPixelsTrackProducer", "TTTrackAssociator_Phase2TrackerDigi_", "L1FPGATrackProducer", "SimpleL1TTTrackCandidateFlatTableProducer"]
   #print(help(cms.Process))
@@ -187,20 +187,22 @@ def injectSmartPixelsTrackProducer(process, smartPixelsEmulatorMode="passthrough
   #    TTTracks = cms.VInputTag(cms.InputTag("l1tTTTracksFromExtendedTrackletEmulationOriginal", "Level1TTTracks") )
   #)
 
-  process.load('L1Trigger.TrackFindingTracklet.l1tSmartPixelsTrackProducer_cfi')
-  #process.l1tTTTracksFromTrackletEmulation = process.l1tSmartPixelsTrackProducer.clone()
-  #process.l1tTTTracksFromTrackletEmulation.L1TrackInputTag = cms.InputTag("l1tTTTracksFromTrackletEmulationOriginal", "Level1TTTracks")
-  #process.l1tTTTracksFromExtendedTrackletEmulation = process.l1tSmartPixelsTrackProducerExtended.clone()
-  #process.l1tTTTracksFromExtendedTrackletEmulation.L1TrackInputTag = cms.InputTag("l1tTTTracksFromExtendedTrackletEmulationOriginal", "Level1TTTracks")
-  process.l1tSmartPixelsTrackProducer.smartPixelsEmulatorMode = cms.string(smartPixelsEmulatorMode)
-  process.l1tSmartPixelsTrackProducerExtended.smartPixelsEmulatorMode = cms.string(smartPixelsEmulatorMode)
-  process.l1tSmartPixelsTrackProducerTask = cms.Task(process.l1tSmartPixelsTrackProducer, process.l1tSmartPixelsTrackProducerExtended)
-  #process.l1tSmartPixelsTrackProducerPath = cms.Path(process.l1tSmartPixelsTrackProducerTask)
 
-  print("Associating L1SmartPixelsTrackProducer into the process")
-  #process.p.associate(process.l1tSmartPixelsTrackProducerTask)
-  for pathname, cmspath in process.paths_().items():
-    cmspath.associate(process.l1tSmartPixelsTrackProducerTask)
+  if addAssociation:
+    process.load('L1Trigger.TrackFindingTracklet.l1tSmartPixelsTrackProducer_cfi')
+    #process.l1tTTTracksFromTrackletEmulation = process.l1tSmartPixelsTrackProducer.clone()
+    #process.l1tTTTracksFromTrackletEmulation.L1TrackInputTag = cms.InputTag("l1tTTTracksFromTrackletEmulationOriginal", "Level1TTTracks")
+    #process.l1tTTTracksFromExtendedTrackletEmulation = process.l1tSmartPixelsTrackProducerExtended.clone()
+    #process.l1tTTTracksFromExtendedTrackletEmulation.L1TrackInputTag = cms.InputTag("l1tTTTracksFromExtendedTrackletEmulationOriginal", "Level1TTTracks")
+    process.l1tSmartPixelsTrackProducer.smartPixelsEmulatorMode = cms.string(smartPixelsEmulatorMode)
+    process.l1tSmartPixelsTrackProducerExtended.smartPixelsEmulatorMode = cms.string(smartPixelsEmulatorMode)
+    process.l1tSmartPixelsTrackProducerTask = cms.Task(process.l1tSmartPixelsTrackProducer, process.l1tSmartPixelsTrackProducerExtended)
+    #process.l1tSmartPixelsTrackProducerPath = cms.Path(process.l1tSmartPixelsTrackProducerTask)
+
+    print("Associating L1SmartPixelsTrackProducer into the process")
+    #process.p.associate(process.l1tSmartPixelsTrackProducerTask)
+    for pathname, cmspath in process.paths_().items():
+      cmspath.associate(process.l1tSmartPixelsTrackProducerTask)
 
   return process
 
@@ -218,3 +220,6 @@ def injectSmartPixelsTrackProducer_trackingParticleTruth(process):
 
 def injectSmartPixelsTrackProducer_correctionlibRegression(process):
   return injectSmartPixelsTrackProducer(process, smartPixelsEmulatorMode="correctionlibRegression", skipModuleTypes=None, printProcessInfo=False)
+
+def referenceSmartPixelsTrackProducer(process):
+  return injectSmartPixelsTrackProducer(process, addAssociation=False, skipModuleTypes=None, printProcessInfo=False)
