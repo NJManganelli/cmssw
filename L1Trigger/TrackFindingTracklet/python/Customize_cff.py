@@ -161,7 +161,6 @@ def addSmartPixelsTrackProducerVariants(process):
   process.load('L1Trigger.TrackFindingTracklet.l1tSmartPixelsTrackProducer_cfi')
   modules = []
   for sconf in ["passthrough", "passthroughFloat", "passthroughHW", "trackingParticleTruth"]:
-    print(sconf)
     fourparam = f"l1tSmartPixelsTrackProducerW{sconf}"
     fiveparam = f"l1tSmartPixelsTrackProducerExtendedW{sconf}"
     modules.append(fourparam)
