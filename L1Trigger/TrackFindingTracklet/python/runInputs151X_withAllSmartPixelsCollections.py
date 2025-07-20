@@ -1,0 +1,193 @@
+import FWCore.ParameterSet.Config as cms
+from Configuration.StandardSequences.Eras import eras
+
+process = cms.Process("IN", eras.Phase2C17I13M9)
+process.load('Configuration.StandardSequences.Services_cff')
+process.load('Configuration.Geometry.GeometryExtendedRun4D110Reco_cff')
+process.load('Configuration.Geometry.GeometryExtendedRun4D110_cff')
+process.load('Configuration.StandardSequences.MagneticField_cff')
+process.load('SimGeneral.MixingModule.mixNoPU_cfi')
+process.load('Configuration.StandardSequences.EndOfProcess_cff')
+process.load('Configuration.StandardSequences.FrontierConditions_GlobalTag_cff')
+from Configuration.AlCa.GlobalTag import GlobalTag
+process.GlobalTag = GlobalTag(process.GlobalTag, '141X_mcRun4_realistic_v3', '')
+
+process.load('SimCalorimetry.HcalTrigPrimProducers.hcaltpdigi_cff')
+process.load('CalibCalorimetry.CaloTPG.CaloTPGTranscoder_cfi')
+process.load('Configuration.StandardSequences.SimL1Emulator_cff')
+process.load('L1Trigger.TrackTrigger.TrackTrigger_cff')
+process.load("L1Trigger.TrackFindingTracklet.L1HybridEmulationTracks_cff")
+process.load("L1Trigger.TrackTrigger.ProducerSetup_cff")
+process.load("L1Trigger.TrackerDTC.ProducerED_cff")
+process.load("RecoVertex.BeamSpotProducer.BeamSpot_cfi")
+process.load('L1Trigger.L1THGCal.hgcalTriggerPrimitives_cff')
+
+process.source = cms.Source("PoolSource",
+    fileNames = cms.untracked.vstring(
+        # 'file:/data/cerminar/Phase2Spring23DIGIRECOMiniAOD/DoubleElectron_FlatPt-1To100-gun/GEN-SIM-DIGI-RAW-MINIAOD/PU200_Trk1GeV_131X_mcRun4_realistic_v5-v1/c699a773-9875-40c9-83b7-5a3c27f90bfd.root',
+        '/store/mc/Phase2Spring24DIGIRECOMiniAOD/TTToSemileptonic_TuneCP5_14TeV-powheg-pythia8/GEN-SIM-DIGI-RAW-MINIAOD/PU200_Trk1GeV_140X_mcRun4_realistic_v4-v2/120000/81899fbc-5012-47f0-b9eb-4665e13394c9.root',
+        # '/store/mc/Phase2Spring24DIGIRECOMiniAOD/TTToSemileptonic_TuneCP5_14TeV-powheg-pythia8/GEN-SIM-DIGI-RAW-MINIAOD/PU200_Trk1GeV_140X_mcRun4_realistic_v4-v2/120000/f0e0801c-2ef6-4575-9c67-6cf107a3b032.root',
+        # '/store/mc/Phase2Spring24DIGIRECOMiniAOD/TTToSemileptonic_TuneCP5_14TeV-powheg-pythia8/GEN-SIM-DIGI-RAW-MINIAOD/PU200_Trk1GeV_140X_mcRun4_realistic_v4-v2/120000/8dc9d729-bf67-4b9f-9bec-0ef9b05e054d.root',
+        # '/store/mc/Phase2Spring24DIGIRECOMiniAOD/TTToSemileptonic_TuneCP5_14TeV-powheg-pythia8/GEN-SIM-DIGI-RAW-MINIAOD/PU200_Trk1GeV_140X_mcRun4_realistic_v4-v2/120000/c8a9ba4d-f1c7-4b01-8733-8714249d2c06.root',
+        # '/store/mc/Phase2Spring24DIGIRECOMiniAOD/TTToSemileptonic_TuneCP5_14TeV-powheg-pythia8/GEN-SIM-DIGI-RAW-MINIAOD/PU200_Trk1GeV_140X_mcRun4_realistic_v4-v2/120000/d44553fb-8b2a-4b13-87a5-b25a36cde3b1.root',
+        # '/store/mc/Phase2Spring24DIGIRECOMiniAOD/TTToSemileptonic_TuneCP5_14TeV-powheg-pythia8/GEN-SIM-DIGI-RAW-MINIAOD/PU200_Trk1GeV_140X_mcRun4_realistic_v4-v2/120000/38326988-733d-4570-8603-34be59434fd9.root',
+        # '/store/mc/Phase2Spring24DIGIRECOMiniAOD/TTToSemileptonic_TuneCP5_14TeV-powheg-pythia8/GEN-SIM-DIGI-RAW-MINIAOD/PU200_Trk1GeV_140X_mcRun4_realistic_v4-v2/120000/88399a12-d057-43d4-85da-1f025b0a728b.root',
+        # '/store/mc/Phase2Spring24DIGIRECOMiniAOD/TTToSemileptonic_TuneCP5_14TeV-powheg-pythia8/GEN-SIM-DIGI-RAW-MINIAOD/PU200_Trk1GeV_140X_mcRun4_realistic_v4-v2/120000/aa8fdfd1-4df6-4983-aa03-d3418abba62d.root',
+        # '/store/mc/Phase2Spring24DIGIRECOMiniAOD/TTToSemileptonic_TuneCP5_14TeV-powheg-pythia8/GEN-SIM-DIGI-RAW-MINIAOD/PU200_Trk1GeV_140X_mcRun4_realistic_v4-v2/120000/4f04753a-49f0-4ea0-8500-431c73ded33d.root',
+        # '/store/mc/Phase2Spring24DIGIRECOMiniAOD/TTToSemileptonic_TuneCP5_14TeV-powheg-pythia8/GEN-SIM-DIGI-RAW-MINIAOD/PU200_Trk1GeV_140X_mcRun4_realistic_v4-v2/120000/fb7d9548-f0ae-41c1-8136-9b00fd818bb2.root',
+        # '/store/mc/Phase2Spring23DIGIRECOMiniAOD/MinBias_TuneCP5_14TeV-pythia8/GEN-SIM-DIGI-RAW-MINIAOD/PU200_Trk1GeV_131X_mcRun4_realistic_v5-v1/30002/3b44d52d-1807-4a4f-9b9b-19466303a741.root',
+),
+
+    inputCommands = cms.untracked.vstring(
+        'keep *',
+        # 'drop l1tPFJets_*_*_*',
+        # 'drop l1tPFTaus_*_*_*',
+        # 'drop l1tTrackerMuons_*_*_*',
+        'drop *_hlt*_*_HLT',
+        'drop triggerTriggerFilterObjectWithRefs_*_*_HLT'
+    ),
+)
+process.maxEvents = cms.untracked.PSet( input = cms.untracked.int32(-1))
+process.options = cms.untracked.PSet(
+        wantSummary = cms.untracked.bool(True),
+        #numberOfThreads = cms.untracked.uint32(4),
+        #numberOfStreams = cms.untracked.uint32(4),
+)
+
+######## Smart Pixels customization and rerun MCTruth to get TP-L1Track matching, needed for non-passthrough SmartPixels tracks
+process.load('L1Trigger.TrackTrigger.TrackTrigger_cff')
+process.load("SimTracker.TrackTriggerAssociation.TrackTriggerAssociator_cff")
+process.load('L1Trigger.TrackerDTC.ProducerED_cff')
+
+process.load("L1Trigger.TrackFindingTracklet.L1HybridEmulationTracks_cff")
+# process.load('L1Trigger.TrackFindingTracklet.l1tSmartPixelsTrackProducer_cfi') #don't load, just use injector instead
+from L1Trigger.TrackTrigger.TTStubAlgorithmRegister_cfi import *
+from SimTracker.TrackTriggerAssociation.TTClusterAssociation_cfi import *
+TTClusterAssociatorFromPixelDigis.digiSimLinks = cms.InputTag("simSiPixelDigis","Tracker")
+
+process.PFInputsTask = cms.Task(
+    process.L1TLayer1TaskInputsTask,
+    process.L1THGCalTriggerPrimitivesTask,
+    process.TTClustersFromPhase2TrackerDigis,
+    process.TTStubsFromPhase2TrackerDigis,
+    process.TrackerDTCProducer,
+    #process.offlineBeamSpot,
+    process.l1tTTTracksFromTrackletEmulation,
+    process.l1tTTTracksFromExtendedTrackletEmulation,
+    process.TTTrackAssociatorFromPixelDigis,
+    process.TTTrackAssociatorFromPixelDigisExtended,
+    process.SimL1EmulatorTask,
+#    process.l1tTkStubsGmt,
+)
+process.p = cms.Path(
+        process.TrackTriggerClustersStubs + process.TrackTriggerAssociatorClustersStubs +  # add in MC Truth prerequisites
+        process.L1TPromptExtendedHybridTracks + process.L1TPromptExtendedHybridTracksWithAssociators +  # add in MC Truth prerequisites
+        process.l1tLayer1 +
+        process.l1tLayer2Deregionizer +
+        process.l1tLayer2EG
+)
+process.p.associate(process.PFInputsTask)
+process.p.associate(process.SimL1EmulatorTask)
+
+outFileName = "rebased_all_allSPCollections_TTSemiLeptonic_inputs140X.root"
+from L1Trigger.TrackFindingTracklet.Customize_cff import addSmartPixelsTrackProducerVariants
+process, spixnames = addSmartPixelsTrackProducerVariants(process)
+for mod in spixnames:
+    process.p.insert(-2, getattr(process, mod))
+# Patch the tagger path since this one isn't in cms-externals for this version of CMSSW, but we built it manually following https://codimd.web.cern.ch/pB3K4fFiSrmblUHFAMYoxA#
+process.l1tSC4NGJetProducer.l1tSC4NGJetModelPath = cms.string(os.environ['CMSSW_BASE']+"/src/L1TSC4NGJetModel/L1TSC4NGJetModel_v0")
+
+process.out = cms.OutputModule("PoolOutputModule",
+        fileName = cms.untracked.string(outFileName),
+        outputCommands = cms.untracked.vstring("drop *",
+            # --- GEN
+            "keep *_genParticles_*_*",
+            "keep *_ak4GenJetsNoNu_*_*",
+            "keep *_genMetTrue_*_*",
+            # --- Track TPs
+            "keep *_l1tTTTracksFromTrackletEmulation_*_*",
+            "keep *_l1tTTTracksFromExtendedTrackletEmulation_*_*",
+            "keep *_TTTrackAssociatorFromPixelDigis_*_*",
+            "keep *_TTTrackAssociatorFromPixelDigisExtended_*_*",
+            # --- Calo TPs
+            "keep *_simEcalEBTriggerPrimitiveDigis_*_*",
+            "keep *_simHcalTriggerPrimitiveDigis_*_*",
+            "keep *_simCaloStage2Layer1Digis_*_*",
+            "keep *_simCaloStage2Digis_*_*",
+            # --- Muon TPs
+            "keep *_simMuonRPCDigis_*_*",
+            "keep *_simMuonGEMPadDigis_*_*",
+            "keep *_simMuonGEMPadDigiClusters_*_*",
+            "keep *_simDtTriggerPrimitiveDigis_*_*",
+            "keep *_simCscTriggerPrimitiveDigis_*_*",
+            "keep *_simTwinMuxDigis_*_*",
+            "keep *_simBmtfDigis_*_*",
+            "keep *_simKBmtfStubs_*_*",
+            "keep *_simKBmtfDigis_*_*",
+            "keep *_simEmtfDigis_*_*",
+            "keep *_simOmtfDigis_*_*",
+            "keep *_simGmtCaloSumDigis_*_*",
+            "keep *_simGmtStage2Digis_*_*",
+            "keep *_simEmtfShowers_*_*",
+            "keep *_simGmtShowerDigis_*_*",
+            "keep *_simCscTriggerPrimitiveDigisRun3_*_*",
+            "keep *_simMuonME0PadDigis_*_*",
+            "keep *_me0TriggerDigis_*_*",
+            "keep *_simMuonME0PseudoReDigisCoarse_*_*",
+            "keep *_me0RecHitsCoarse_*_*",
+            "keep *_me0TriggerPseudoDigis_*_*",
+            "keep *_me0RecHits_*_*",
+            "keep *_me0Segments_*_*",
+            "keep *_me0TriggerConvertedPseudoDigis_*_*",
+            "keep *_simCscTriggerPrimitiveDigisPhase2_*_*",
+            "keep *_simGtExtFakeStage2Digis_*_*",
+            "keep *_simGtStage2Digis_*_*",
+            "keep *_CalibratedDigis_*_*",
+            "keep *_dtTriggerPhase2PrimitiveDigis_*_*",
+            # --- HGCal TPs
+            "keep l1tHGCalTriggerCellBXVector_l1tHGCalVFEProducer_*_*",
+            #"keep l1tHGCalTriggerCellBXVector_l1tHGCalConcentratorProducer_*_*",
+            "keep l1tHGCalMulticlusterBXVector_l1tHGCalBackEndLayer2Producer_*_*",
+            "keep l1tHGCalTowerBXVector_l1tHGCalTowerProducer_*_*",
+            # --- GCT reconstruction
+            "keep *_l1tEGammaClusterEmuProducer_*_*",
+            "keep *_l1tTowerCalibration_*_*",
+            "keep *_l1tCaloJet_*_*",
+            "keep *_l1tCaloJetHTT_*_*",
+            # "keep *_l1tPhase2L1CaloEGammaEmulator_*_*",
+            # "keep *_l1tPhase2CaloPFClusterEmulator_*_*",
+            # --- GTT reconstruction
+            "keep *_l1tVertexFinder_*_*",
+            "keep *_l1tVertexFinderEmulator_*_*",
+            "keep *_l1tTrackJets_*_*",
+            "keep *_l1tTrackJetsExtended_*_*",
+            "keep *_l1tTrackFastJets_*_*",
+            "keep *_l1tTrackerEtMiss_*_*",
+            "keep *_l1tTrackerHTMiss_*_*",
+            "keep *_l1tTrackJetsEmulation_*_*",
+            "keep *_l1tTrackJetsExtendedEmulation_*_*",
+            "keep *_l1tTrackerEmuEtMiss_*_*",
+            "keep *_l1tTrackerEmuHTMiss_*_*",
+            "keep *_l1tTrackerEmuHTMissExtended_*_*",
+            # --- GMT reconstruction
+            "keep *_l1tStubsGmt_*_*",
+            "keep *_l1tKMTFMuonsGmt_*_*",
+            "keep *_l1tFwdMuonsGmt_*_*",
+            "keep *_l1tSAMuonsGmt_*_*",
+            # --- SmartPixels
+            "keep *_l1tSmartPixelsTrackProducerW*_*_*",
+            "keep *_l1tSmartPixelsTrackProducerExtendedW*_*_*",
+        ),
+        compressionAlgorithm = cms.untracked.string('LZMA'),
+        compressionLevel = cms.untracked.int32(4),
+        dropMetaData = cms.untracked.string('ALL'),
+        fastCloning = cms.untracked.bool(False),
+        overrideInputFileSplitLevels = cms.untracked.bool(True),
+        eventAutoFlushCompressedSize = cms.untracked.int32(15728640),
+        SelectEvents = cms.untracked.PSet(SelectEvents = cms.vstring("p")),
+)
+process.e = cms.EndPath(process.out)
+
+process.schedule = cms.Schedule([process.p] + [process.e])
+
+process.out.outputCommands += [ "drop *_l1tHGCalVFEProducer_*_*", ]
