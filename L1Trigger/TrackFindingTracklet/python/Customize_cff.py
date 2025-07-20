@@ -145,3 +145,44 @@ def injectSmartPixelsTrackProducer_correctionlibRegression(process):
 
 def referenceSmartPixelsTrackProducer(process):
   return injectSmartPixelsTrackProducer(process, addAssociation=False, skipModuleTypes=None, printProcessInfo=False)
+
+def addSmartPixelsTrackProducerVariants(process):
+  regression_configs = ["0000",
+                        "0001", "0010", "0100", "1000",
+                        "0011", "0101", "0110", "1001", "1010", "1100",
+                        "0111", "1011", "1101", "1110",
+                        "1111",
+                        ]
+  
+  process.load('L1Trigger.TrackFindingTracklet.l1tSmartPixelsTrackProducer_cfi')
+  modules = []
+  for sconf in ["passthrough", "passthroughFloat", "passthroughHW", "trackingParticleTruth"]:
+    print(sconf)
+    fourparam = f"l1tSmartPixelsTrackProducerW{sconf}"
+    fiveparam = f"l1tSmartPixelsTrackProducerExtendedW{sconf}"
+    modules.append(fourparam)
+    modules.append(fiveparam)
+
+    setattr(process, fourparam, process.l1tSmartPixelsTrackProducer.clone())
+    getattr(process, fourparam).smartPixelsEmulatorMode = cms.string(sconf)
+
+    setattr(process, fiveparam, process.l1tSmartPixelsTrackProducerExtended.clone())
+    getattr(process, fiveparam).smartPixelsEmulatorMode = cms.string(sconf)
+
+  for rconf in regression_configs:
+    fourparam = f"l1tSmartPixelsTrackProducerWcorrectionlibRegression{rconf.replace('0', 'I').replace('1', 'A')}"
+    fiveparam = f"l1tSmartPixelsTrackProducerExtendedWcorrectionlibRegression{rconf.replace('0', 'I').replace('1', 'A')}"
+    modules.append(fourparam)
+    modules.append(fiveparam)
+
+    setattr(process, fourparam, process.l1tSmartPixelsTrackProducer.clone())
+    getattr(process, fourparam).smartPixelsEmulatorMode = cms.string("correctionlibRegression")
+    getattr(process, fourparam).smartPixelsCorrectionSet = "spixel_smear_all_configs_labeled_json_compound_z0swizzle.json"
+    getattr(process, fourparam).smartPixelsActiveLayers = rconf
+
+    setattr(process, fiveparam, process.l1tSmartPixelsTrackProducerExtended.clone())
+    getattr(process, fiveparam).smartPixelsEmulatorMode = cms.string("correctionlibRegression")
+    getattr(process, fiveparam).smartPixelsCorrectionSet = "spixel_smear_all_configs_labeled_json_compound_z0swizzle.json"
+    getattr(process, fiveparam).smartPixelsActiveLayers = rconf
+
+  return process, modules
