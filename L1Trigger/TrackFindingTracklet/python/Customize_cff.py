@@ -32,7 +32,13 @@ def reducedConfig(process):
 def trackletConfig(process):
     process.l1tTTTracksFromTrackletEmulation.fitPatternFile = cms.FileInPath('L1Trigger/TrackFindingTracklet/data/fitpattern.txt') 
 
-def injectSmartPixelsTrackProducer(process, smartPixelsEmulatorMode="passthrough", addAssociation=True, skipModuleTypes=None, printProcessInfo=False):
+def injectSmartPixelsTrackProducer(process,
+                                   smartPixelsEmulatorMode="passthrough",
+                                   addAssociation=True,
+                                   l1tSmartPixelsTrackProducerLabel="l1tSmartPixelsTrackProducer",
+                                   l1tSmartPixelsTrackProducerExtendedLabel="l1tSmartPixelsTrackProducerExtended",
+                                   skipModuleTypes=None,
+                                   printProcessInfo=False):
   if skipModuleTypes is None:
     skipModuleTypes = ["L1SmartPixelsTrackProducer", "TTTrackAssociator_Phase2TrackerDigi_", "L1FPGATrackProducer", "SimpleL1TTTrackCandidateFlatTableProducer"]
   #print(help(cms.Process))
@@ -76,12 +82,12 @@ def injectSmartPixelsTrackProducer(process, smartPixelsEmulatorMode="passthrough
         if param.getModuleLabel() == "l1tTTTracksFromTrackletEmulation":
           print("module._TypedParameterizable__type --> ", module._TypedParameterizable__type)
           print("l1tTTTracksFromTrackletEmulation --> ", modname, param_name, param)
-          setattr(module, param_name, cms.InputTag("l1tSmartPixelsTrackProducer", "Level1TTTracks"))
+          setattr(module, param_name, cms.InputTag(l1tSmartPixelsTrackProducerLabel, "Level1TTTracks"))
           new_param = getattr(module, param_name)
           print("                                 --> ", modname, param_name, new_param)
         if param.getModuleLabel() == "l1tTTTracksFromExtendedTrackletEmulation":
           print("l1tTTTracksFromExtendedTrackletEmulation --> ", modname, param_name, param)
-          setattr(module, param_name, cms.InputTag("l1tSmartPixelsTrackProducerExtended", "Level1TTTracks"))
+          setattr(module, param_name, cms.InputTag(l1tSmartPixelsTrackProducerExtendedLabel, "Level1TTTracks"))
           new_param = getattr(module, param_name)
           print("                                         --> ", modname, param_name, new_param)
 
