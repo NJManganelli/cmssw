@@ -1,5 +1,8 @@
 import FWCore.ParameterSet.Config as cms
 from Configuration.StandardSequences.Eras import eras
+from FWCore.ParameterSet.VarParsing import VarParsing
+inoptions = VarParsing ('analysis')
+inoptions.parseArguments()
 
 process = cms.Process("IN", eras.Phase2C17I13M9)
 process.load('Configuration.StandardSequences.Services_cff')
@@ -23,19 +26,9 @@ process.load("RecoVertex.BeamSpotProducer.BeamSpot_cfi")
 process.load('L1Trigger.L1THGCal.hgcalTriggerPrimitives_cff')
 
 process.source = cms.Source("PoolSource",
-    fileNames = cms.untracked.vstring(
+    fileNames = cms.untracked.vstring(inoptions.inputFiles
         # 'file:/data/cerminar/Phase2Spring23DIGIRECOMiniAOD/DoubleElectron_FlatPt-1To100-gun/GEN-SIM-DIGI-RAW-MINIAOD/PU200_Trk1GeV_131X_mcRun4_realistic_v5-v1/c699a773-9875-40c9-83b7-5a3c27f90bfd.root',
-        '/store/mc/Phase2Spring24DIGIRECOMiniAOD/TTToSemileptonic_TuneCP5_14TeV-powheg-pythia8/GEN-SIM-DIGI-RAW-MINIAOD/PU200_Trk1GeV_140X_mcRun4_realistic_v4-v2/120000/81899fbc-5012-47f0-b9eb-4665e13394c9.root',
-        # '/store/mc/Phase2Spring24DIGIRECOMiniAOD/TTToSemileptonic_TuneCP5_14TeV-powheg-pythia8/GEN-SIM-DIGI-RAW-MINIAOD/PU200_Trk1GeV_140X_mcRun4_realistic_v4-v2/120000/f0e0801c-2ef6-4575-9c67-6cf107a3b032.root',
-        # '/store/mc/Phase2Spring24DIGIRECOMiniAOD/TTToSemileptonic_TuneCP5_14TeV-powheg-pythia8/GEN-SIM-DIGI-RAW-MINIAOD/PU200_Trk1GeV_140X_mcRun4_realistic_v4-v2/120000/8dc9d729-bf67-4b9f-9bec-0ef9b05e054d.root',
-        # '/store/mc/Phase2Spring24DIGIRECOMiniAOD/TTToSemileptonic_TuneCP5_14TeV-powheg-pythia8/GEN-SIM-DIGI-RAW-MINIAOD/PU200_Trk1GeV_140X_mcRun4_realistic_v4-v2/120000/c8a9ba4d-f1c7-4b01-8733-8714249d2c06.root',
-        # '/store/mc/Phase2Spring24DIGIRECOMiniAOD/TTToSemileptonic_TuneCP5_14TeV-powheg-pythia8/GEN-SIM-DIGI-RAW-MINIAOD/PU200_Trk1GeV_140X_mcRun4_realistic_v4-v2/120000/d44553fb-8b2a-4b13-87a5-b25a36cde3b1.root',
-        # '/store/mc/Phase2Spring24DIGIRECOMiniAOD/TTToSemileptonic_TuneCP5_14TeV-powheg-pythia8/GEN-SIM-DIGI-RAW-MINIAOD/PU200_Trk1GeV_140X_mcRun4_realistic_v4-v2/120000/38326988-733d-4570-8603-34be59434fd9.root',
-        # '/store/mc/Phase2Spring24DIGIRECOMiniAOD/TTToSemileptonic_TuneCP5_14TeV-powheg-pythia8/GEN-SIM-DIGI-RAW-MINIAOD/PU200_Trk1GeV_140X_mcRun4_realistic_v4-v2/120000/88399a12-d057-43d4-85da-1f025b0a728b.root',
-        # '/store/mc/Phase2Spring24DIGIRECOMiniAOD/TTToSemileptonic_TuneCP5_14TeV-powheg-pythia8/GEN-SIM-DIGI-RAW-MINIAOD/PU200_Trk1GeV_140X_mcRun4_realistic_v4-v2/120000/aa8fdfd1-4df6-4983-aa03-d3418abba62d.root',
-        # '/store/mc/Phase2Spring24DIGIRECOMiniAOD/TTToSemileptonic_TuneCP5_14TeV-powheg-pythia8/GEN-SIM-DIGI-RAW-MINIAOD/PU200_Trk1GeV_140X_mcRun4_realistic_v4-v2/120000/4f04753a-49f0-4ea0-8500-431c73ded33d.root',
-        # '/store/mc/Phase2Spring24DIGIRECOMiniAOD/TTToSemileptonic_TuneCP5_14TeV-powheg-pythia8/GEN-SIM-DIGI-RAW-MINIAOD/PU200_Trk1GeV_140X_mcRun4_realistic_v4-v2/120000/fb7d9548-f0ae-41c1-8136-9b00fd818bb2.root',
-        # '/store/mc/Phase2Spring23DIGIRECOMiniAOD/MinBias_TuneCP5_14TeV-pythia8/GEN-SIM-DIGI-RAW-MINIAOD/PU200_Trk1GeV_131X_mcRun4_realistic_v5-v1/30002/3b44d52d-1807-4a4f-9b9b-19466303a741.root',
+        # '/store/mc/Phase2Spring24DIGIRECOMiniAOD/TTToSemileptonic_TuneCP5_14TeV-powheg-pythia8/GEN-SIM-DIGI-RAW-MINIAOD/PU200_Trk1GeV_140X_mcRun4_realistic_v4-v2/120000/81899fbc-5012-47f0-b9eb-4665e13394c9.root',
 ),
 
     inputCommands = cms.untracked.vstring(
@@ -89,7 +82,6 @@ process.p = cms.Path(
 process.p.associate(process.PFInputsTask)
 process.p.associate(process.SimL1EmulatorTask)
 
-outFileName = "rebased_all_allSPCollections_TTSemiLeptonic_inputs140X.root"
 from L1Trigger.TrackFindingTracklet.Customize_cff import addSmartPixelsTrackProducerVariants
 process, spixnames = addSmartPixelsTrackProducerVariants(process)
 for mod in spixnames:
@@ -98,7 +90,7 @@ for mod in spixnames:
 process.l1tSC4NGJetProducer.l1tSC4NGJetModelPath = cms.string(os.environ['CMSSW_BASE']+"/src/L1TSC4NGJetModel/L1TSC4NGJetModel_v0")
 
 process.out = cms.OutputModule("PoolOutputModule",
-        fileName = cms.untracked.string(outFileName),
+        fileName = cms.untracked.string(inoptions.outputFile),
         outputCommands = cms.untracked.vstring("drop *",
             # --- GEN
             "keep *_genParticles_*_*",
@@ -178,8 +170,8 @@ process.out = cms.OutputModule("PoolOutputModule",
             "keep *_l1tSmartPixelsTrackProducerW*_*_*",
             "keep *_l1tSmartPixelsTrackProducerExtendedW*_*_*",
         ),
-        compressionAlgorithm = cms.untracked.string('LZMA'),
-        compressionLevel = cms.untracked.int32(4),
+        compressionAlgorithm = cms.untracked.string('ZSTD'),
+        compressionLevel = cms.untracked.int32(5),
         dropMetaData = cms.untracked.string('ALL'),
         fastCloning = cms.untracked.bool(False),
         overrideInputFileSplitLevels = cms.untracked.bool(True),
