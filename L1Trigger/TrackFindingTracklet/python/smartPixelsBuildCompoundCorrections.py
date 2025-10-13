@@ -3,8 +3,9 @@ import correctionlib
 import correctionlib.schemav2 as cs
 import json
 import rich
+import copy
 
-def build_relative_and_compound_corrections(in_file, out_file, override_flow="clamp"):
+def build_relative_and_compound_corrections(in_file, out_file, override_flow="clamp", toysim_2d_activate_z0_swizzle=False):
     """
     Take SmartPixels ToyDetector pt-parameterized resolutions and build relative corrections
     between configuration and the no-SmartPixels ('0000' / 'IIII') resolutions.
@@ -13,6 +14,8 @@ def build_relative_and_compound_corrections(in_file, out_file, override_flow="cl
     Then build compound corrections combining the relative resolutions with actual reconstructed versus TP kinematics,
     generalizing to TP kinematics, TP-to-track matching category, and the reconstructed L1Track kinematics. 
     Outputs absolute smearing to add to TP.
+
+    toysim_2d_activate_z0_swizzle should be utilized when 2D toysim files are converted, in order to create a z0 resolution copying the d0 relative resolution but the z0 absolute difference
     """
     to_replace = ["_0001", "_0010", "_0100", "_1000",
                   "_0011", "_0101", "_1001", "_0110", "_1010", "_1100",
@@ -66,7 +69,7 @@ def build_relative_and_compound_corrections(in_file, out_file, override_flow="cl
     new_cset_compound_corrections = []
 
     if not any(["z0" in k for k in cset.keys()]):
-        print("No z0 corrections found, skipping relative smears and inserting substitute z0 compound regression correction")
+        print("No z0 corrections found, pass toysim_2d_activate_z0_swizzle=True or --toysim_2d_activate_z0_swizzle to inser swizzled z0 compound corrections")
     for key in cset.keys():
         variable = key.split("_")[0]
         if variable not in ["pt", "eta", "phi", "z0", "d0"]:
@@ -86,19 +89,35 @@ def build_relative_and_compound_corrections(in_file, out_file, override_flow="cl
         relative_data['input'] = corr_numerator_data['input']
         relative_data['edges'] = corr_numerator_data['edges']
         relative_data['content'] = []
-        for i, corr_numerator_data_contenti in enumerate(corr_numerator_data['content']):
-            if corr_denominator_data['content'][i] == 0:
-                relative_data['content'].append(0)
+        for i, corr_numerator_data_content_i in enumerate(corr_numerator_data['content']):
+            if isinstance(corr_numerator_data_content_i, int):
+                if corr_denominator_data['content'][i] == 0:
+                    relative_data['content'].append(0)
+                else:
+                    relative_data['content'].append(corr_numerator_data_content_i / corr_denominator_data['content'][i])
+            elif isinstance(corr_numerator_data_content_i, dict):
+                corr_numerator_data_dict = copy.deepcopy(corr_numerator_data_content_i)
+                corr_denominator_data_dict = corr_denominator_data['content'][i] # just a clear reference
+                for j, corr_num_data_content_i_j in enumerate(corr_numerator_data_dict['content']):
+                    if (corr_num_data_content_i_j == 0) and (corr_denominator_data_dict['content'][j] == 0):
+                        # both are 0, this is our regime where coverage ends, e.g. |eta| > 0.8 in v2p0, so we return a ratio of 1 and permit clamping to it
+                        corr_numerator_data_dict['content'][j] = 1.0
+                    elif corr_denominator_data_dict['content'][j] == 0:
+                        # just 0 denominator, though this code path should be inaccessible...
+                        corr_numerator_data_dict['content'][j] = 0.0
+                    else:
+                        # Take the ratio
+                        corr_numerator_data_dict['content'][j] = corr_num_data_content_i_j / corr_denominator_data_dict['content'][j]
+                corr_numerator_data_dict['flow'] = override_flow if override_flow else corr_numerator_data_dict.get('flow')
+                # now append to the (outer) list contents
+                relative_data['content'].append(corr_numerator_data_dict)
             else:
-                relative_data['content'].append(corr_numerator_data_contenti / corr_denominator_data['content'][i])
-                
+                raise NotImplementedError(f"Unhandled level-1 content type: {corr_numerator_data_content_i}")
         relative_data['flow'] = override_flow if override_flow else corr_numerator_data.get('flow') #corr_numerator_data.get('flow', 'clamp')
-
 
         new_inputs = [cs.Variable(name=var.name, type=var.type, description=var.description) for var in corr.inputs]
         new_output = cs.Variable(name=corr.output.name, type=corr.output.type, description=corr.output.description)
         new_corr_key = key.replace("_smear", "_relative_smear")
-
 
         old_corr_reconstituted = cs.Correction(
             name=key,
@@ -186,7 +205,7 @@ def build_relative_and_compound_corrections(in_file, out_file, override_flow="cl
                 stack=[new_corr_key, f"{variable}_track_tp_difference"],
             )
         )
-        if "d0" in key:
+        if "d0" in key and toysim_2d_activate_z0_swizzle:
             print("Creating z0 compound correction using d0 relative smear and z0_track_tp_difference for SPix config ", key.split("_")[-1])
             new_cset_compound_corrections.append(
                 cs.CompoundCorrection(
@@ -212,7 +231,7 @@ def build_relative_and_compound_corrections(in_file, out_file, override_flow="cl
                     stack=[new_corr_key, f"z0_track_tp_difference"],
                 )
             )
-        # if key.endswith("0101"):
+        # if (key.endswith("1111") or key.endswith("0000")) and ("pt" in key or "d0" in key):
         #     rich.print(new_cset_compound_corrections[-2])
         #     rich.print(new_cset_compound_corrections[-1])
 
@@ -229,7 +248,8 @@ if __name__ == "__main__":
     parser.add_argument("--in_file" ,   type=str, default="spixel_smear_all_configs_labeled_json.json", help="input json file with absolute resolutions")
     parser.add_argument("--out_file" ,   type=str, default="spixel_smear_all_configs_labeled_json_compound_z0swizzle.json", help="output json file with absolute, relative, and compound resolutions")
     parser.add_argument("--override_flow", type=str, default="clamp", help="Override the input json flow behavior to this type, set to 'none' to not override")
+    parser.add_argument("--toysim_2d_activate_z0_swizzle", action='store_true')
     options = parser.parse_args()
 
     override_flow = options.override_flow if options.override_flow.lower() != "none" else None
-    build_relative_and_compound_corrections(options.in_file, options.out_file, override_flow=override_flow)
+    build_relative_and_compound_corrections(options.in_file, options.out_file, override_flow=override_flow, toysim_2d_activate_z0_swizzle=options.toysim_2d_activate_z0_swizzle)
