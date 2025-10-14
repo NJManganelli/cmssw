@@ -5,7 +5,7 @@ import json
 import rich
 import copy
 
-def build_relative_and_compound_corrections(in_file, out_file, override_flow="clamp", toysim_2d_activate_z0_swizzle=False):
+def build_relative_and_compound_corrections(in_file, out_file, override_flow="clamp", toysim_2d_activate_z0_swizzle=False, unfold_abs_eta=False):
     """
     Take SmartPixels ToyDetector pt-parameterized resolutions and build relative corrections
     between configuration and the no-SmartPixels ('0000' / 'IIII') resolutions.
@@ -70,6 +70,7 @@ def build_relative_and_compound_corrections(in_file, out_file, override_flow="cl
 
     if not any(["z0" in k for k in cset.keys()]):
         print("No z0 corrections found, pass toysim_2d_activate_z0_swizzle=True or --toysim_2d_activate_z0_swizzle to inser swizzled z0 compound corrections")
+    unfold_abs_eta_warning_printed=False
     for key in cset.keys():
         variable = key.split("_")[0]
         if variable not in ["pt", "eta", "phi", "z0", "d0"]:
@@ -89,15 +90,33 @@ def build_relative_and_compound_corrections(in_file, out_file, override_flow="cl
         relative_data['input'] = corr_numerator_data['input']
         relative_data['edges'] = corr_numerator_data['edges']
         relative_data['content'] = []
+        unfolded_abs_eta_numerator_data = copy.deepcopy(relative_data)
         for i, corr_numerator_data_content_i in enumerate(corr_numerator_data['content']):
             if isinstance(corr_numerator_data_content_i, int):
+                if unfolded_abs_eta:
+                    raise NotImplementedError("unfold_abs_eta=True not implemented for 1D binnings")
                 if corr_denominator_data['content'][i] == 0:
                     relative_data['content'].append(0)
                 else:
                     relative_data['content'].append(corr_numerator_data_content_i / corr_denominator_data['content'][i])
             elif isinstance(corr_numerator_data_content_i, dict):
                 corr_numerator_data_dict = copy.deepcopy(corr_numerator_data_content_i)
-                corr_denominator_data_dict = corr_denominator_data['content'][i] # just a clear reference
+                corr_denominator_data_dict = copy.deepcopy(corr_denominator_data['content'][i]) # just a clear reference
+                if "eta" in corr_numerator_data_dict['input'] and all([x >= 0 for x in corr_numerator_data_dict['edges']]):
+                    if not unfold_abs_eta and not unfold_abs_eta_warning_printed:
+                        print(f"WARNING: node {corr_numerator_data_dict} appears to have an eta node with no negative edge bins. It's recommended to utilize `unfold_abs_eta` for use in SmartPixels")
+                        unfold_abs_eta_warning_printed=True
+                    if unfold_abs_eta:
+                        # Flip the edges and negate, except the presumed 0 which is already the start of the positive side of the edges, to unfold the abs(eta) input for lookups
+                        corr_numerator_data_dict['edges'] = [-x for x in corr_numerator_data_dict['edges']][::-1][:-1] + corr_numerator_data_dict['edges']
+                        # assert( len(corr_numerator_data_dict['edges']) == (2*len(corr_denominator_data_dict['edges']) - 1) ), "Unfolding abs(eta) bin logic failure"
+                        # Flip the contents and do NOT negate and do NOT remove last element, to unfold the abs(eta) input for lookups
+                        corr_numerator_data_dict['content'] = [x for x in corr_numerator_data_dict['content']][::-1] + corr_numerator_data_dict['content']
+                        corr_denominator_data_dict['edges'] = [-x for x in corr_denominator_data_dict['edges']][::-1][:-1] + corr_denominator_data_dict['edges']
+                        corr_denominator_data_dict['content'] = [x for x in corr_denominator_data_dict['content']][::-1] + corr_denominator_data_dict['content']
+                corr_numerator_data_dict['flow'] = override_flow if override_flow else corr_numerator_data_dict.get('flow')
+                unfolded_abs_eta_numerator_data['content'].append(copy.deepcopy(corr_numerator_data_dict))
+                # Now we compute the per-element ratio
                 for j, corr_num_data_content_i_j in enumerate(corr_numerator_data_dict['content']):
                     if (corr_num_data_content_i_j == 0) and (corr_denominator_data_dict['content'][j] == 0):
                         # both are 0, this is our regime where coverage ends, e.g. |eta| > 0.8 in v2p0, so we return a ratio of 1 and permit clamping to it
@@ -108,7 +127,6 @@ def build_relative_and_compound_corrections(in_file, out_file, override_flow="cl
                     else:
                         # Take the ratio
                         corr_numerator_data_dict['content'][j] = corr_num_data_content_i_j / corr_denominator_data_dict['content'][j]
-                corr_numerator_data_dict['flow'] = override_flow if override_flow else corr_numerator_data_dict.get('flow')
                 # now append to the (outer) list contents
                 relative_data['content'].append(corr_numerator_data_dict)
             else:
@@ -149,12 +167,6 @@ def build_relative_and_compound_corrections(in_file, out_file, override_flow="cl
                 content=relative_data['content'],
                 flow=relative_data['flow'],
             )
-            #    nodetype="binning",
-            #    input="pt",
-            #    edges=[10, 20, 30, 40, 50, 80, 120],
-            #    content=[0.3, 0.25, 0.20, 0.14, 0.06, 0.02],
-            #    flow="clamp",
-            #)
         )
         #new_corr.data.content[0].value.expression = "x + 0.1 * x"  # Example modification
         new_cset_corrections.append(old_corr_reconstituted) # copy the old correction too
@@ -249,7 +261,13 @@ if __name__ == "__main__":
     parser.add_argument("--out_file" ,   type=str, default="spixel_smear_all_configs_labeled_json_compound_z0swizzle.json", help="output json file with absolute, relative, and compound resolutions")
     parser.add_argument("--override_flow", type=str, default="clamp", help="Override the input json flow behavior to this type, set to 'none' to not override")
     parser.add_argument("--toysim_2d_activate_z0_swizzle", action='store_true')
+    parser.add_argument("--unfold_abs_eta", action='store_true')
     options = parser.parse_args()
 
     override_flow = options.override_flow if options.override_flow.lower() != "none" else None
-    build_relative_and_compound_corrections(options.in_file, options.out_file, override_flow=override_flow, toysim_2d_activate_z0_swizzle=options.toysim_2d_activate_z0_swizzle)
+    build_relative_and_compound_corrections(options.in_file,
+                                            options.out_file,
+                                            override_flow=override_flow,
+                                            toysim_2d_activate_z0_swizzle=options.toysim_2d_activate_z0_swizzle,
+                                            unfold_abs_eta=options.unfold_abs_eta,
+                                            )
