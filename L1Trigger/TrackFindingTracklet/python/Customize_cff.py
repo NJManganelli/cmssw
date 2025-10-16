@@ -186,12 +186,12 @@ def addSmartPixelsTrackProducerVariants(process):
 
     setattr(process, fourparam, process.l1tSmartPixelsTrackProducer.clone())
     getattr(process, fourparam).smartPixelsEmulatorMode = cms.string("correctionlibRegression")
-    getattr(process, fourparam).smartPixelsCorrectionSet = "spixel_smear_all_configs_labeled_json_compound_z0swizzle.json"
+    getattr(process, fourparam).smartPixelsCorrectionSet = "spixel_smear_all_configs_barrel_CalV1_compound.json"
     getattr(process, fourparam).smartPixelsActiveLayers = rconf
 
     setattr(process, fiveparam, process.l1tSmartPixelsTrackProducerExtended.clone())
     getattr(process, fiveparam).smartPixelsEmulatorMode = cms.string("correctionlibRegression")
-    getattr(process, fiveparam).smartPixelsCorrectionSet = "spixel_smear_all_configs_labeled_json_compound_z0swizzle.json"
+    getattr(process, fiveparam).smartPixelsCorrectionSet = "spixel_smear_all_configs_barrel_CalV1_compound.json"
     getattr(process, fiveparam).smartPixelsActiveLayers = rconf
 
   return process, modules
