@@ -257,11 +257,12 @@ def build_relative_and_compound_corrections(in_file, out_file, override_flow="cl
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser("")
-    parser.add_argument("--in_file" ,   type=str, default="spixel_smear_all_configs_labeled_json.json", help="input json file with absolute resolutions")
-    parser.add_argument("--out_file" ,   type=str, default="spixel_smear_all_configs_labeled_json_compound_z0swizzle.json", help="output json file with absolute, relative, and compound resolutions")
+    parser.add_argument("--in_file" ,   type=str, default="spixel_smear_all_configs_barrel_CalV1_v2p1.json", help="input json file with absolute resolutions")
+    parser.add_argument("--out_file" ,   type=str, default="spixel_smear_all_configs_barrel_CalV1_v2p1_compound.json", help="output json file with absolute, relative, and compound resolutions")
     parser.add_argument("--override_flow", type=str, default="clamp", help="Override the input json flow behavior to this type, set to 'none' to not override")
     parser.add_argument("--toysim_2d_activate_z0_swizzle", action='store_true')
     parser.add_argument("--unfold_abs_eta", action='store_true')
+    parser.add_argument("--validation_plots", action='store_true')
     options = parser.parse_args()
 
     override_flow = options.override_flow if options.override_flow.lower() != "none" else None
@@ -271,3 +272,81 @@ if __name__ == "__main__":
                                             toysim_2d_activate_z0_swizzle=options.toysim_2d_activate_z0_swizzle,
                                             unfold_abs_eta=options.unfold_abs_eta,
                                             )
+
+    if options.validation_plots:
+        import numpy as np
+        import hist
+        import matplotlib.pyplot as plt
+        from matplotlib.backends.backend_pdf import PdfPages
+        import mplhep as hep
+
+        hep.style.use("CMS")
+
+        test_cset = correctionlib.CorrectionSet.from_file(options.out_file)
+        samples = 10000000
+        pt_axis = hist.axis.Variable([1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0,
+                                      15.0, 20.0,
+                                      30.0, 40.0, 50.0, 60.0, 70.0, 80.0, 90.0, 100.0], name="pt", label="$p_T^{TP}$ [GeV]")
+        eta_axis = hist.axis.Regular(16, -0.8, +0.8, name="eta", label="$\eta^{TP}$")
+
+        tp_eta = np.abs(np.random.uniform(-2.5, 2.5, size=samples))
+        tp_pt = np.random.uniform(1.5, 150, size=samples)
+        tp_phi = np.random.uniform(-3.15, 3.15, size=samples)
+        tp_z0 = np.random.uniform(-16, 16, size=samples)
+        tp_d0 = np.random.uniform(-10, 10, size=samples)
+        match_class = np.zeros(shape=tp_eta.shape)
+
+        relative_diff = 1.1
+        trk_eta = tp_eta * relative_diff
+        trk_pt = tp_pt * relative_diff
+        trk_phi = tp_phi * relative_diff
+        trk_z0 = tp_z0 * relative_diff
+        trk_d0 = tp_d0 * relative_diff
+
+        with PdfPages(options.out_file.replace(".json", "_validationplots.pdf")) as pdf:
+            for tname in test_cset.keys():
+                test_corr = test_cset[tname]
+                if "relative" in tname:
+                    yerr=False
+                    h = hist.Hist(pt_axis, eta_axis, hist.storage.Mean())
+                    test = test_corr.evaluate(tp_pt, tp_eta)
+                    h.fill(pt=tp_pt, eta=tp_eta, sample=test)
+                elif "smear" in tname:
+                    yerr=False
+                    h = hist.Hist(pt_axis, eta_axis, hist.storage.Mean())
+                    test = test_corr.evaluate(tp_pt, tp_eta)
+                    h.fill(pt=tp_pt, eta=tp_eta, sample=test)
+                elif "difference" in tname:
+                    yerr=True
+                    if tname.startswith("d0"):
+                        test = test_corr.evaluate(trk_d0, tp_d0)
+                        assert np.isclose(test, trk_d0 - tp_d0).all()
+                    elif tname.startswith("z0"):
+                        test = test_corr.evaluate(trk_z0, tp_z0)
+                        assert np.isclose(test, trk_z0 - tp_z0).all()
+                    elif tname.startswith("pt"):
+                        test = test_corr.evaluate(trk_pt, tp_pt)
+                        assert np.isclose(test, trk_pt - tp_pt).all()
+                    elif tname.startswith("eta"):
+                        test = test_corr.evaluate(trk_eta, tp_eta)
+                        assert np.isclose(test, trk_eta - tp_eta).all()
+                    elif tname.startswith("z0"):
+                        test = test_corr.evaluate(trk_phi, tp_phi)
+                        assert np.isclose(test, trk_phi - tp_phi).all()
+                    print(f"\tDifference check passed for {tname}")
+                    # h = hist.Hist(pt_axis)
+                else:
+                    continue
+
+
+                if True:
+                    fig, ax = plt.subplots()
+                    slc = {"eta": hist.tag.Slicer()[-0.8j: 0.8j]}
+                    h[slc].plot1d(overlay="eta", yerr=yerr, ax=ax)
+                    plt.legend([f"{edge0:.1f} < $\eta$ < {edge1:.1f}" for edge0, edge1 in zip(h[slc].axes["eta"].edges[:-1], h[slc].axes["eta"].edges[1:])], ncol=3)
+                    plt.title(f"Smearing for {tname}")
+                    pdf.savefig(fig, bbox_inches="tight")
+
+                    # if tname.startswith("z0_relative_smear"):
+                    #     print("z0 mean std:", np.mean(test), np.std(test))
+                    #     print("z0 mean std [0.6 < eta < 0.7]:", np.mean(test[0.6 < np.abs(tp_eta) < 0.7]), np.std(test[0.6 < np.abs(tp_eta) < 0.7]))
