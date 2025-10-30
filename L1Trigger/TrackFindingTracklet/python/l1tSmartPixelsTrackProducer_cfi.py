@@ -22,7 +22,7 @@ l1tSmartPixelsTrackProducer = cms.EDProducer('L1SmartPixelsTrackProducer',
     outputCollectionName = cms.string("Level1TTTracks"),
     smartPixelsEmulatorMode = cms.string("passthrough"),  # passthrough, passthroughFloat, passthroughHW, trackingParticleTruth, correctionlibRegression, correctionlibTPToySmear
     smartPixelsActiveLayers = cms.string("0000"),
-    smartPixelsCorrectionSet = cms.string("spixel_smear_all_configs_labeled_json_compound.json")
+    smartPixelsCorrectionSet = cms.FileInPath("L1Trigger/TrackFindingTracklet/data/spixel_smear_all_configs_barrel_CalV1_v2p1_compound.json")
 )
 
 l1tSmartPixelsTrackProducerExtended = l1tSmartPixelsTrackProducer.clone(
@@ -30,15 +30,3 @@ l1tSmartPixelsTrackProducerExtended = l1tSmartPixelsTrackProducer.clone(
     L1TrackInputTag = cms.InputTag("l1tTTTracksFromExtendedTrackletEmulation",  "Level1TTTracks"),         # TTTrack input
     MCTruthTrackInputTag = cms.InputTag( "TTTrackAssociatorFromPixelDigisExtended",  "Level1TTTracks"),  # MCTruth input
 )
-
-### https://github.com/cms-L1TK/cmssw/blob/L1TK-dev-14_2_0_pre4/L1Trigger/TrackFindingTracklet/python/Producer_cfi.py
-#process.load( 'L1Trigger.TrackFindingTracklet.Producer_cff' )
-#process.load( 'L1Trigger.TrackFindingTracklet.Analyzer_cff' )
-#NHELIXPAR = 4
-#L1TRK_NAME  = process.TrackFindingTrackletAnalyzer_params.OutputLabelTFP.value()
-#L1TRK_LABEL = process.TrackFindingTrackletProducer_params.BranchTTTracks.value()
-#L1TRUTH_NAME = "TTTrackAssociatorFromPixelDigis"
-#process.TTTrackAssociatorFromPixelDigis.TTTracks = cms.VInputTag( cms.InputTag(L1TRK_NAME, L1TRK_LABEL) )
-#process.HybridNewKF = cms.Sequence(process.L1THybridTracks + process.ProducerTM + process.ProducerDR + process.ProducerKF + process.ProducerTQ + process.ProducerTFP)
-#process.TTTracksEmulation = cms.Path(process.HybridNewKF)
-#process.TTTracksEmulationWithTruth = cms.Path(process.HybridNewKF +  process.TrackTriggerAssociatorTracks)
