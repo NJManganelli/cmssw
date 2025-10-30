@@ -26,6 +26,7 @@
 #include "FWCore/Framework/interface/EventSetup.h"
 #include "FWCore/Framework/interface/MakerMacros.h"
 #include "FWCore/MessageLogger/interface/MessageLogger.h"
+#include "FWCore/ParameterSet/interface/FileInPath.h"
 #include "FWCore/Utilities/interface/InputTag.h"
 #include "FWCore/ParameterSet/interface/ParameterSet.h"
 #include "FWCore/ServiceRegistry/interface/Service.h"
@@ -159,6 +160,14 @@ public:
 	{"hw_pt_diff_sum2_orig", {{0, 0}, {1, 0}, {2, 0}, {4, 0}, {8, 0}, {12, 0}, {16, 0}}},
 	{"hw_pt_diff_sum_new", {{0, 0}, {1, 0}, {2, 0}, {4, 0}, {8, 0}, {12, 0}, {16, 0}}},
 	{"hw_pt_diff_sum2_new", {{0, 0}, {1, 0}, {2, 0}, {4, 0}, {8, 0}, {12, 0}, {16, 0}}},
+	{"hw_eta_diff_sum_orig", {{0, 0}, {1, 0}, {2, 0}, {4, 0}, {8, 0}, {12, 0}, {16, 0}}},
+	{"hw_eta_diff_sum2_orig", {{0, 0}, {1, 0}, {2, 0}, {4, 0}, {8, 0}, {12, 0}, {16, 0}}},
+	{"hw_eta_diff_sum_new", {{0, 0}, {1, 0}, {2, 0}, {4, 0}, {8, 0}, {12, 0}, {16, 0}}},
+	{"hw_eta_diff_sum2_new", {{0, 0}, {1, 0}, {2, 0}, {4, 0}, {8, 0}, {12, 0}, {16, 0}}},
+	{"hw_phi_diff_sum_orig", {{0, 0}, {1, 0}, {2, 0}, {4, 0}, {8, 0}, {12, 0}, {16, 0}}},
+	{"hw_phi_diff_sum2_orig", {{0, 0}, {1, 0}, {2, 0}, {4, 0}, {8, 0}, {12, 0}, {16, 0}}},
+	{"hw_phi_diff_sum_new", {{0, 0}, {1, 0}, {2, 0}, {4, 0}, {8, 0}, {12, 0}, {16, 0}}},
+	{"hw_phi_diff_sum2_new", {{0, 0}, {1, 0}, {2, 0}, {4, 0}, {8, 0}, {12, 0}, {16, 0}}},
 	{"hw_z0_diff_sum_orig", {{0, 0}, {1, 0}, {2, 0}, {4, 0}, {8, 0}, {12, 0}, {16, 0}}},
 	{"hw_z0_diff_sum2_orig", {{0, 0}, {1, 0}, {2, 0}, {4, 0}, {8, 0}, {12, 0}, {16, 0}}},
 	{"hw_z0_diff_sum_new", {{0, 0}, {1, 0}, {2, 0}, {4, 0}, {8, 0}, {12, 0}, {16, 0}}},
@@ -339,7 +348,7 @@ L1SmartPixelsTrackProducer::L1SmartPixelsTrackProducer(edm::ParameterSet const& 
   outputCollectionName_ = iConfig.getParameter<std::string>("outputCollectionName");
   smartPixelsEmulatorMode_ = iConfig.getParameter<std::string>("smartPixelsEmulatorMode");
   smartPixelsActiveLayers_ = iConfig.getParameter<std::string>("smartPixelsActiveLayers");
-  smartPixelsCorrectionSet_ = iConfig.getParameter<std::string>("smartPixelsCorrectionSet");
+  smartPixelsCorrectionSet_ = iConfig.getParameter<edm::FileInPath>("smartPixelsCorrectionSet").fullPath();
 
   L1StubInputTag = iConfig.getParameter<edm::InputTag>("L1StubInputTag");
   MCTruthClusterInputTag = iConfig.getParameter<edm::InputTag>("MCTruthClusterInputTag");
@@ -1178,6 +1187,20 @@ void L1SmartPixelsTrackProducer::produce(edm::Event& iEvent, const edm::EventSet
 	track_summary_["hw_pt_diff_sum_new"][tp_track_match] += n_trk_pt_diff;
 	track_summary_["hw_pt_diff_sum2_new"][tp_track_match] += std::pow(n_trk_pt_diff, 2);
 
+	auto o_trk_eta_diff = std::asinh(o_trk.getTanl()) - tmp_matchtp_eta;
+	auto n_trk_eta_diff = std::asinh(n_trk.getTanl()) - tmp_matchtp_eta;
+	track_summary_["hw_eta_diff_sum_orig"][tp_track_match] += o_trk_eta_diff;
+	track_summary_["hw_eta_diff_sum2_orig"][tp_track_match] += std::pow(o_trk_eta_diff, 2);
+	track_summary_["hw_eta_diff_sum_new"][tp_track_match] += n_trk_eta_diff;
+	track_summary_["hw_eta_diff_sum2_new"][tp_track_match] += std::pow(n_trk_eta_diff, 2);
+
+	auto o_trk_phi_diff = o_trk.getPhi() - tmp_matchtp_phi;
+	auto n_trk_phi_diff = n_trk.getPhi() - tmp_matchtp_phi;
+	track_summary_["hw_phi_diff_sum_orig"][tp_track_match] += o_trk_phi_diff;
+	track_summary_["hw_phi_diff_sum2_orig"][tp_track_match] += std::pow(o_trk_phi_diff, 2);
+	track_summary_["hw_phi_diff_sum_new"][tp_track_match] += n_trk_phi_diff;
+	track_summary_["hw_phi_diff_sum2_new"][tp_track_match] += std::pow(n_trk_phi_diff, 2);
+
 	auto o_trk_z0_diff = o_trk.getZ0() - tmp_matchtp_z0;
 	auto n_trk_z0_diff = n_trk.getZ0() - tmp_matchtp_z0;
 	track_summary_["hw_z0_diff_sum_orig"][tp_track_match] += o_trk_z0_diff;
@@ -1224,7 +1247,7 @@ void L1SmartPixelsTrackProducer::fillDescriptions(edm::ConfigurationDescriptions
   desc.add<std::string>("outputCollectionName", "Level1TTTracksEmulation");
   desc.add<std::string>("smartPixelsEmulatorMode", "passthrough")->setComment("passthrough, passthroughFloat, passthroughHW, trackingParticleTruth, correctionlibRegression, correctionlibTPToySmear");
   desc.add<std::string>("smartPixelsActiveLayers", "0000")->setComment("Active layers of SmartPixels, '0000' is none active, '1111' is all active, '0110' has active 2nd and 3rd layers, and '1000' is only innermost layer active");
-  desc.add<std::string>("smartPixelsCorrectionSet", "spixel_smear_all_configs_labeled_json_compound.json")->setComment("Name of json file containing the correctionlib set used for smartPixelsEmulatorMode (correctionlibRegression | correctionlibTPToySmear )");
+  desc.add<edm::FileInPath>("smartPixelsCorrectionSet")->setComment("Name of json file containing the correctionlib set used for smartPixelsEmulatorMode (correctionlibRegression | correctionlibTPToySmear )");
   descriptions.addWithDefaultLabel(desc);
 }
 ///////////////////////////
