@@ -74,7 +74,7 @@ process.load("FWCore.MessageLogger.MessageLogger_cfi")
 process.options   = cms.untracked.PSet( wantSummary = cms.untracked.bool(False), allowUnscheduled = cms.untracked.bool(False) )
 process.maxEvents = cms.untracked.PSet( input = cms.untracked.int32(-1))
 process.MessageLogger.cerr.FwkReport.reportEvery = 250
-inputMC = ['file:' + x for x in glob.glob("/eos/user/n/nmangane/files/SmartPixels/rebasedV151*.root")]
+inputMC = [f'root://cmseos.fnal.gov//eos/uscms/store/group/lpcsmartpixelscms/jettagging/step1/v2p1/Test/TT_TuneCP5_14TeV-powheg-pythia8/crab_jettagging_step1_v2p1_TestPathsOkay/251030_203121/0000/output_{x}.root' for x in range(1, 3)]
 process.source = cms.Source("PoolSource",
     fileNames = cms.untracked.vstring(*inputMC),
     inputCommands = cms.untracked.vstring("keep *", 
@@ -145,7 +145,7 @@ def addJetNTuple(trktype = "extended", nparam = 5, tagged = True):
         muons = cms.InputTag("l1tSAMuonsGmt","promptSAMuons"),
     )
     process.endTuple = cms.EndPath(process.outnano)
-    outName = "jetTuple_"+trktype+"_"+str(nparam)+"_"+spixpostfix + ".root"
+    outName = "jetTuple_v2p1_"+trktype+"_"+str(nparam)+"_"+spixpostfix + ".root"
     process.TFileService = cms.Service("TFileService", fileName = cms.string(outName))
 
 # to check available tags:
@@ -171,7 +171,10 @@ def addMultitagging(trktype = "extended"):
     else:
         process.l1tSC4NGJetProducer.jets = cms.InputTag("l1tSC4PFL1PuppiEmulator")
     process.l1tSC4NGJetProducer.maxJets = cms.int32(500)
-    process.l1tSC4NGJetProducer.l1tSC4NGJetModelPath = cms.string(os.environ['CMSSW_BASE']+"/src/L1TSC4NGJetModel/L1TSC4NGJetModel_v0")
+    l1tSC4NGJetModelPath_so = "L1TSC4NGJetModel/L1TSC4NGJetModel_v0/L1TSC4NGJetModel_v0.so"
+    if not os.path.isfile(l1tSC4NGJetModelPath_so):
+        os.system('tar -xzf L1TSC4NGJetModels.tar.gz')
+    process.l1tSC4NGJetProducer.l1tSC4NGJetModelPath = cms.string(l1tSC4NGJetModelPath_so.replace(".so", ""))
     process.extraPFStuff.add(process.l1tSC4NGJetProducer)
 
 def addBtagging(jetColl): #extended TRK
