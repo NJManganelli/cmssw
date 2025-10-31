@@ -1,3 +1,4 @@
+import os
 import FWCore.ParameterSet.Config as cms
 from Configuration.StandardSequences.Eras import eras
 from FWCore.ParameterSet.VarParsing import VarParsing
@@ -43,7 +44,7 @@ process.source = cms.Source("PoolSource",
 process.maxEvents = cms.untracked.PSet( input = cms.untracked.int32(-1))
 process.options = cms.untracked.PSet(
         wantSummary = cms.untracked.bool(True),
-        #numberOfThreads = cms.untracked.uint32(4),
+        numberOfThreads = cms.untracked.uint32(4),
         #numberOfStreams = cms.untracked.uint32(4),
 )
 
@@ -87,7 +88,10 @@ process, spixnames = addSmartPixelsTrackProducerVariants(process)
 for mod in spixnames:
     process.p.insert(-2, getattr(process, mod))
 # Patch the tagger path since this one isn't in cms-externals for this version of CMSSW, but we built it manually following https://codimd.web.cern.ch/pB3K4fFiSrmblUHFAMYoxA#
-process.l1tSC4NGJetProducer.l1tSC4NGJetModelPath = cms.string(os.environ['CMSSW_BASE']+"/src/L1TSC4NGJetModel/L1TSC4NGJetModel_v0")
+l1tSC4NGJetModelPath_so = "L1TSC4NGJetModel/L1TSC4NGJetModel_v0/L1TSC4NGJetModel_v0.so"
+if not os.path.isfile(l1tSC4NGJetModelPath_so):
+    os.system('tar -xzf L1TSC4NGJetModels.tar.gz')
+process.l1tSC4NGJetProducer.l1tSC4NGJetModelPath = cms.string(l1tSC4NGJetModelPath_so.replace(".so", ""))
 
 process.out = cms.OutputModule("PoolOutputModule",
         fileName = cms.untracked.string(inoptions.outputFile),
