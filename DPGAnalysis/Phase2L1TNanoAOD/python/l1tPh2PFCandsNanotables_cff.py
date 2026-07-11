@@ -125,6 +125,29 @@ l1tExtPuppiCandHGCClusterLink = l1tPuppiCandHGCClusterLink.clone(
     candTableName = cms.string("L1ExtPuppiCand"),
 )
 
+#### Track MC truth on the candidate tables (for candidate-only tiers such
+#### as L1PFNano, which do not carry the track tables): PFCandidate ->
+#### PFTrack -> TTTrack -> TTTrackAssociationMap
+l1tPuppiCandTrackTruthTable = cms.EDProducer(
+    "L1PFCandTrackTruthTableProducer",
+    cands = cms.InputTag("l1tLayer2Deregionizer", "Puppi"),
+    tracks = cms.InputTag("l1tTTTracksFromTrackletEmulation", "Level1TTTracks"),
+    truthAssociation = cms.InputTag("TTTrackAssociatorFromPixelDigis", "Level1TTTracks"),
+    candTableName = cms.string("L1PuppiCand"),
+)
+
+l1tExtPuppiCandTrackTruthTable = l1tPuppiCandTrackTruthTable.clone(
+    cands = cms.InputTag("l1tLayer2DeregionizerExtended", "Puppi"),
+    tracks = cms.InputTag("l1tTTTracksFromExtendedTrackletEmulation", "Level1TTTracks"),
+    truthAssociation = cms.InputTag("TTTrackAssociatorFromPixelDigisExtended", "Level1TTTracks"),
+    candTableName = cms.string("L1ExtPuppiCand"),
+)
+
+p2L1PFCandTrackTruthTask = cms.Task(
+    l1tPuppiCandTrackTruthTable,
+    l1tExtPuppiCandTrackTruthTable,
+)
+
 p2L1PFCandsTask = cms.Task(
     l1tPuppiCandsTable,
     l1tExtPuppiCandsTable,
