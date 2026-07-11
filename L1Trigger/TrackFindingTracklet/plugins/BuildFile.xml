@@ -1,5 +1,6 @@
 <library file="*.cc" name="TrackFindingTrackletPlugins">
   <use name="hepmc"/>
+  <use name="correctionlib"/>
   <use name="L1Trigger/TrackFindingTracklet"/>
   <use name="MagneticField/Engine"/>
   <use name="MagneticField/Records"/>
