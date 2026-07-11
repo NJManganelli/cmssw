@@ -1,3 +1,28 @@
+## CMSSW_20_1 / master instructions (SmartPixelsTrackProducer)
+The SmartPixels developments have been rebased onto cmssw master (20_1_X cycle).
+correctionlib 2.7.0 is a proper CMSSW external now, so the scram-venv/pip install
+and the SCRAM_CXX_STANDARD/USER_CXXFLAGS/USER_LDFLAGS hacks below are NOT needed;
+the plugins BuildFile.xml declares `<use name="correctionlib"/>` directly.
+```bash
+# SCRAM_ARCH=el9_amd64_gcc14
+scram project CMSSW CMSSW_20_1_0_pre1
+cd CMSSW_20_1_0_pre1/src
+cmsenv
+git cms-init --upstream-only -q -y
+git cms-addpkg L1Trigger/TrackFindingTracklet
+git remote add njmanganelli-fork https://github.com/NJManganelli/cmssw.git
+git fetch njmanganelli-fork smartpixels-master-rebase
+git checkout smartpixels-master-rebase
+
+# resolution corrections used by the correctionlib* emulator modes
+xrdcp root://cmseos.fnal.gov//eos/uscms/store/group/lpcsmartpixelscms/toysim/resolution/spixel_smear_all_configs_barrel_CalV1_v2p1_compound.json L1Trigger/TrackFindingTracklet/data/
+
+scram b -j8
+```
+Migration of the jet-tagging workflow (STEP1/STEP2 with the NGJet tagger) to
+20_1/master is in progress; until that lands, the 15_1_0_pre1 instructions below
+remain the reference for jet-tagging studies.
+
 ## 15_1_0_pre1 instructions with jet tagging for v2p1 of SmartPixels studies
 Follow nominal instructions from installer script
 ```
