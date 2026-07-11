@@ -28,11 +28,41 @@ def addPh2L1Tracks(process):
     process.l1tPh2NanoTask.add(p2L1TracksTask)
     return process
 
+def _ensureTrackTruthAssociators(process):
+    """Schedule the TTCluster/TTStub/TTTrack truth associators in the nano
+    task if the upstream workflow did not run them, pointing the track
+    associators at the tracklet emulation collections. Requires MC inputs
+    with Phase-2 tracker digi sim links (GEN-SIM-DIGI-RAW)."""
+    if not hasattr(process, "TTTrackAssociatorFromPixelDigis"):
+        process.load("SimTracker.TrackTriggerAssociation.TrackTriggerAssociator_cff")
+        process.TTTrackAssociatorFromPixelDigis.TTTracks = cms.VInputTag(
+            cms.InputTag("l1tTTTracksFromTrackletEmulation", "Level1TTTracks")
+        )
+    if not hasattr(process, "TTTrackAssociatorFromPixelDigisExtended"):
+        process.TTTrackAssociatorFromPixelDigisExtended = process.TTTrackAssociatorFromPixelDigis.clone(
+            TTTracks = [cms.InputTag("l1tTTTracksFromExtendedTrackletEmulation", "Level1TTTracks")]
+        )
+    process.l1tPh2NanoTask.add(
+        process.TTClusterAssociatorFromPixelDigis,
+        process.TTStubAssociatorFromPixelDigis,
+        process.TTTrackAssociatorFromPixelDigis,
+        process.TTTrackAssociatorFromPixelDigisExtended,
+    )
+    return process
+
 def addPh2L1TrackTruth(process):
-    """nStubs + TTTrackAssociationMap truth columns on the track tables
-    (truth columns default when the associator is absent from the workflow);
-    inputs for track-quality GBDT training."""
+    """nStubs + TTTrackAssociationMap truth columns on the track tables;
+    inputs for track-quality GBDT training. Inserts the truth associators
+    into the process when the workflow did not run them."""
+    _ensureTrackTruthAssociators(process)
     process.l1tPh2NanoTask.add(p2L1TrackTruthTask)
+    return process
+
+def addPh2L1PFCandTrackTruth(process):
+    """Track genuine/fake truth propagated onto the Puppi candidate tables
+    (for candidate-only tiers without the track tables)."""
+    _ensureTrackTruthAssociators(process)
+    process.l1tPh2NanoTask.add(p2L1PFCandTrackTruthTask)
     return process
 
 def addPh2L1SmartPixelsTracks(process):
