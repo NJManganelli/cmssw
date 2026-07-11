@@ -84,10 +84,12 @@ autoNANO = {
                                                 'DPGAnalysis/Phase2L1TNanoAOD/l1tPh2Nano_cff.addGenObjects']),},
     'L1PFTrkNano' : {'sequence': '@Phase2L1DPG',
                      'customize': '@L1TrkNano+DPGAnalysis/Phase2L1TNanoAOD/l1tPh2Nano_cff.addPh2L1PFCandidates',},
+    # note: candidate-level track truth (addPh2L1PFCandTrackTruth) is only in the
+    # candidate-only tier; with the track tables present the truth is reached via
+    # the l1TrackIdx indirection (analysis-side schema handles both uniformly)
     'L1PFTrkNanowithGen' : {'sequence': '@Phase2L1DPG',
                             'customize': '+'.join(['@L1PFTrkNano',
                                                    'DPGAnalysis/Phase2L1TNanoAOD/l1tPh2Nano_cff.addPh2L1TrackTruth',
-                                                   'DPGAnalysis/Phase2L1TNanoAOD/l1tPh2Nano_cff.addPh2L1PFCandTrackTruth',
                                                    'DPGAnalysis/Phase2L1TNanoAOD/l1tPh2Nano_cff.addGenObjects']),},
     # Muon POG flavours : add tables through customize, supposed to be combined with PHYS
     'MUPOG': {'sequence': '@PHYS',
