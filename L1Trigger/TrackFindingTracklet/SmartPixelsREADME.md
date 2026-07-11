@@ -9,7 +9,9 @@ scram project CMSSW CMSSW_20_1_0_pre1
 cd CMSSW_20_1_0_pre1/src
 cmsenv
 git cms-init --upstream-only -q -y
-git cms-addpkg L1Trigger/TrackFindingTracklet
+# Phase2 L1Nano (formerly cms-l1-dpg/Phase2-L1Nano, now merged into CMSSW) is
+# checked out alongside for ntuple/nano output development
+git cms-addpkg L1Trigger/TrackFindingTracklet DPGAnalysis/Phase2L1TNanoAOD
 git remote add njmanganelli-fork https://github.com/NJManganelli/cmssw.git
 git fetch njmanganelli-fork smartpixels-master-rebase
 git checkout smartpixels-master-rebase
