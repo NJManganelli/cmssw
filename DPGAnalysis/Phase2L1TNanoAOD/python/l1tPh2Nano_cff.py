@@ -22,6 +22,22 @@ def addPh2L1Objects(process):
 
     return process
 
+### L1T track tables ("L1TrkNano" additions on top of the Phase-2 L1Nano)
+from DPGAnalysis.Phase2L1TNanoAOD.l1tPh2TrkNanotables_cff import *
+def addPh2L1Tracks(process):
+    process.l1tPh2NanoTask.add(p2L1TracksTask)
+    return process
+
+### L1 PF / Puppi candidate tables (superset of the jet-tagger training inputs)
+from DPGAnalysis.Phase2L1TNanoAOD.l1tPh2PFCandsNanotables_cff import *
+def addPh2L1PFCandidates(process):
+    process.l1tPh2NanoTask.add(p2L1PFCandsTask)
+    return process
+
+def addPh2L1ExtPFCandidates(process):
+    process.l1tPh2NanoTask.add(p2L1ExtPFCandsTask)
+    return process
+
 #### GENERATOR INFO
 ## based on https://github.com/cms-sw/cmssw/blob/master/PhysicsTools/NanoAOD/python/nanogen_cff.py#L2-L36
 from PhysicsTools.NanoAOD.genparticles_cff import * ## for GenParts
@@ -29,6 +45,7 @@ from PhysicsTools.NanoAOD.jetMC_cff import * ## for GenJets
 from PhysicsTools.NanoAOD.met_cff import metMCTable ## for GenMET
 from PhysicsTools.NanoAOD.globals_cff import puTable ## for PU
 from PhysicsTools.NanoAOD.taus_cff import * ## for Gen taus
+from PhysicsTools.NanoAOD.genVertex_cff import * ## for generator vertex
 def addGenObjects(process):
 
     process.genNanoTask = cms.Task()
@@ -63,7 +80,7 @@ def addGenObjects(process):
     process.genNanoTask.add(
                 puTable, metMCTable,
                 genParticleTask, genParticleTablesTask,
-                genTauTask,
+                genTauTask, genVertexTablesTask,
     )
     
     # add all GenJets: AK4 and AK8
