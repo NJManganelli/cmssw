@@ -9,6 +9,7 @@
 <use name="DataFormats/L1TParticleFlow"/>
 <use name="DataFormats/L1TrackTrigger"/>
 <use name="DataFormats/L1THGCal"/>
+<use name="SimDataFormats/Associations"/>
 <use name="DataFormats/NanoAOD"/>
 <use name="DataFormats/PatCandidates"/>
 <use name="DataFormats/ProtonReco"/>
