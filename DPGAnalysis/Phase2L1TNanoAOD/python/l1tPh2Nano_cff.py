@@ -28,6 +28,13 @@ def addPh2L1Tracks(process):
     process.l1tPh2NanoTask.add(p2L1TracksTask)
     return process
 
+def addPh2L1TrackTruth(process):
+    """nStubs + TTTrackAssociationMap truth columns on the track tables
+    (truth columns default when the associator is absent from the workflow);
+    inputs for track-quality GBDT training."""
+    process.l1tPh2NanoTask.add(p2L1TrackTruthTask)
+    return process
+
 def addPh2L1SmartPixelsTracks(process):
     process.l1tPh2NanoTask.add(p2L1SmartPixelsTracksTask)
     return process
