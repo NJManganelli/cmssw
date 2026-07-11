@@ -28,6 +28,14 @@ def addPh2L1Tracks(process):
     process.l1tPh2NanoTask.add(p2L1TracksTask)
     return process
 
+def addPh2L1TrackTruth(process):
+    """nStubs + TTTrackAssociationMap truth columns on the track tables
+    (truth columns default when the associator is absent from the workflow);
+    inputs for track-quality GBDT training."""
+    process.l1tPh2NanoTask.add(p2L1TrackTruthTask)
+    return process
+
+
 ### L1 PF / Puppi candidate tables (superset of the jet-tagger training inputs)
 from DPGAnalysis.Phase2L1TNanoAOD.l1tPh2PFCandsNanotables_cff import *
 def addPh2L1PFCandidates(process):
