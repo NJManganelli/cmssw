@@ -78,10 +78,60 @@ l1tSC4JetCandsTable = l1tSC4NGJetCandsTable.clone(
     trackTableName = cms.string("L1TTrack"),
 )
 
+#### HGCal multicluster table (placeholder for the jet ntupler cluster_*
+#### inputs). Covers hOverE / sigmaRR / zBarycenter; the egVsPion / egVsPU
+#### MVA outputs are not stored on any central dataformat (they were
+#### fork-only PFCluster extensions) and need HGCal TPG support upstream.
+l1tHGCClusterTable = cms.EDProducer(
+    "SimpleTriggerL1HGCalMulticlusterFlatTableProducer",
+    src = cms.InputTag("l1tHGCalBackEndLayer2Producer", "HGCalBackendLayer2Processor3DClustering"),
+    name = cms.string("L1HGCCluster"),
+    doc = cms.string("HGCal backend multiclusters (endcap calo input to correlator layer-1)"),
+    cut = cms.string(""),
+    singleton = cms.bool(False), # the number of entries is variable
+    variables = cms.PSet(
+        pt = Var("pt()", float, doc="pt"),
+        eta = Var("eta()", float, doc="eta"),
+        phi = Var("phi()", float, doc="phi"),
+        hOverE = Var("hOverE()", float, doc="hadronic over electromagnetic energy"),
+        sigmaRRTot = Var("sigmaRRTot()", float, doc="total sigmaRR shower shape"),
+        sigmaRRMean = Var("sigmaRRMean()", float, doc="mean sigmaRR shower shape"),
+        sigmaZZ = Var("sigmaZZ()", float, doc="sigmaZZ shower shape"),
+        sigmaEtaEtaTot = Var("sigmaEtaEtaTot()", float, doc="total sigmaEtaEta shower shape"),
+        sigmaPhiPhiTot = Var("sigmaPhiPhiTot()", float, doc="total sigmaPhiPhi shower shape"),
+        zBarycenter = Var("zBarycenter()", float, doc="z of the shower barycenter (signed; abs for |z|)"),
+        eMax = Var("eMax()", float, doc="energy of the most energetic layer"),
+        showerLength = Var("showerLength()", "int16", doc="shower length in layers"),
+        coreShowerLength = Var("coreShowerLength()", "int16", doc="core shower length in layers"),
+        firstLayer = Var("firstLayer()", "int16", doc="first layer of the shower"),
+        maxLayer = Var("maxLayer()", "int16", doc="layer with maximum energy"),
+        hwQual = Var("hwQual()", "int", doc="hardware quality / ID bits"),
+    )
+)
+
+#### caloPtr -> HGCal multicluster crossref (endcap candidates only; barrel
+#### candidates point at GCT/PFCluster collections and get -1)
+l1tPuppiCandHGCClusterLink = cms.EDProducer(
+    "L1PFCandClusterLinkTableProducer",
+    cands = cms.InputTag("l1tLayer2Deregionizer", "Puppi"),
+    clusters = cms.InputTag("l1tHGCalBackEndLayer2Producer", "HGCalBackendLayer2Processor3DClustering"),
+    candTableName = cms.string("L1PuppiCand"),
+    columnName = cms.string("hgcClusterIdx"),
+    clusterTableName = cms.string("L1HGCCluster"),
+)
+
+l1tExtPuppiCandHGCClusterLink = l1tPuppiCandHGCClusterLink.clone(
+    cands = cms.InputTag("l1tLayer2DeregionizerExtended", "Puppi"),
+    candTableName = cms.string("L1ExtPuppiCand"),
+)
+
 p2L1PFCandsTask = cms.Task(
     l1tPuppiCandsTable,
     l1tExtPuppiCandsTable,
     l1tPFCandsTable,
     l1tSC4NGJetCandsTable,
     l1tSC4JetCandsTable,
+    l1tHGCClusterTable,
+    l1tPuppiCandHGCClusterLink,
+    l1tExtPuppiCandHGCClusterLink,
 )
