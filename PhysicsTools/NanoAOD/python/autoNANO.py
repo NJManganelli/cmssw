@@ -75,6 +75,7 @@ autoNANO = {
     'L1TrkNanowithGen' : {'sequence': '@Phase2L1DPG',
                           'customize': '+'.join(['@L1TrkNano',
                                                  'DPGAnalysis/Phase2L1TNanoAOD/l1tPh2Nano_cff.addPh2L1TrackTruth',
+                                                 'DPGAnalysis/Phase2L1TNanoAOD/l1tPh2Nano_cff.addPh2L1DisplacedVertices',
                                                  'DPGAnalysis/Phase2L1TNanoAOD/l1tPh2Nano_cff.addGenObjects']),},
     'L1PFNano' : {'sequence': '@Phase2L1DPG',
                   'customize': '@Phase2L1DPG+DPGAnalysis/Phase2L1TNanoAOD/l1tPh2Nano_cff.addPh2L1PFCandidates',},
@@ -90,6 +91,7 @@ autoNANO = {
     'L1PFTrkNanowithGen' : {'sequence': '@Phase2L1DPG',
                             'customize': '+'.join(['@L1PFTrkNano',
                                                    'DPGAnalysis/Phase2L1TNanoAOD/l1tPh2Nano_cff.addPh2L1TrackTruth',
+                                                   'DPGAnalysis/Phase2L1TNanoAOD/l1tPh2Nano_cff.addPh2L1DisplacedVertices',
                                                    'DPGAnalysis/Phase2L1TNanoAOD/l1tPh2Nano_cff.addGenObjects']),},
     # Muon POG flavours : add tables through customize, supposed to be combined with PHYS
     'MUPOG': {'sequence': '@PHYS',

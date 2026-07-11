@@ -65,6 +65,17 @@ def addPh2L1PFCandTrackTruth(process):
     process.l1tPh2NanoTask.add(p2L1PFCandTrackTruthTask)
     return process
 
+def addPh2L1DisplacedVertices(process):
+    """GTT displaced-vertex table (stock GBDT score + isReal truth label).
+    Schedules the DisplacedVertexProducer if the workflow did not run it;
+    its truth label needs the extended-track associator (ensured here)."""
+    _ensureTrackTruthAssociators(process)
+    if not hasattr(process, "DisplacedVertexProducer"):
+        process.load("L1Trigger.L1TTrackMatch.DisplacedVertexProducer_cfi")
+    process.l1tPh2NanoTask.add(process.DisplacedVertexProducer)
+    process.l1tPh2NanoTask.add(p2L1DisplacedVertexTask)
+    return process
+
 def addPh2L1SmartPixelsTracks(process):
     process.l1tPh2NanoTask.add(p2L1SmartPixelsTracksTask)
     return process
