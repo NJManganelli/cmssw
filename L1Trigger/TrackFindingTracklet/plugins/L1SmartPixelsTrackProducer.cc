@@ -73,7 +73,6 @@
 // #include "CommonTools/UtilAlgos/interface/TFileService.h"
 #include "CLHEP/Units/PhysicalConstants.h"
 #include "L1Trigger/TrackTrigger/interface/StubPtConsistency.h"
-#include "L1Trigger/TrackTrigger/interface/L1TrackQuality.h"
 
 ///////////////
 // ROOT HEADERS
@@ -628,7 +627,7 @@ void L1SmartPixelsTrackProducer::produce(edm::Event& iEvent, const edm::EventSet
     float tmp_trk_chi2 = iterL1Track->chi2();
     float tmp_trk_chi2rphi = iterL1Track->chi2XY();
     float tmp_trk_chi2rz = iterL1Track->chi2Z();
-    float tmp_trk_bendchi2 = iterL1Track->stubPtConsistency();
+    float tmp_trk_bendchi2 = iterL1Track->chi2BendRed();
     float tmp_trk_MVA1 = iterL1Track->trkMVA1();
 
     std::vector<edm::Ref<edmNew::DetSetVector<TTStub<Ref_Phase2TrackerDigi_> >, TTStub<Ref_Phase2TrackerDigi_> > >
