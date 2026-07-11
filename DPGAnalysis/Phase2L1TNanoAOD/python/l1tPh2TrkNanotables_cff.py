@@ -82,6 +82,27 @@ l1tExtSmartPixelsTracksTable = l1tTracksTable.clone(
     doc = cms.string("L1T SmartPixels Extended Tracks"),
 )
 
+#### MC truth extension (nStubs always; genuine/fake + TrackingParticle info
+#### when the TTTrackAssociator ran in the workflow) -- inputs for the
+#### track-quality GBDT training
+l1tTracksTruthTable = cms.EDProducer(
+    "L1TrackTruthTableProducer",
+    tracks = cms.InputTag("l1tTTTracksFromTrackletEmulation", "Level1TTTracks"),
+    truthAssociation = cms.InputTag("TTTrackAssociatorFromPixelDigis", "Level1TTTracks"),
+    trackTableName = cms.string("L1TTrack"),
+)
+
+l1tExtTracksTruthTable = l1tTracksTruthTable.clone(
+    tracks = cms.InputTag("l1tTTTracksFromExtendedTrackletEmulation", "Level1TTTracks"),
+    truthAssociation = cms.InputTag("TTTrackAssociatorFromPixelDigisExtended", "Level1TTTracks"),
+    trackTableName = cms.string("L1TExtTrack"),
+)
+
+p2L1TrackTruthTask = cms.Task(
+    l1tTracksTruthTable,
+    l1tExtTracksTruthTable,
+)
+
 p2L1TracksTask = cms.Task(
     l1tTracksTable,
     gttTracksTable,
