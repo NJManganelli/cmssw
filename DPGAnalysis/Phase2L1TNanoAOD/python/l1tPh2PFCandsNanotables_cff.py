@@ -53,11 +53,35 @@ l1tPFCandsTable = l1tPuppiCandsTable.clone(
     doc = cms.string("Layer-1 particle flow candidates (pre-Puppi)"),
 )
 
-p2L1PFCandsTask = cms.Task(
-    l1tPuppiCandsTable,
-    l1tPFCandsTable,
+#### Jet <-> constituent association tables (PFNano JetPFCands style), with
+#### candidate-table extension columns (jetIdx backref, l1TrackIdx crossref)
+l1tSC4NGJetCandsTable = cms.EDProducer(
+    "L1JetCandLinkTableProducer",
+    jets = cms.InputTag("l1tSC4NGJetProducer", "l1tSC4NGJets"),
+    cands = cms.InputTag("l1tLayer2DeregionizerExtended", "Puppi"),
+    tracks = cms.InputTag("l1tTTTracksFromExtendedTrackletEmulation", "Level1TTTracks"),
+    linkTableName = cms.string("L1SC4NGJetCands"),
+    candTableName = cms.string("L1ExtPuppiCand"),
+    jetTableName = cms.string("L1puppiJetSC4NG"),
+    trackTableName = cms.string("L1TExtTrack"),
+    maxConstituentsTagger = cms.uint32(16),
+    writeCandExtension = cms.bool(True),
 )
 
-p2L1ExtPFCandsTask = cms.Task(
+l1tSC4JetCandsTable = l1tSC4NGJetCandsTable.clone(
+    jets = cms.InputTag("l1tSC4PFL1PuppiCorrectedEmulator"),
+    cands = cms.InputTag("l1tLayer2Deregionizer", "Puppi"),
+    tracks = cms.InputTag("l1tTTTracksFromTrackletEmulation", "Level1TTTracks"),
+    linkTableName = cms.string("L1SC4JetCands"),
+    candTableName = cms.string("L1PuppiCand"),
+    jetTableName = cms.string("L1puppiJetSC4"),
+    trackTableName = cms.string("L1TTrack"),
+)
+
+p2L1PFCandsTask = cms.Task(
+    l1tPuppiCandsTable,
     l1tExtPuppiCandsTable,
+    l1tPFCandsTable,
+    l1tSC4NGJetCandsTable,
+    l1tSC4JetCandsTable,
 )
