@@ -93,6 +93,14 @@ autoNANO = {
                                                    'DPGAnalysis/Phase2L1TNanoAOD/l1tPh2Nano_cff.addPh2L1TrackTruth',
                                                    'DPGAnalysis/Phase2L1TNanoAOD/l1tPh2Nano_cff.addPh2L1DisplacedVertices',
                                                    'DPGAnalysis/Phase2L1TNanoAOD/l1tPh2Nano_cff.addGenObjects']),},
+    #  SmartPixels (Phase-3) flavours: general L1PFTrkNano + the Phase-3 SmartPixels track tables.
+    #  Require the SmartPixels track collections from L1Trigger/Phase3SmartPixels.
+    'L1PFTrkNanoSmartPix' : {'sequence': '@Phase2L1DPG',
+                             'customize': '+'.join(['@L1PFTrkNano',
+                                                    'DPGAnalysis/Phase3SmartPixelsNanoAOD/l1tPh3SmartPixelsNano_cff.addPh3L1SmartPixelsTracks']),},
+    'L1PFTrkNanoSmartPixwithGen' : {'sequence': '@Phase2L1DPG',
+                                    'customize': '+'.join(['@L1PFTrkNanowithGen',
+                                                           'DPGAnalysis/Phase3SmartPixelsNanoAOD/l1tPh3SmartPixelsNano_cff.addPh3L1SmartPixelsTracks']),},
     # Muon POG flavours : add tables through customize, supposed to be combined with PHYS
     'MUPOG': {'sequence': '@PHYS',
               'customize': '@PHYS+PhysicsTools/NanoAOD/custom_muon_cff.PrepMuonCustomNanoAOD'},
