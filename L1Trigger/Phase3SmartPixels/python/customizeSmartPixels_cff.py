@@ -24,6 +24,10 @@ import FWCore.ParameterSet.Config as cms
 PASSTHROUGH_MODES = ["passthrough", "passthroughFloat", "passthroughHW", "trackingParticleTruth"]
 # Modes parametrized by the active pixel-layer configuration (need activeSP)
 ACTIVE_LAYER_MODES = ["correctionlibRegression", "correctionlibTPToySmear"]
+# Modes for which the TP/truth association is LOAD-BEARING: without it the
+# producer silently passes tracks through unmodified (per-track fallback),
+# which invalidates any study. Truth availability must be guaranteed.
+TRUTH_REQUIRED_MODES = ["trackingParticleTruth", "correctionlibRegression", "correctionlibTPToySmear"]
 
 REGRESSION_CONFIGS = ["0000",
                       "0001", "0010", "0100", "1000",
@@ -100,6 +104,55 @@ def addSmartPixelsTrackProducerVariants(process, variants=None, correctionSet=DE
         module.smartPixelsCorrectionSet = cms.FileInPath(correctionSet)
 
   return process, modules
+
+
+TRUTH_ASSOCIATOR_LABELS = ("TTClusterAssociatorFromPixelDigis",
+                           "TTStubAssociatorFromPixelDigis",
+                           "TTTrackAssociatorFromPixelDigis",
+                           "TTTrackAssociatorFromPixelDigisExtended")
+
+
+def useTruthAssociationFromFile(process, associatorLabels=TRUTH_ASSOCIATOR_LABELS):
+  """Force the TT truth association maps to be read FROM THE INPUT FILE.
+
+  The associators need mix:Tracker PixelDigiSimLinks, which are TRANSIENT DIGI
+  products: they exist in-memory in a job that runs DIGI (central .774-style
+  DIGI+L1+NANO jobs, or GEN-SIM-DIGI-RAW(-MINIAOD) inputs that retained them),
+  but are dropped from most stripped tiers/RelVals. When the input file instead
+  carries the READY-MADE association maps (STEP1-style output with
+  'keep *_TTTrackAssociatorFromPixelDigis*_*_*' etc., as in the b-tagging
+  runJetNTuple workflow), the in-process associator modules must be REMOVED so
+  consumption resolves to the file products instead of re-running in-job.
+  The file must also carry the TrackingParticles the maps point to
+  (mix:MergedTrackTruth).
+  """
+  for label in associatorLabels:
+    if not hasattr(process, label):
+      continue
+    module = getattr(process, label)
+    for container in (list(process.tasks.values()) + list(process.sequences.values())
+                      + list(process.paths.values()) + list(process.endpaths.values())):
+      try:
+        container.remove(module)
+      except Exception:
+        pass
+    delattr(process, label)
+    print(f"SmartPixels truthSource=fromFile: removed in-process associator '{label}' (maps read from input file)")
+  return process
+
+
+def _applyTruthSource(process, truthSource, variants):
+  if truthSource not in ("inJob", "fromFile"):
+    raise ValueError(f"truthSource must be 'inJob' or 'fromFile', got '{truthSource}'")
+  # Truth is load-bearing for these modes (silent per-track passthrough otherwise):
+  # make the requirement visible in the log either way.
+  truthModes = [mode for mode, _ in variants if mode in TRUTH_REQUIRED_MODES]
+  if truthModes:
+    print(f"SmartPixels: modes {truthModes} REQUIRE the TP/truth association "
+          f"(truthSource={truthSource}); without it tracks pass through unmodified.")
+  if truthSource == "fromFile":
+    process = useTruthAssociationFromFile(process)
+  return process
 
 
 def _scheduleVariantModules(process, modules, taskName):
@@ -184,11 +237,18 @@ def injectSmartPixelsTrackProducer(process,
 # ---------------------------------------------------------------------------
 # WF1: coexist — standard tracks AND SmartPixels variant tables in one L1Nano
 # ---------------------------------------------------------------------------
-def smartPixelsCoexist(process, variants=None, correctionSet=DEFAULT_CORRECTION_SET, addNanoTables=True):
+def smartPixelsCoexist(process, variants=None, correctionSet=DEFAULT_CORRECTION_SET, addNanoTables=True,
+                       truthSource="inJob"):
   """Add SmartPixels track collections (default: one passthrough variant)
   alongside the standard tracks, plus one pair of L1Nano track tables per
   variant. Nothing downstream is rewired: all other L1 objects still reflect
   the standard tracks, enabling in-file track-to-track comparisons.
+
+  truthSource: 'inJob' (default) runs the TT truth associators in-job — valid
+  when the job also runs DIGI or the input retained mix:Tracker simlinks;
+  'fromFile' removes them so STEP1-style association maps are read from the
+  input file. Truth is REQUIRED for the regression/TP modes (silent per-track
+  passthrough otherwise).
 
   cmsDriver (defaults):  --customise L1Trigger/Phase3SmartPixels/customizeSmartPixels_cff.smartPixelsCoexist
   cmsDriver (explicit):  --customise_commands 'from L1Trigger.Phase3SmartPixels.customizeSmartPixels_cff import smartPixelsCoexist; process = smartPixelsCoexist(process, variants=[("correctionlibRegression", "1100")])'
@@ -199,6 +259,7 @@ def smartPixelsCoexist(process, variants=None, correctionSet=DEFAULT_CORRECTION_
 
   process, modules = addSmartPixelsTrackProducerVariants(process, variants, correctionSet)
   process = _scheduleVariantModules(process, modules, "l1tSmartPixelsCoexistTask")
+  process = _applyTruthSource(process, truthSource, variants)
 
   if addNanoTables:
     from DPGAnalysis.Phase3SmartPixelsNanoAOD.l1tPh3SmartPixelsNano_cff import addPh3L1SmartPixelsTracks
@@ -216,7 +277,8 @@ def smartPixelsCoexist(process, variants=None, correctionSet=DEFAULT_CORRECTION_
 # ---------------------------------------------------------------------------
 def smartPixelsCoopt(process, mode="passthrough", activeSP=None,
                      correctionSet=DEFAULT_CORRECTION_SET,
-                     addPh3Table=False, skipModuleTypes=None):
+                     addPh3Table=False, skipModuleTypes=None,
+                     truthSource="inJob"):
   """Produce ONE SmartPixels variant in-job and inject it into every downstream
   consumer of the standard tracklet tracks. Any nano flavor run in this job then
   reflects that single track interpretation; comparisons are file-to-file
@@ -227,11 +289,15 @@ def smartPixelsCoopt(process, mode="passthrough", activeSP=None,
   the standard L1TTrack table (protected by the skip-list) remains the only
   extra reference.
 
+  truthSource: see smartPixelsCoexist — 'inJob' (default) or 'fromFile'.
+  Truth is REQUIRED for the regression/TP modes.
+
   cmsDriver (defaults):  --customise L1Trigger/Phase3SmartPixels/customizeSmartPixels_cff.smartPixelsCoopt
   cmsDriver (explicit):  --customise_commands 'from L1Trigger.Phase3SmartPixels.customizeSmartPixels_cff import smartPixelsCoopt; process = smartPixelsCoopt(process, mode="correctionlibRegression", activeSP="1100")'
   """
   process, modules = addSmartPixelsTrackProducerVariants(process, [(mode, activeSP)], correctionSet)
   process = _scheduleVariantModules(process, modules, "l1tSmartPixelsCooptTask")
+  process = _applyTruthSource(process, truthSource, [(mode, activeSP)])
 
   prompt, extended = smartPixelsVariantLabels(mode, activeSP)
   process = injectSmartPixelsTrackProducer(process,
