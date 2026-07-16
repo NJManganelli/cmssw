@@ -131,7 +131,11 @@ def injectSmartPixelsTrackProducer(process,
     skipModuleTypes = ["L1SmartPixelsTrackProducer",
                        "TTTrackAssociator_Phase2TrackerDigi_",
                        "L1FPGATrackProducer",
-                       "SimpleL1TTTrackCandidateFlatTableProducer"]
+                       "SimpleL1TTTrackCandidateFlatTableProducer",
+                       # keep the truth table aligned with the (skipped) reference track
+                       # table; Ref-based truth lookups only resolve on the original
+                       # collection the associator ran on
+                       "L1TrackTruthTableProducer"]
 
   def print_helper(item):
     if hasattr(item, "items"):
