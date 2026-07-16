@@ -76,6 +76,9 @@ def addPh2L1DisplacedVertices(process):
     process.l1tPh2NanoTask.add(p2L1DisplacedVertexTask)
     return process
 
+def addPh2L1SmartPixelsTracks(process):
+    process.l1tPh2NanoTask.add(p2L1SmartPixelsTracksTask)
+    return process
 
 ### L1 PF / Puppi candidate tables (superset of the jet-tagger training inputs)
 from DPGAnalysis.Phase2L1TNanoAOD.l1tPh2PFCandsNanotables_cff import *
