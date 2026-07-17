@@ -45,6 +45,31 @@ Two streamlined workflows are provided by
   reflects that single interpretation. Comparisons are file-to-file against a standard-tracks
   baseline job.
 
+## Refit modes (tier model)
+
+Beyond the passthrough/regression variants, `customizeSmartPixels_cff.py` reserves a
+two-tier refit model that develops the OT-L1Track ⊕ IT-pixel refit before the true
+SmartPixels chain exists:
+
+- **`digiRefit` (Tier 2, interim)** — project OT L1Tracks into the inner barrel (BPIX)
+  pixel layers and refit against the **real** `simSiPixelDigis` digis (classified via
+  `PixelDigiSimLink`), **synthesizing only the angle information** (PixelAV response). It is
+  an *active-layer* mode (reuses the activeSP `AAII` encoding to pick the refit layer set,
+  e.g. `"1100"`) and is *truth-required* (needs pixel digis + `PixelDigiSimLink` +
+  TrackingParticles; posture-B/`inJob` or file-present IT products). The producer lands in
+  **Phase 2**; the config surface (`DIGIREFIT_DEFAULTS`, `digiRefitConfig=` kwarg on
+  `smartPixelsCoexist`/`smartPixelsCoopt`) is reserved now and building a `digiRefit`
+  variant raises `NotImplementedError` until then.
+- **`refit` (Tier 3, reserved)** — the true system: the producer will ingest OT L1Tracks
+  plus a real `SmartTracklet` collection from an `L1SmartTracksFinder`. The mode name is
+  accepted by the vocabulary but building a variant with it raises `NotImplementedError`
+  (reserved); use `digiRefit` for the interim.
+
+FPGA-fidelity handles live in `DIGIREFIT_DEFAULTS` from day one (float impl, every
+truncation switchable to chart resolution-vs-fidelity curves): `useAngles`
+(`none`/`alpha`/`alphaBeta`), `maxHitsPerWindow` (combinatorics truncation), `maxKFUpdates`
+(Kalman-update cap), and `gainMode` (`full`/`lut` table-driven placeholder).
+
 Migration of the jet-tagging workflow (STEP1/STEP2 with the NGJet tagger) to
 20_1/master is in progress; until that lands, the 15_1_0_pre1 instructions below
 remain the reference for jet-tagging studies.
