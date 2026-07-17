@@ -41,8 +41,11 @@ def addPh3L1SmartPixelsTracks(process,
     producer labels.
     """
     nameSuffix = tableSuffix[:1].upper() + tableSuffix[1:] if tableSuffix else ""
-    promptTableName = f"l1tPh3SmartPixelsTracksTable{nameSuffix}"
-    extendedTableName = f"l1tPh3ExtSmartPixelsTracksTable{nameSuffix}"
+    # Module labels must END in "Table": the NANOAOD event content only keeps
+    # "nanoaodFlatTable_*Table_*_*", and the output module's consumes (which
+    # trigger the unscheduled table producers) derive from that pattern.
+    promptTableName = f"l1tPh3SmartPixelsTracks{nameSuffix}Table"
+    extendedTableName = f"l1tPh3ExtSmartPixelsTracks{nameSuffix}Table"
 
     setattr(process, promptTableName, l1tPh3SmartPixelsTracksTable.clone(
         src = cms.InputTag(srcLabel, "Level1TTTracks"),
