@@ -22,12 +22,27 @@ import FWCore.ParameterSet.Config as cms
 
 # Modes that produce one collection per producer instance, no activeSP config
 PASSTHROUGH_MODES = ["passthrough", "passthroughFloat", "passthroughHW", "trackingParticleTruth"]
-# Modes parametrized by the active pixel-layer configuration (need activeSP)
-ACTIVE_LAYER_MODES = ["correctionlibRegression", "correctionlibTPToySmear"]
+# Modes parametrized by the active pixel-layer configuration (need activeSP).
+# digiRefit reuses the activeSP encoding to select the refit layer set (BPIX
+# layers), e.g. "1100" -> suffix AAII selects the two inner barrel layers.
+ACTIVE_LAYER_MODES = ["correctionlibRegression", "correctionlibTPToySmear", "digiRefit"]
 # Modes for which the TP/truth association is LOAD-BEARING: without it the
 # producer silently passes tracks through unmodified (per-track fallback),
 # which invalidates any study. Truth availability must be guaranteed.
-TRUTH_REQUIRED_MODES = ["trackingParticleTruth", "correctionlibRegression", "correctionlibTPToySmear"]
+# digiRefit additionally needs the pixel digis + PixelDigiSimLinks (posture B),
+# not just the TTTrack association maps; the requirement is flagged the same way.
+TRUTH_REQUIRED_MODES = ["trackingParticleTruth", "correctionlibRegression",
+                        "correctionlibTPToySmear", "digiRefit"]
+# Refit "tier model" (see L1Trigger/Phase3SmartPixels/README.md and
+# mem:smartpixels-tier2-refit-plan):
+#   digiRefit = Tier 2 interim refit (real pixel digis + synthesized angles).
+#               Active-layer + truth-required; implementation lands in Phase 2.
+#   refit     = Tier 3 true system (ingests a real SmartTracklet collection from
+#               an L1SmartTracksFinder). RESERVED: accepted by the mode
+#               vocabulary but building a variant with it raises NotImplementedError.
+RESERVED_MODES = ["refit"]
+# The complete accepted mode vocabulary (order = documentation order, not priority).
+ALL_MODES = PASSTHROUGH_MODES + ACTIVE_LAYER_MODES + RESERVED_MODES
 
 REGRESSION_CONFIGS = ["0000",
                       "0001", "0010", "0100", "1000",
@@ -39,8 +54,88 @@ REGRESSION_CONFIGS = ["0000",
 DEFAULT_CORRECTION_SET = "L1Trigger/Phase3SmartPixels/data/spixel_smear_all_configs_barrel_CalV1_v2p1_compound.json"
 
 
+# ---------------------------------------------------------------------------
+# digiRefit (Tier 2) config surface — defined in full now (Phase 0); the
+# producer that consumes it lands in Phase 2. Every entry is documented with
+# units where relevant. Enum-valued entries are validated against the *_CHOICES
+# sets below; unknown keys or out-of-vocabulary values raise loudly at config
+# time (ValueError), so the surface is exercised even though nothing runs yet.
+# ---------------------------------------------------------------------------
+DIGIREFIT_USEANGLES_CHOICES = ("none", "alpha", "alphaBeta")
+DIGIREFIT_GAINMODE_CHOICES = ("full", "lut")
+
+DIGIREFIT_DEFAULTS = {
+    # --- search window (module-local frame) ---
+    "windowRPhi": 0.05,       # r-phi search-window half-width [cm]
+    "windowZ": 0.10,          # z (or r on tilted/endcap) search-window half-width [cm]
+    # --- track emission ---
+    "minHits": 1,             # min attached IT hits required to emit a refit track
+    # --- fidelity handle: which synthesized angle(s) enter the refit ---
+    "useAngles": "alpha",     # "none" | "alpha" | "alphaBeta"
+    # --- FPGA-fidelity / truncation handles (float impl, switchable) ---
+    "maxHitsPerWindow": 8,    # combinatorics truncation: max in-window digis kept per layer
+    "maxKFUpdates": 4,        # max Kalman updates applied (layer/update cap)
+    "gainMode": "full",       # "full" (exact gain) | "lut" (RESERVED table-driven placeholder)
+    # --- correctionlib payload paths (empty defaults acceptable for Phase 0) ---
+    "smarthitTrueSet": "",    # Stack A "smarthit_true" payload (eff/residual/angle response)
+    "smarthitFakeSet": "",    # Stack B "smarthit_fake" payload (window multiplicity / fakes)
+    "pixelavAngleSet": "",    # PixelAV angle sigma/bias response payload
+    # --- optional refit-aware TkQuality BDT ---
+    "bdtModel": "",           # optional path to the refit TkQuality BDT model (empty = none)
+}
+
+
+def _resolveDigiRefitConfig(digiRefitConfig=None):
+  """Merge a user digiRefitConfig dict over DIGIREFIT_DEFAULTS with loud validation.
+
+  Returns a NEW dict (defaults never mutated). Unknown keys and out-of-vocabulary
+  enum values raise ValueError at config time (Phase 0 requirement: the surface
+  is exercised and mistakes fail loudly, not silently). Passing None yields a
+  fresh copy of the defaults.
+  """
+  resolved = dict(DIGIREFIT_DEFAULTS)
+  if digiRefitConfig is None:
+    return resolved
+  if not isinstance(digiRefitConfig, dict):
+    raise ValueError(f"digiRefitConfig must be a dict, got {type(digiRefitConfig).__name__}")
+  unknown = set(digiRefitConfig) - set(DIGIREFIT_DEFAULTS)
+  if unknown:
+    raise ValueError(
+        f"digiRefitConfig has unknown key(s) {sorted(unknown)}; "
+        f"valid keys are {sorted(DIGIREFIT_DEFAULTS)}")
+  resolved.update(digiRefitConfig)
+  if resolved["useAngles"] not in DIGIREFIT_USEANGLES_CHOICES:
+    raise ValueError(
+        f"digiRefitConfig['useAngles']={resolved['useAngles']!r} invalid; "
+        f"must be one of {DIGIREFIT_USEANGLES_CHOICES}")
+  if resolved["gainMode"] not in DIGIREFIT_GAINMODE_CHOICES:
+    raise ValueError(
+        f"digiRefitConfig['gainMode']={resolved['gainMode']!r} invalid; "
+        f"must be one of {DIGIREFIT_GAINMODE_CHOICES}")
+  return resolved
+
+
+def _checkReservedMode(mode):
+  """Raise NotImplementedError for RESERVED modes (accepted by the vocabulary
+  but not buildable). Currently only 'refit' (Tier 3)."""
+  if mode in RESERVED_MODES:
+    raise NotImplementedError(
+        f"SmartPixels mode '{mode}' is RESERVED for the true SmartTracklet-input "
+        f"system (Tier 3): it will ingest a real SmartTracklet collection from an "
+        f"L1SmartTracksFinder. Not implemented. Use mode 'digiRefit' for the "
+        f"interim Tier 2 refit (real pixel digis + synthesized angles).")
+
+
 def smartPixelsVariantSuffix(mode, activeSP=None):
-  """Unique label/table suffix for a variant, e.g. 'passthrough' or 'correctionlibRegressionAAII'."""
+  """Unique label/table suffix for a variant, e.g. 'passthrough' or 'correctionlibRegressionAAII'.
+
+  digiRefit reuses the activeSP encoding (e.g. '1100' -> 'AAII'), so
+  smartPixelsVariantSuffix('digiRefit', '1100') -> 'digiRefitAAII' and the
+  derived table labels still end in 'Table' downstream (nano keep-pattern gotcha).
+  """
+  if mode not in ALL_MODES:
+    raise ValueError(f"unknown SmartPixels mode '{mode}'; valid modes are {ALL_MODES}")
+  _checkReservedMode(mode)
   if mode in ACTIVE_LAYER_MODES:
     if activeSP is None:
       raise ValueError(f"SmartPixels mode '{mode}' requires activeSP (e.g. '1100')")
@@ -74,12 +169,19 @@ def _allVariants():
           + [("correctionlibRegression", rconf) for rconf in REGRESSION_CONFIGS])
 
 
-def addSmartPixelsTrackProducerVariants(process, variants=None, correctionSet=DEFAULT_CORRECTION_SET):
+def addSmartPixelsTrackProducerVariants(process, variants=None, correctionSet=DEFAULT_CORRECTION_SET,
+                                        digiRefitConfig=None):
   """STEP1: instantiate the SmartPixels track producer (prompt+extended) for each variant.
 
   variants=None reproduces the legacy behavior: all passthrough-family modes plus
   all 16 regression configs, produced concurrently (they are cheap smears/copies
   of the same base tracklet tracks).
+
+  digiRefitConfig: a dict merged over DIGIREFIT_DEFAULTS (validated loudly; see
+  _resolveDigiRefitConfig). Only relevant when a digiRefit variant is present.
+  Phase 0: reaching a digiRefit variant's producer-instantiation point raises
+  NotImplementedError — the config surface is exercised, but nothing runs.
+
   Returns (process, moduleNames); scheduling the modules is up to the caller
   (see smartPixelsCoexist/smartPixelsCoopt for path association).
   """
@@ -87,10 +189,23 @@ def addSmartPixelsTrackProducerVariants(process, variants=None, correctionSet=DE
     variants = _allVariants()
   variants = _normalizeVariants(variants)
 
+  # Resolve+validate the digiRefit surface up front so a malformed dict fails
+  # loudly at config time regardless of where the digiRefit variant sits.
+  digiRefitResolved = _resolveDigiRefitConfig(digiRefitConfig)
+
   process.load('L1Trigger.Phase3SmartPixels.l1tSmartPixelsTrackProducer_cfi')
   modules = []
   for mode, activeSP in variants:
+    # smartPixelsVariantLabels -> smartPixelsVariantSuffix rejects unknown modes
+    # and raises the RESERVED (Tier 3 'refit') NotImplementedError here.
     prompt, extended = smartPixelsVariantLabels(mode, activeSP)
+
+    if mode == "digiRefit":
+      # Phase 0: config surface reserved, producer not yet implemented.
+      # digiRefitResolved is validated above; carry it forward when Phase 2 lands.
+      raise NotImplementedError(
+          "digiRefit producer lands in Phase 2 — config surface reserved")
+
     modules.append(prompt)
     modules.append(extended)
 
@@ -238,7 +353,7 @@ def injectSmartPixelsTrackProducer(process,
 # WF1: coexist — standard tracks AND SmartPixels variant tables in one L1Nano
 # ---------------------------------------------------------------------------
 def smartPixelsCoexist(process, variants=None, correctionSet=DEFAULT_CORRECTION_SET, addNanoTables=True,
-                       truthSource="inJob"):
+                       truthSource="inJob", digiRefitConfig=None):
   """Add SmartPixels track collections (default: one passthrough variant)
   alongside the standard tracks, plus one pair of L1Nano track tables per
   variant. Nothing downstream is rewired: all other L1 objects still reflect
@@ -250,6 +365,10 @@ def smartPixelsCoexist(process, variants=None, correctionSet=DEFAULT_CORRECTION_
   input file. Truth is REQUIRED for the regression/TP modes (silent per-track
   passthrough otherwise).
 
+  digiRefitConfig: dict merged over DIGIREFIT_DEFAULTS (validated loudly),
+  relevant only for a digiRefit variant. Phase 0: a digiRefit variant raises
+  NotImplementedError at producer instantiation (surface reserved, no run).
+
   cmsDriver (defaults):  --customise L1Trigger/Phase3SmartPixels/customizeSmartPixels_cff.smartPixelsCoexist
   cmsDriver (explicit):  --customise_commands 'from L1Trigger.Phase3SmartPixels.customizeSmartPixels_cff import smartPixelsCoexist; process = smartPixelsCoexist(process, variants=[("correctionlibRegression", "1100")])'
   """
@@ -257,7 +376,8 @@ def smartPixelsCoexist(process, variants=None, correctionSet=DEFAULT_CORRECTION_
     variants = [("passthrough", None)]
   variants = _normalizeVariants(variants)
 
-  process, modules = addSmartPixelsTrackProducerVariants(process, variants, correctionSet)
+  process, modules = addSmartPixelsTrackProducerVariants(process, variants, correctionSet,
+                                                         digiRefitConfig=digiRefitConfig)
   process = _scheduleVariantModules(process, modules, "l1tSmartPixelsCoexistTask")
   process = _applyTruthSource(process, truthSource, variants)
 
@@ -278,7 +398,7 @@ def smartPixelsCoexist(process, variants=None, correctionSet=DEFAULT_CORRECTION_
 def smartPixelsCoopt(process, mode="passthrough", activeSP=None,
                      correctionSet=DEFAULT_CORRECTION_SET,
                      addPh3Table=False, skipModuleTypes=None,
-                     truthSource="inJob"):
+                     truthSource="inJob", digiRefitConfig=None):
   """Produce ONE SmartPixels variant in-job and inject it into every downstream
   consumer of the standard tracklet tracks. Any nano flavor run in this job then
   reflects that single track interpretation; comparisons are file-to-file
@@ -292,10 +412,16 @@ def smartPixelsCoopt(process, mode="passthrough", activeSP=None,
   truthSource: see smartPixelsCoexist — 'inJob' (default) or 'fromFile'.
   Truth is REQUIRED for the regression/TP modes.
 
+  digiRefitConfig: dict merged over DIGIREFIT_DEFAULTS (validated loudly),
+  relevant only when mode='digiRefit'. Phase 0: mode='digiRefit' raises
+  NotImplementedError at producer instantiation (surface reserved, no run);
+  mode='refit' raises the RESERVED NotImplementedError.
+
   cmsDriver (defaults):  --customise L1Trigger/Phase3SmartPixels/customizeSmartPixels_cff.smartPixelsCoopt
   cmsDriver (explicit):  --customise_commands 'from L1Trigger.Phase3SmartPixels.customizeSmartPixels_cff import smartPixelsCoopt; process = smartPixelsCoopt(process, mode="correctionlibRegression", activeSP="1100")'
   """
-  process, modules = addSmartPixelsTrackProducerVariants(process, [(mode, activeSP)], correctionSet)
+  process, modules = addSmartPixelsTrackProducerVariants(process, [(mode, activeSP)], correctionSet,
+                                                         digiRefitConfig=digiRefitConfig)
   process = _scheduleVariantModules(process, modules, "l1tSmartPixelsCooptTask")
   process = _applyTruthSource(process, truthSource, [(mode, activeSP)])
 
