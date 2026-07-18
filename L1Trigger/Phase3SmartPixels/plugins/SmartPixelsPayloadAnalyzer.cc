@@ -86,6 +86,9 @@
 #include "MagneticField/Engine/interface/MagneticField.h"
 #include "MagneticField/Records/interface/IdealMagneticFieldRecord.h"
 
+// Shared helix propagation + TBPX module lookup (one impl, no drift with producer)
+#include "L1Trigger/Phase3SmartPixels/interface/SmartPixelsHelixProjector.h"
+
 // ROOT
 #include "TTree.h"
 
@@ -132,6 +135,9 @@ private:
   const double windowZ_;     // z window half-width [cm] (local y)
   const int nLayers_;        // number of TBPX layers to consider (1..4)
   const bool debug_;
+
+  // Shared propagation/module-lookup (built lazily on the first event).
+  smartpixels::HelixProjector projector_;
 
   // ---- output tree (one row per track-layer crossing) ----
   TTree* tree_ = nullptr;
@@ -248,40 +254,8 @@ void SmartPixelsPayloadAnalyzer::analyze(const edm::Event& iEvent, const edm::Ev
   // rInv from the TTTrack already encodes 1/R in cm^-1; we use it directly.
   const double bz0 = field.inTesla(GlobalPoint(0, 0, 0)).z();
 
-  // Enumerate TBPX (Inner Tracker barrel pixel) modules once per event is
-  // wasteful; but the geometry is const across the job. Build a per-layer list
-  // of (mean radius, detids) lazily on the first event only.
-  static std::vector<std::vector<const GeomDetUnit*>> layerModules;  // [layer-1] -> units
-  static std::vector<double> layerRadius;                            // [layer-1] mean r
-  if (layerModules.empty()) {
-    layerModules.resize(nLayers_);
-    layerRadius.assign(nLayers_, 0.);
-    std::vector<int> nPerLayer(nLayers_, 0);
-    int nUnits = 0, nPixBarrel = 0;
-    for (const auto* det : geom.detUnits()) {
-      ++nUnits;
-      const DetId id = det->geographicalId();
-      if (id.det() != DetId::Tracker)
-        continue;
-      if (id.subdetId() != static_cast<int>(PixelSubdetector::PixelBarrel))
-        continue;
-      ++nPixBarrel;
-      const unsigned int lay = topo.pxbLayer(id);
-      if (lay < 1 || static_cast<int>(lay) > nLayers_)
-        continue;
-      layerModules[lay - 1].push_back(det);
-      layerRadius[lay - 1] += det->position().perp();
-      nPerLayer[lay - 1] += 1;
-    }
-    std::cout << "[SmartPixelsPayloadAnalyzer] geom.detUnits()=" << nUnits << " pixelBarrel=" << nPixBarrel
-              << std::endl;
-    for (int l = 0; l < nLayers_; ++l) {
-      if (nPerLayer[l] > 0)
-        layerRadius[l] /= nPerLayer[l];
-      std::cout << "[SmartPixelsPayloadAnalyzer] TBPX layer " << (l + 1) << ": " << nPerLayer[l]
-                << " modules, mean r = " << layerRadius[l] << " cm" << std::endl;
-    }
-  }
+  // Build the shared per-layer TBPX module cache (idempotent across events).
+  projector_.build(geom, topo, nLayers_);
 
   int nCrossingsThisEvent = 0;
   std::cout << "[SmartPixelsPayloadAnalyzer] event " << b_event_ << " nTracks=" << tracks->size() << std::endl;
@@ -320,119 +294,36 @@ void SmartPixelsPayloadAnalyzer::analyze(const edm::Event& iEvent, const edm::Ev
     const double y0 = trk.POCA().y();
     const double z0 = trk.z0();
     const double tanL = trk.tanL();
-    const double cosPhi0 = std::cos(phi0);
-    const double sinPhi0 = std::sin(phi0);
     (void)bz0;  // curvature taken directly from rInv; bz0 kept for provenance
 
+    smartpixels::HelixParams hp;
+    hp.rInv = rInv;
+    hp.phi0 = phi0;
+    hp.x0 = x0;
+    hp.y0 = y0;
+    hp.z0 = z0;
+    hp.tanL = tanL;
+    hp.pt = b_trk_pt_;
+
     for (int l = 0; l < nLayers_; ++l) {
-      const double Rl = layerRadius[l];
-      if (Rl <= 0.)
+      const smartpixels::Crossing cx = projector_.crossLayer(hp, l + 1, field);
+      if (!cx.valid)
         continue;
 
-      // Analytic helix -> cylinder(R=Rl) intersection in the transverse plane.
-      // Arc-length parametrization of a circle of curvature rInv starting at
-      // (x0,y0) with direction (cosPhi0,sinPhi0). Solve for the turning angle
-      // psi at which the transverse radius equals Rl. Small-|rInv| safe.
-      double sTransverse;  // transverse path length to the crossing
-      if (std::abs(rInv) < 1e-6) {
-        // straight line: |(x0,y0) + s*dir| = Rl
-        const double b = x0 * cosPhi0 + y0 * sinPhi0;
-        const double c = x0 * x0 + y0 * y0 - Rl * Rl;
-        const double disc = b * b - c;
-        if (disc < 0)
-          continue;
-        sTransverse = -b + std::sqrt(disc);
-        if (sTransverse < 0)
-          continue;
-      } else {
-        // Circle center is offset by 1/rInv perpendicular to the momentum.
-        const double R = 1.0 / rInv;  // signed
-        const double cx = x0 - R * sinPhi0;
-        const double cy = y0 + R * cosPhi0;
-        const double dcenter = std::hypot(cx, cy);
-        // crossing exists only if the circle reaches radius Rl
-        const double absR = std::abs(R);
-        if (Rl > dcenter + absR || Rl < std::abs(dcenter - absR))
-          continue;
-        // Law of cosines for the turning angle from POCA to the crossing.
-        // NB: must use |R| — a signed R flips cosArg for negative charge and
-        // sends the crossing to the far side of the circle (psi -> pi - psi).
-        const double cosArg = (absR * absR + dcenter * dcenter - Rl * Rl) / (2.0 * absR * dcenter);
-        if (cosArg < -1.0 || cosArg > 1.0)
-          continue;
-        // psi = turning angle; take the forward (smallest positive) solution.
-        const double phiCenterToStart = std::atan2(y0 - cy, x0 - cx);
-        const double delta = std::acos(std::max(-1.0, std::min(1.0, cosArg)));
-        // pick the turning direction consistent with the charge sign
-        const double dpsi = (rInv > 0) ? delta : -delta;
-        (void)phiCenterToStart;
-        sTransverse = std::abs(dpsi) * absR;
-      }
-
-      // Global crossing point via helix stepping in transverse arc length.
-      double gx, gy;
-      if (std::abs(rInv) < 1e-6) {
-        gx = x0 + sTransverse * cosPhi0;
-        gy = y0 + sTransverse * sinPhi0;
-      } else {
-        const double psi = rInv * sTransverse;  // turning angle
-        gx = x0 + (std::sin(phi0 + psi) - sinPhi0) / rInv;
-        gy = y0 - (std::cos(phi0 + psi) - cosPhi0) / rInv;
-      }
-      const double gz = z0 + tanL * sTransverse;
-      const GlobalPoint gp(gx, gy, gz);
-
-      // Global momentum direction at the crossing (rotate phi0 by psi).
-      const double psi = rInv * sTransverse;
-      const double pt = b_trk_pt_;
-      const GlobalVector gmom(pt * std::cos(phi0 + psi), pt * std::sin(phi0 + psi), pt * tanL);
-
-      // Find the module in this layer whose surface the crossing lands on.
-      // Modules are tilted/staggered, so the mean-radius crossing point has a
-      // nonzero local-z on each module; we (1) pick the geometrically closest
-      // module center, then (2) require the crossing to be within that module's
-      // TRANSVERSE (x,y) bounds only (ignore thickness/local-z), which is the
-      // correct containment test for a thin sensor. This tolerates the O(mm)
-      // radial spread of a tilted layer without a full plane re-propagation.
-      const GeomDetUnit* best = nullptr;
-      double bestDist2 = 1e18;
-      LocalPoint bestLocal;
-      for (const auto* det : layerModules[l]) {
-        const LocalPoint lp = det->toLocal(gp);
-        if (!det->surface().bounds().inside(LocalPoint(lp.x(), lp.y(), 0.)))
-          continue;
-        const auto dc = det->position() - gp;
-        const double d2 = dc.mag2();
-        if (d2 < bestDist2) {
-          bestDist2 = d2;
-          best = det;
-          bestLocal = lp;
-        }
-      }
-      if (!best)
-        continue;
-
-      const PixelGeomDetUnit* pixDet = dynamic_cast<const PixelGeomDetUnit*>(best);
-      if (!pixDet)
-        continue;
+      const PixelGeomDetUnit* pixDet = cx.det;
       const PixelTopology& pixTopo = pixDet->specificTopology();
-      const DetId detId = best->geographicalId();
+      const DetId detId(cx.detId);
+      const LocalPoint bestLocal = cx.local;
+      const GeomDet* best = pixDet;
 
-      // Track local direction -> PixelAV cotAlpha/cotBeta.
-      const LocalVector lmom = best->toLocal(gmom);
-      const double lpz = (std::abs(lmom.z()) > 1e-9) ? lmom.z() : 1e-9;
-      b_trk_cotAlpha_ = lmom.x() / lpz;
-      b_trk_cotBeta_ = lmom.y() / lpz;
-
-      // Local B-field at the module position.
-      const GlobalVector gB = field.inTesla(best->position());
-      const LocalVector lB = best->toLocal(gB);
-      b_bx_ = lB.x();
-      b_by_ = lB.y();
-      b_bz_ = lB.z();
+      b_trk_cotAlpha_ = cx.cotAlpha;
+      b_trk_cotBeta_ = cx.cotBeta;
+      b_bx_ = cx.bLocalX;
+      b_by_ = cx.bLocalY;
+      b_bz_ = cx.bLocalZ;
 
       b_layer_ = l + 1;
-      b_detid_ = detId.rawId();
+      b_detid_ = cx.detId;
       b_exp_localx_ = bestLocal.x();
       b_exp_localy_ = bestLocal.y();
 
