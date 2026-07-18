@@ -88,6 +88,9 @@
 
 // Shared helix propagation + TBPX module lookup (one impl, no drift with producer)
 #include "L1Trigger/Phase3SmartPixels/interface/SmartPixelsHelixProjector.h"
+#include "L1Trigger/Phase3SmartPixels/interface/SmartPixelsParentMap.h"
+#include "SimDataFormats/TrackingHit/interface/PSimHitContainer.h"
+#include "FWCore/Utilities/interface/Exception.h"
 
 // ROOT
 #include "TTree.h"
@@ -101,7 +104,7 @@
 
 namespace {
   // Maximum number of in-window digis stored per crossing in the flat arrays.
-  constexpr int kMaxWinDigis = 128;
+  constexpr int kMaxWinDigis = 256;  // wide L3/L4 windows at PU can exceed 128
   // PixelDigiSimLink truth classes.
   constexpr int kClassSameTP = 0;  // digi linked to the matched TP's g4 track(s)
   constexpr int kClassOtherTP = 1;  // digi linked to a DIFFERENT SimTrack
@@ -126,13 +129,19 @@ private:
   const edm::EDGetTokenT<edm::DetSetVector<PixelDigiSimLink>> simlinkToken_;
   const edm::EDGetTokenT<edm::SimTrackContainer> simTrackToken_;
   const edm::EDGetTokenT<edm::SimVertexContainer> simVertexToken_;
+  const edm::EDGetTokenT<std::vector<PSimHit>> simHitToken_;  // true crossings (diagnostic)
 
   const edm::ESGetToken<TrackerGeometry, TrackerDigiGeometryRecord> geomToken_;
   const edm::ESGetToken<TrackerTopology, TrackerTopologyRcd> topoToken_;
   const edm::ESGetToken<MagneticField, IdealMagneticFieldRecord> fieldToken_;
 
-  const double windowRPhi_;  // r-phi window half-width [cm] (local x)
-  const double windowZ_;     // z window half-width [cm] (local y)
+  // Per-layer window half-widths [cm]. The rphi (local x) spread of the
+  // extrapolation GROWS outward: the beamline-constrained 4-par fit is pinned
+  // at the origin and at the OT stubs, and the MS-compensation bulge peaks
+  // between them, right on L3/L4 (PSimHit-verified: q68 0.04/0.16/0.49/0.90 cm
+  // at 2-5 GeV). z (local y) shrinks outward (no vertex constraint in z).
+  const std::vector<double> windowRPhi_;  // local x half-widths, [layer-1]
+  const std::vector<double> windowZ_;     // local y half-widths, [layer-1]
   const int nLayers_;        // number of TBPX layers to consider (1..4)
   const bool debug_;
 
@@ -163,6 +172,8 @@ private:
   float b_digi_resx_[kMaxWinDigis], b_digi_resy_[kMaxWinDigis];
   int b_digi_adc_[kMaxWinDigis];
   float b_digi_parCotAlpha_[kMaxWinDigis], b_digi_parCotBeta_[kMaxWinDigis];  // -999 if none
+  int b_nSimHit_ = 0;                                 // matched-TP PSimHits on the assigned module
+  float b_sim_localx_ = -999.f, b_sim_localy_ = -999.f;  // nearest such PSimHit (true crossing)
 };
 
 SmartPixelsPayloadAnalyzer::SmartPixelsPayloadAnalyzer(const edm::ParameterSet& iConfig)
@@ -180,14 +191,21 @@ SmartPixelsPayloadAnalyzer::SmartPixelsPayloadAnalyzer(const edm::ParameterSet& 
           iConfig.getParameter<edm::InputTag>("simTrackInputTag"))),
       simVertexToken_(consumes<edm::SimVertexContainer>(
           iConfig.getParameter<edm::InputTag>("simVertexInputTag"))),
+      simHitToken_(consumes<std::vector<PSimHit>>(
+          iConfig.getParameter<edm::InputTag>("simHitInputTag"))),
       geomToken_(esConsumes<TrackerGeometry, TrackerDigiGeometryRecord>()),
       topoToken_(esConsumes<TrackerTopology, TrackerTopologyRcd>()),
       fieldToken_(esConsumes<MagneticField, IdealMagneticFieldRecord>()),
-      windowRPhi_(iConfig.getParameter<double>("windowRPhi")),
-      windowZ_(iConfig.getParameter<double>("windowZ")),
+      windowRPhi_(iConfig.getParameter<std::vector<double>>("windowRPhi")),
+      windowZ_(iConfig.getParameter<std::vector<double>>("windowZ")),
       nLayers_(iConfig.getParameter<int>("nLayers")),
       debug_(iConfig.getParameter<bool>("debug")) {
   usesResource(TFileService::kSharedResource);
+
+  if (windowRPhi_.size() != 4 || windowZ_.size() != 4)
+    throw cms::Exception("Configuration")
+        << "windowRPhi/windowZ must each have exactly 4 per-layer entries (TBPX L1-L4), got "
+        << windowRPhi_.size() << "/" << windowZ_.size() << ".";
 
   edm::Service<TFileService> fs;
   tree_ = fs->make<TTree>("crossings", "SmartPixels payload: one row per L1Track x TBPX-layer crossing");
@@ -222,6 +240,10 @@ SmartPixelsPayloadAnalyzer::SmartPixelsPayloadAnalyzer(const edm::ParameterSet& 
   tree_->Branch("digi_adc", b_digi_adc_, "digi_adc[nWinDigi]/I");
   tree_->Branch("digi_parCotAlpha", b_digi_parCotAlpha_, "digi_parCotAlpha[nWinDigi]/F");
   tree_->Branch("digi_parCotBeta", b_digi_parCotBeta_, "digi_parCotBeta[nWinDigi]/F");
+
+  tree_->Branch("nSimHit", &b_nSimHit_, "nSimHit/I");
+  tree_->Branch("sim_localx", &b_sim_localx_, "sim_localx/F");
+  tree_->Branch("sim_localy", &b_sim_localy_, "sim_localy/F");
 }
 
 void SmartPixelsPayloadAnalyzer::analyze(const edm::Event& iEvent, const edm::EventSetup& iSetup) {
@@ -239,16 +261,20 @@ void SmartPixelsPayloadAnalyzer::analyze(const edm::Event& iEvent, const edm::Ev
   iEvent.getByToken(simlinkToken_, simlinks);
   edm::Handle<edm::SimTrackContainer> simTracks;
   iEvent.getByToken(simTrackToken_, simTracks);
+  edm::Handle<std::vector<PSimHit>> simHits;
+  iEvent.getByToken(simHitToken_, simHits);
+  std::map<unsigned int, std::vector<const PSimHit*>> simHitsByDet;
+  for (const auto& sh : *simHits)
+    simHitsByDet[sh.detUnitId()].push_back(&sh);
 
   b_event_ = iEvent.id().event();
 
-  // Fast SimTrack lookup: trackId -> ORIGIN momentum direction (global).
-  // The SimTrack momentum is at production; we use it as the origin-momentum
-  // approximation for the parent angle at the layer (v0; documented).
-  std::map<unsigned int, math::XYZTLorentzVectorD> simMomById;
-  for (const auto& st : *simTracks) {
-    simMomById[st.trackId()] = st.momentum();
-  }
+  // Parent lookup keyed (eventId, trackId): TrackingParticles' embedded
+  // g4Tracks cover signal AND pileup parents (the g4SimHits SimTrack container
+  // is signal-only); the signal container remains a fallback for pruned TPs.
+  edm::Handle<std::vector<TrackingParticle>> tps;
+  iEvent.getByToken(tpToken_, tps);
+  const smartpixels::ParentMomentumMap parentMom = smartpixels::buildParentMomentumMap(*tps, simTracks.product());
 
   // The B-field magnitude (global, at origin) sets the helix curvature scale.
   // rInv from the TTTrack already encodes 1/R in cm^-1; we use it directly.
@@ -348,7 +374,7 @@ void SmartPixelsPayloadAnalyzer::analyze(const edm::Event& iEvent, const edm::Ev
               pixTopo.localPosition(MeasurementPoint(digi.row() + 0.5, digi.column() + 0.5));
           const double dx = dlp.x() - bestLocal.x();
           const double dy = dlp.y() - bestLocal.y();
-          if (std::abs(dx) > windowRPhi_ || std::abs(dy) > windowZ_)
+          if (std::abs(dx) > windowRPhi_[l] || std::abs(dy) > windowZ_[l])
             continue;
           if (b_nWinDigi_ >= kMaxWinDigis)
             break;
@@ -361,9 +387,9 @@ void SmartPixelsPayloadAnalyzer::analyze(const edm::Event& iEvent, const edm::Ev
             const bool sameTP =
                 b_trk_tpMatched_ && (lk->eventId() == matchedEvtId) && matchedSimIds.count(lk->SimTrackId());
             cls = sameTP ? kClassSameTP : kClassOtherTP;
-            // parent local angle from the linked SimTrack origin momentum
-            auto mit = simMomById.find(lk->SimTrackId());
-            if (mit != simMomById.end()) {
+            // parent local angle from the linked parent's origin momentum
+            auto mit = parentMom.find({lk->eventId().rawId(), lk->SimTrackId()});
+            if (mit != parentMom.end()) {
               const auto& pm = mit->second;
               const GlobalVector pgv(pm.px(), pm.py(), pm.pz());
               const LocalVector plv = best->toLocal(pgv);
@@ -383,6 +409,30 @@ void SmartPixelsPayloadAnalyzer::analyze(const edm::Event& iEvent, const edm::Ev
           b_digi_parCotAlpha_[idx] = parCotA;
           b_digi_parCotBeta_[idx] = parCotB;
           ++b_nWinDigi_;
+        }
+      }
+
+      // Diagnostic: the matched TP's TRUE crossing(s) on the assigned module
+      // (signal-only PSimHits; nearest to the extrapolation if several).
+      b_nSimHit_ = 0;
+      b_sim_localx_ = -999.f;
+      b_sim_localy_ = -999.f;
+      const auto shIt = simHitsByDet.find(cx.detId);
+      if (b_trk_tpMatched_ && shIt != simHitsByDet.end()) {
+        double bestD2 = 1e18;
+        for (const PSimHit* sh : shIt->second) {
+          if (!matchedSimIds.count(sh->trackId()))
+            continue;
+          ++b_nSimHit_;
+          const auto slp = sh->localPosition();
+          const double dxs = slp.x() - bestLocal.x();
+          const double dys = slp.y() - bestLocal.y();
+          const double d2 = dxs * dxs + dys * dys;
+          if (d2 < bestD2) {
+            bestD2 = d2;
+            b_sim_localx_ = slp.x();
+            b_sim_localy_ = slp.y();
+          }
         }
       }
 
@@ -410,9 +460,13 @@ void SmartPixelsPayloadAnalyzer::fillDescriptions(edm::ConfigurationDescriptions
   desc.add<edm::InputTag>("pixelDigiSimLinkInputTag", edm::InputTag("simSiPixelDigis", "Pixel"));
   desc.add<edm::InputTag>("simTrackInputTag", edm::InputTag("g4SimHits"));
   desc.add<edm::InputTag>("simVertexInputTag", edm::InputTag("g4SimHits"));
-  // window half-widths default to DIGIREFIT_DEFAULTS (windowRPhi=0.05, windowZ=0.10 cm)
-  desc.add<double>("windowRPhi", 0.05);
-  desc.add<double>("windowZ", 0.10);
+  desc.add<edm::InputTag>("simHitInputTag", edm::InputTag("g4SimHits", "TrackerHitsPixelBarrelLowTof"));
+  // Measurement windows must capture the FULL residual distribution
+  // (truncation belongs to the refit). Per-layer, ~3x the PSimHit-measured
+  // q68 at 2-5 GeV: rphi bulges outward (beamline-constrained fit + MS),
+  // z shrinks outward.
+  desc.add<std::vector<double>>("windowRPhi", std::vector<double>{0.15, 0.5, 1.5, 2.7});
+  desc.add<std::vector<double>>("windowZ", std::vector<double>{0.7, 0.6, 0.5, 0.4});
   desc.add<int>("nLayers", 4);
   desc.add<bool>("debug", false);
   descriptions.add("smartPixelsPayloadAnalyzer", desc);

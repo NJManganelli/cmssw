@@ -66,9 +66,13 @@ DIGIREFIT_GAINMODE_CHOICES = ("full", "lut")
 DIGIREFIT_SEEDCOVMODE_CHOICES = ("trackCov", "parametrized")
 
 DIGIREFIT_DEFAULTS = {
-    # --- search window (module-local frame) ---
-    "windowRPhi": 0.05,       # r-phi search-window half-width [cm]
-    "windowZ": 0.10,          # z (or r on tilted/endcap) search-window half-width [cm]
+    # --- search windows (module-local frame, PER-LAYER TBPX L1-L4) ---
+    # rphi spread of the beamline-constrained extrapolation GROWS outward
+    # (MS-compensation bulge between origin anchor and OT stubs; PSimHit-
+    # verified q68 0.04/0.16/0.49/0.90 cm at 2-5 GeV); z shrinks outward.
+    # A scalar is accepted and broadcast to all four layers.
+    "windowRPhi": (0.05, 0.17, 0.5, 0.9),  # r-phi half-widths [cm]
+    "windowZ": (0.45, 0.35, 0.25, 0.2),    # z half-widths [cm]
     # --- track emission ---
     "minHits": 1,             # min attached IT hits required to emit a refit track
     # --- fidelity handle: which synthesized angle(s) enter the refit ---
@@ -128,6 +132,16 @@ def _resolveDigiRefitConfig(digiRefitConfig=None):
     raise ValueError(
         f"digiRefitConfig['paramSigmas'] must have exactly 5 entries "
         f"(rInv, phi0, tanL, z0, d0), got {len(tuple(resolved['paramSigmas']))}")
+  for wk in ("windowRPhi", "windowZ"):
+    wv = resolved[wk]
+    if isinstance(wv, (int, float)):
+      wv = (float(wv),) * 4  # scalar convenience: broadcast to all layers
+    wv = tuple(float(x) for x in wv)
+    if len(wv) != 4 or any(x <= 0 for x in wv):
+      raise ValueError(
+          f"digiRefitConfig['{wk}'] must be a positive scalar or 4 per-layer "
+          f"positive values (TBPX L1-L4), got {resolved[wk]!r}")
+    resolved[wk] = wv
   return resolved
 
 
@@ -187,8 +201,8 @@ def _allVariants():
 
 def _applyDigiRefitConfig(module, resolved):
   """Push a resolved (validated) digiRefit config dict onto a producer module."""
-  module.digiRefitWindowRPhi = cms.double(resolved["windowRPhi"])
-  module.digiRefitWindowZ = cms.double(resolved["windowZ"])
+  module.digiRefitWindowRPhi = cms.vdouble(*resolved["windowRPhi"])
+  module.digiRefitWindowZ = cms.vdouble(*resolved["windowZ"])
   module.digiRefitMinHits = cms.int32(resolved["minHits"])
   module.digiRefitUseAngles = cms.string(resolved["useAngles"])
   module.digiRefitMaxHitsPerWindow = cms.int32(resolved["maxHitsPerWindow"])
