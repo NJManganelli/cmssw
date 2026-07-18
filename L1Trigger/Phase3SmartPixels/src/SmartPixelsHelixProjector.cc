@@ -108,30 +108,91 @@ namespace smartpixels {
     const double gz = z0 + tanL * sTransverse;
     const GlobalPoint gp(gx, gy, gz);
 
-    // Global momentum direction at the crossing (rotate phi0 by psi).
-    const double psi = rInv * sTransverse;
-    const double pt = h.pt;
-    const GlobalVector gmom(pt * std::cos(phi0 + psi), pt * std::sin(phi0 + psi), pt * tanL);
+    // ---- v1 module lookup: k-nearest candidates + plane re-propagation ----
+    // The cylinder crossing above lives at the MEAN layer radius; staggered
+    // TBPX planks sit at r = Rl +- dr, so containment-testing the off-plane
+    // point loses modules (v0 symptom: L3/L4 central efficiency 0.15/0.045).
+    // Instead: pick the k nearest module centers, RE-PROPAGATE the helix onto
+    // each candidate's actual plane (Newton in transverse arc length), and
+    // containment-test the on-plane intersection.
+    constexpr int kCandidates = 4;
+    std::vector<std::pair<double, const GeomDetUnit*>> cand;
+    cand.reserve(layerModules_[l].size());
+    for (const auto* det : layerModules_[l])
+      cand.emplace_back((det->position() - gp).mag2(), det);
+    const int nCand = std::min<int>(kCandidates, cand.size());
+    std::partial_sort(cand.begin(), cand.begin() + nCand, cand.end(),
+                      [](const auto& a, const auto& b) { return a.first < b.first; });
 
-    // Module lookup: nearest module center whose TRANSVERSE bounds contain the
-    // crossing (thin-sensor containment; ignore local-z / thickness).
+    const auto helixAt = [&](double s, double& px, double& py, double& pz,
+                             double& dx, double& dy, double& dz) {
+      if (std::abs(rInv) < 1e-6) {
+        px = x0 + s * cosPhi0;
+        py = y0 + s * sinPhi0;
+        dx = cosPhi0;
+        dy = sinPhi0;
+      } else {
+        const double ps = rInv * s;
+        px = x0 + (std::sin(phi0 + ps) - sinPhi0) / rInv;
+        py = y0 - (std::cos(phi0 + ps) - cosPhi0) / rInv;
+        dx = std::cos(phi0 + ps);
+        dy = std::sin(phi0 + ps);
+      }
+      pz = z0 + tanL * s;
+      dz = tanL;
+    };
+
     const GeomDetUnit* best = nullptr;
     double bestDist2 = 1e18;
+    double bestS = sTransverse;
     LocalPoint bestLocal;
-    for (const auto* det : layerModules_[l]) {
-      const LocalPoint lp = det->toLocal(gp);
+    GlobalPoint bestGlobal;
+    for (int ic = 0; ic < nCand; ++ic) {
+      const GeomDetUnit* det = cand[ic].second;
+      const GlobalPoint p0 = det->position();
+      const auto nvec = det->surface().normalVector();  // global unit normal
+      // Newton: solve (helix(s) - p0) . n = 0 starting from the cylinder crossing.
+      double s = sTransverse;
+      bool converged = false;
+      for (int it = 0; it < 5; ++it) {
+        double px, py, pz, dx, dy, dz;
+        helixAt(s, px, py, pz, dx, dy, dz);
+        const double f = (px - p0.x()) * nvec.x() + (py - p0.y()) * nvec.y() + (pz - p0.z()) * nvec.z();
+        const double fp = dx * nvec.x() + dy * nvec.y() + dz * nvec.z();
+        if (std::abs(f) < 1e-4) {  // on-plane to 1 um
+          converged = true;
+          break;
+        }
+        if (std::abs(fp) < 1e-9)
+          break;  // grazing incidence: give up on this candidate
+        s -= f / fp;
+        if (!(s > 0.) || s > 3.0 * sTransverse + 10.0)
+          break;  // unphysical step
+      }
+      if (!converged)
+        continue;
+      double px, py, pz, dx, dy, dz;
+      helixAt(s, px, py, pz, dx, dy, dz);
+      const GlobalPoint gpl(px, py, pz);
+      const LocalPoint lp = det->toLocal(gpl);
       if (!det->surface().bounds().inside(LocalPoint(lp.x(), lp.y(), 0.)))
         continue;
-      const auto dc = det->position() - gp;
-      const double d2 = dc.mag2();
+      const double d2 = (det->position() - gpl).mag2();
       if (d2 < bestDist2) {
         bestDist2 = d2;
         best = det;
+        bestS = s;
         bestLocal = lp;
+        bestGlobal = gpl;
       }
     }
     if (!best)
       return out;
+
+    // Momentum direction at the ACCEPTED (on-plane) crossing point.
+    const double psi = rInv * bestS;
+    const double pt = h.pt;
+    const GlobalVector gmom(pt * std::cos(phi0 + psi), pt * std::sin(phi0 + psi), pt * tanL);
 
     const PixelGeomDetUnit* pixDet = dynamic_cast<const PixelGeomDetUnit*>(best);
     if (!pixDet)
@@ -147,7 +208,7 @@ namespace smartpixels {
     out.layer = layer1based;
     out.det = pixDet;
     out.detId = best->geographicalId().rawId();
-    out.global = gp;
+    out.global = bestGlobal;
     out.local = bestLocal;
     out.globalMom = gmom;
     out.localMom = lmom;
