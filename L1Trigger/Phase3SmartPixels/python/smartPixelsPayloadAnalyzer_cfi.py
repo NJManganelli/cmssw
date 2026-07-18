@@ -20,8 +20,11 @@ smartPixelsPayloadAnalyzer = cms.EDAnalyzer(
     # resolution at TBPX radii is O(100um) in r-phi but O(mm) in z (L1 z0
     # resolution, no material model), and the payload must measure the FULL
     # residual distribution — truncation belongs to the refit, not here.
-    windowRPhi                 = cms.double(0.30),
-    windowZ                    = cms.double(0.50),
+    # Per-layer MEASUREMENT windows (TBPX L1-L4) [cm]: capture the FULL
+    # extrapolation spread (truncation belongs to the refit). rphi bulges
+    # outward (beamline-constrained fit + MS), z shrinks outward.
+    windowRPhi                 = cms.vdouble(0.15, 0.5, 1.5, 2.7),
+    windowZ                    = cms.vdouble(0.7, 0.6, 0.5, 0.4),
     nLayers                    = cms.int32(4),   # TBPX layers 1..4
     debug                      = cms.bool(False),
 )
