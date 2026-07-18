@@ -37,6 +37,7 @@
 #include "CLHEP/Random/RandGaussQ.h"
 #include "CLHEP/Random/RandFlat.h"
 #include "L1Trigger/Phase3SmartPixels/interface/SmartPixelsHelixProjector.h"
+#include "L1Trigger/Phase3SmartPixels/interface/SmartPixelsParentMap.h"
 #include "DataFormats/Common/interface/DetSetVector.h"
 #include "DataFormats/SiPixelDigi/interface/PixelDigi.h"
 #include "DataFormats/DetId/interface/DetId.h"
@@ -282,8 +283,11 @@ private:
   // digiRefit (Tier 2) configuration + machinery. Only used when
   // smartPixelsEmulatorMode_ == "digiRefit"; see mem:smartpixels-tier2-refit-plan
   // and doc/PixelAVAngleResponseSpec.md / doc/Phase2Acceptance.md.
-  double digiRefitWindowRPhi_ = 0.05;   // module-local x search half-width [cm]
-  double digiRefitWindowZ_ = 0.10;      // module-local y search half-width [cm]
+  // Per-layer search half-widths [cm] ([layer-1], TBPX L1-L4). The rphi spread
+  // of the beamline-constrained extrapolation GROWS outward (MS-compensation
+  // bulge between origin anchor and OT stubs; PSimHit-verified), z shrinks.
+  std::vector<double> digiRefitWindowRPhi_;  // module-local x
+  std::vector<double> digiRefitWindowZ_;     // module-local y
   int digiRefitMinHits_ = 1;            // min attached IT hits to emit a refit track
   std::string digiRefitUseAngles_ = "alpha";  // "none" | "alpha" | "alphaBeta"
   int digiRefitMaxHitsPerWindow_ = 8;   // combinatorics truncation
@@ -426,8 +430,12 @@ L1SmartPixelsTrackProducer::L1SmartPixelsTrackProducer(edm::ParameterSet const& 
   // digiRefit (Tier 2) configuration + payload loading. Kept entirely off the
   // other modes' code paths.
   if (smartPixelsEmulatorMode_ == "digiRefit") {
-    digiRefitWindowRPhi_ = iConfig.getParameter<double>("digiRefitWindowRPhi");
-    digiRefitWindowZ_ = iConfig.getParameter<double>("digiRefitWindowZ");
+    digiRefitWindowRPhi_ = iConfig.getParameter<std::vector<double>>("digiRefitWindowRPhi");
+    digiRefitWindowZ_ = iConfig.getParameter<std::vector<double>>("digiRefitWindowZ");
+    if (digiRefitWindowRPhi_.size() != 4 || digiRefitWindowZ_.size() != 4)
+      throw cms::Exception("Configuration")
+          << "digiRefitWindowRPhi/digiRefitWindowZ must each have exactly 4 per-layer entries, got "
+          << digiRefitWindowRPhi_.size() << "/" << digiRefitWindowZ_.size() << ".";
     digiRefitMinHits_ = iConfig.getParameter<int>("digiRefitMinHits");
     digiRefitUseAngles_ = iConfig.getParameter<std::string>("digiRefitUseAngles");
     digiRefitMaxHitsPerWindow_ = iConfig.getParameter<int>("digiRefitMaxHitsPerWindow");
@@ -616,7 +624,7 @@ void L1SmartPixelsTrackProducer::produce(edm::Event& iEvent, const edm::EventSet
   // origin momenta (parent-angle synthesis), shared projector, RNG engine.
   edm::Handle<edm::DetSetVector<PixelDigi>> drDigis;
   edm::Handle<edm::DetSetVector<PixelDigiSimLink>> drSimlinks;
-  std::map<unsigned int, math::XYZTLorentzVectorD> drSimMomById;
+  smartpixels::ParentMomentumMap drParentMom;
   CLHEP::HepRandomEngine* drEngine = nullptr;
   std::array<bool, 4> drActiveLayer{{false, false, false, false}};
   if (smartPixelsEmulatorMode_ == "digiRefit") {
@@ -624,8 +632,11 @@ void L1SmartPixelsTrackProducer::produce(edm::Event& iEvent, const edm::EventSet
     iEvent.getByToken(pixelSimLinkToken_, drSimlinks);
     edm::Handle<edm::SimTrackContainer> drSimTracks;
     iEvent.getByToken(simTrackToken_, drSimTracks);
-    for (const auto& st : *drSimTracks)
-      drSimMomById[st.trackId()] = st.momentum();
+    edm::Handle<std::vector<TrackingParticle>> drTPs;
+    iEvent.getByToken(TrackingParticleToken_, drTPs);
+    // (eventId, trackId)-keyed parent momenta: TPs cover signal + pileup
+    // parents; the signal-only SimTrack container backstops pruned TPs.
+    drParentMom = smartpixels::buildParentMomentumMap(*drTPs, drSimTracks.product());
     for (size_t i = 0; i < drActiveLayer.size() && i < smartPixelsActiveLayers_.size(); ++i)
       drActiveLayer[i] = (smartPixelsActiveLayers_[i] == '1');
     if (std::none_of(drActiveLayer.begin(), drActiveLayer.end(), [](bool b) { return b; }))
@@ -1437,8 +1448,8 @@ void L1SmartPixelsTrackProducer::produce(edm::Event& iEvent, const edm::EventSet
               break;  // combinatorics truncation in readout order (hardware-like)
             const LocalPoint dlp =
                 pixTopo.localPosition(MeasurementPoint(digi.row() + 0.5, digi.column() + 0.5));
-            if (std::abs(dlp.x() - cx.local.x()) > digiRefitWindowRPhi_ ||
-                std::abs(dlp.y() - cx.local.y()) > digiRefitWindowZ_)
+            if (std::abs(dlp.x() - cx.local.x()) > digiRefitWindowRPhi_[layer - 1] ||
+                std::abs(dlp.y() - cx.local.y()) > digiRefitWindowZ_[layer - 1])
               continue;
 
             HitCand cand;
@@ -1450,8 +1461,8 @@ void L1SmartPixelsTrackProducer::produce(edm::Event& iEvent, const edm::EventSet
               // Linked digi (same-TP or other-TP): angle from ITS OWN parent's
               // origin-momentum incidence (payload-analyzer convention), smeared
               // with the PixelAV response; validity coin from valid_prob.
-              const auto mit = drSimMomById.find(lit->second->SimTrackId());
-              if (mit != drSimMomById.end()) {
+              const auto mit = drParentMom.find({lit->second->eventId().rawId(), lit->second->SimTrackId()});
+              if (mit != drParentMom.end()) {
                 const auto& pm = mit->second;
                 const LocalVector plv = pixDet->toLocal(GlobalVector(pm.px(), pm.py(), pm.pz()));
                 const double ppz = (std::abs(plv.z()) > 1e-9) ? plv.z() : 1e-9;
@@ -1695,8 +1706,10 @@ void L1SmartPixelsTrackProducer::fillDescriptions(edm::ConfigurationDescriptions
   desc.add<std::string>("smartPixelsActiveLayers", "0000")->setComment("Active layers of SmartPixels, '0000' is none active, '1111' is all active, '0110' has active 2nd and 3rd layers, and '1000' is only innermost layer active");
   desc.add<edm::FileInPath>("smartPixelsCorrectionSet")->setComment("Name of json file containing the correctionlib set used for smartPixelsEmulatorMode (correctionlibRegression | correctionlibTPToySmear )");
   // --- digiRefit (Tier 2) ---
-  desc.add<double>("digiRefitWindowRPhi", 0.05)->setComment("digiRefit r-phi search-window half-width [cm]");
-  desc.add<double>("digiRefitWindowZ", 0.10)->setComment("digiRefit z search-window half-width [cm]");
+  desc.add<std::vector<double>>("digiRefitWindowRPhi", std::vector<double>{0.05, 0.17, 0.5, 0.9})
+      ->setComment("per-layer r-phi search-window half-widths [cm] (TBPX L1-L4; ~q68 of the 2-5 GeV extrapolation spread)");
+  desc.add<std::vector<double>>("digiRefitWindowZ", std::vector<double>{0.45, 0.35, 0.25, 0.2})
+      ->setComment("per-layer z search-window half-widths [cm] (TBPX L1-L4)");
   desc.add<int>("digiRefitMinHits", 1)->setComment("min attached IT hits to emit a refit track (else passthrough copy)");
   desc.add<std::string>("digiRefitUseAngles", "alpha")->setComment("which synthesized angles enter the refit: none | alpha | alphaBeta");
   desc.add<int>("digiRefitMaxHitsPerWindow", 8)->setComment("combinatorics truncation: max in-window digis kept per layer (readout order)");

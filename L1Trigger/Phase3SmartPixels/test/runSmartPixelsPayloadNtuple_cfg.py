@@ -17,10 +17,11 @@ from Configuration.Eras.Era_Phase2C22I13M9_cff import Phase2C22I13M9
 options = VarParsing('analysis')
 options.register('nLayers', 4, VarParsing.multiplicity.singleton, VarParsing.varType.int,
                  "Number of TBPX layers to consider (1..4)")
-options.register('windowRPhi', 0.30, VarParsing.multiplicity.singleton, VarParsing.varType.float,
-                 "r-phi MEASUREMENT window half-width [cm] (wide on purpose; see cfi)")
-options.register('windowZ', 0.50, VarParsing.multiplicity.singleton, VarParsing.varType.float,
-                 "z MEASUREMENT window half-width [cm] (wide on purpose; see cfi)")
+options.register('windowRPhi', [], VarParsing.multiplicity.list, VarParsing.varType.float,
+                 "Per-layer r-phi MEASUREMENT window half-widths [cm] (1 value = broadcast; "
+                 "default captures the full L1-L4 extrapolation spread)")
+options.register('windowZ', [], VarParsing.multiplicity.list, VarParsing.varType.float,
+                 "Per-layer z MEASUREMENT window half-widths [cm] (1 value = broadcast)")
 options.register('debug', False, VarParsing.multiplicity.singleton, VarParsing.varType.bool,
                  "Verbose per-crossing logging")
 options.setDefault('maxEvents', 2)
@@ -43,8 +44,19 @@ process.source = cms.Source("PoolSource",
 
 process.load('L1Trigger.Phase3SmartPixels.smartPixelsPayloadAnalyzer_cfi')
 process.smartPixelsPayloadAnalyzer.nLayers = cms.int32(options.nLayers)
-process.smartPixelsPayloadAnalyzer.windowRPhi = cms.double(options.windowRPhi)
-process.smartPixelsPayloadAnalyzer.windowZ = cms.double(options.windowZ)
+
+def _perLayerWindow(vals, default):
+    # empty -> full-capture defaults; single value -> broadcast; else exactly 4
+    if not vals:
+        return list(default)
+    if len(vals) == 1:
+        return [float(vals[0])] * 4
+    if len(vals) != 4:
+        raise ValueError(f"window option needs 1 or 4 values, got {vals}")
+    return [float(v) for v in vals]
+
+process.smartPixelsPayloadAnalyzer.windowRPhi = cms.vdouble(*_perLayerWindow(options.windowRPhi, (0.15, 0.5, 1.5, 2.7)))
+process.smartPixelsPayloadAnalyzer.windowZ = cms.vdouble(*_perLayerWindow(options.windowZ, (0.7, 0.6, 0.5, 0.4)))
 process.smartPixelsPayloadAnalyzer.debug = cms.bool(options.debug)
 
 process.TFileService = cms.Service("TFileService",
