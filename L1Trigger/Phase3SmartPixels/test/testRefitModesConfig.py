@@ -6,8 +6,8 @@ L1Trigger/Phase3SmartPixels/python/customizeSmartPixels_cff.py:
 
  (a) suffix/label generation for digiRefit variants works and labels still end
      so that derived nano tables end in 'Table' (keep-pattern gotcha);
- (b) coexist with a digiRefit variant raises NotImplementedError
-     ("... lands in Phase 2 ...");
+ (b) a digiRefit variant wires the producer (Phase 2): params + deterministic
+     RNG seed land on the module; an empty pixelavAngleSet raises ValueError;
  (c) mode 'refit' (Tier 3) raises the RESERVED NotImplementedError;
  (d) invalid digiRefitConfig keys / enum values raise ValueError;
  (e) existing modes (passthrough, correctionlibRegression) still normalize and
@@ -93,22 +93,41 @@ check(table_label.endswith("Table"),
 expect_raises(ValueError, lambda: smartPixelsVariantSuffix("digiRefit", None),
               "digiRefit without activeSP raises ValueError")
 
-# --- (b) coexist with a digiRefit variant raises NotImplementedError --------
-print("[b] coexist digiRefit -> NotImplementedError")
-def _coexist_digirefit():
-    p = cms.Process("TEST")
-    smartPixelsCoexist(p, variants=[("digiRefit", "1100")])
-expect_raises(NotImplementedError, _coexist_digirefit,
-              "smartPixelsCoexist(digiRefit) raises NotImplementedError",
-              contains="Phase 2")
+# --- (b) digiRefit variant wires the producer (Phase 2) ----------------------
+print("[b] digiRefit -> wired producer variants (Phase 2)")
+_DR_CFG = {"pixelavAngleSet": "dummy/pixelav_angle_example.json"}
 
-# also directly via the producer-variant builder
-def _build_digirefit():
+p_dr = cms.Process("TEST")
+p_dr, _dr_mods = addSmartPixelsTrackProducerVariants(p_dr, variants=[("digiRefit", "1100")],
+                                                     digiRefitConfig=_DR_CFG)
+_dr_prompt = "l1tSmartPixelsTrackProducerWdigiRefitAAII"
+check(hasattr(p_dr, _dr_prompt), "digiRefit prompt producer variant exists")
+_m = getattr(p_dr, _dr_prompt)
+check(_m.smartPixelsEmulatorMode.value() == "digiRefit", "mode set to digiRefit")
+check(_m.digiRefitSeedCovMode.value() == "trackCov", "seedCovMode default is trackCov")
+check(_m.digiRefitSeedNPar.value() == 5, "seedNPar default is 5")
+check(_m.digiRefitUseAngles.value() == "alpha", "useAngles default is alpha")
+check(_m.digiRefitPixelavAngleSet.value() == _DR_CFG["pixelavAngleSet"],
+      "pixelavAngleSet carried onto the module")
+check(list(_m.digiRefitParamSigmas) == list(DIGIREFIT_DEFAULTS["paramSigmas"]),
+      "paramSigmas carried onto the module")
+check(hasattr(p_dr, "RandomNumberGeneratorService"), "RNG service added")
+check(hasattr(p_dr.RandomNumberGeneratorService, _dr_prompt),
+      "RNG service has a PSet for the digiRefit module label")
+_seed1 = getattr(p_dr.RandomNumberGeneratorService, _dr_prompt).initialSeed.value()
+p_dr2 = cms.Process("TEST2")
+p_dr2, _ = addSmartPixelsTrackProducerVariants(p_dr2, variants=[("digiRefit", "1100")],
+                                               digiRefitConfig=_DR_CFG)
+_seed2 = getattr(p_dr2.RandomNumberGeneratorService, _dr_prompt).initialSeed.value()
+check(_seed1 == _seed2, "RNG seed is deterministic (label-derived)")
+
+# a digiRefit variant WITHOUT a payload must fail loudly at config time
+def _build_digirefit_nopayload():
     p = cms.Process("TEST")
     addSmartPixelsTrackProducerVariants(p, variants=[("digiRefit", "1100")])
-expect_raises(NotImplementedError, _build_digirefit,
-              "addSmartPixelsTrackProducerVariants(digiRefit) raises NotImplementedError",
-              contains="Phase 2")
+expect_raises(ValueError, _build_digirefit_nopayload,
+              "digiRefit without pixelavAngleSet raises ValueError",
+              contains="pixelavAngleSet")
 
 # --- (c) mode 'refit' raises the RESERVED error -----------------------------
 print("[c] refit (Tier 3) -> reserved NotImplementedError")
