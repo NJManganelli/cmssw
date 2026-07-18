@@ -30,6 +30,22 @@
 #include "FWCore/Utilities/interface/InputTag.h"
 #include "FWCore/ParameterSet/interface/ParameterSet.h"
 #include "FWCore/ServiceRegistry/interface/Service.h"
+#include "FWCore/Utilities/interface/Exception.h"
+#include "FWCore/AbstractServices/interface/RandomNumberGenerator.h"
+
+// digiRefit: random engine + shared projector + pixel digi/simlink formats
+#include "CLHEP/Random/RandGaussQ.h"
+#include "CLHEP/Random/RandFlat.h"
+#include "L1Trigger/Phase3SmartPixels/interface/SmartPixelsHelixProjector.h"
+#include "DataFormats/Common/interface/DetSetVector.h"
+#include "DataFormats/SiPixelDigi/interface/PixelDigi.h"
+#include "DataFormats/DetId/interface/DetId.h"
+#include "DataFormats/SiPixelDetId/interface/PixelSubdetector.h"
+#include "Geometry/CommonTopologies/interface/PixelGeomDetUnit.h"
+#include "Geometry/CommonTopologies/interface/PixelTopology.h"
+#include "DataFormats/GeometryCommonDetAlgo/interface/MeasurementPoint.h"
+#include "SimDataFormats/TrackerDigiSimLink/interface/PixelDigiSimLink.h"
+#include "SimDataFormats/Track/interface/SimTrackContainer.h"
 
 ///////////////////////
 // DATA FORMATS HEADERS
@@ -262,6 +278,44 @@ private:
   std::string smartPixelsActiveLayers_;
   std::string smartPixelsCorrectionSet_;
 
+  // -----------------------------------------------------------------------------------------------
+  // digiRefit (Tier 2) configuration + machinery. Only used when
+  // smartPixelsEmulatorMode_ == "digiRefit"; see mem:smartpixels-tier2-refit-plan
+  // and doc/PixelAVAngleResponseSpec.md / doc/Phase2Acceptance.md.
+  double digiRefitWindowRPhi_ = 0.05;   // module-local x search half-width [cm]
+  double digiRefitWindowZ_ = 0.10;      // module-local y search half-width [cm]
+  int digiRefitMinHits_ = 1;            // min attached IT hits to emit a refit track
+  std::string digiRefitUseAngles_ = "alpha";  // "none" | "alpha" | "alphaBeta"
+  int digiRefitMaxHitsPerWindow_ = 8;   // combinatorics truncation
+  int digiRefitMaxKFUpdates_ = 4;       // KF update / layer cap
+  std::string digiRefitGainMode_ = "full";     // "full" | "lut" (RESERVED -> throws)
+  int digiRefitSeedNPar_ = 5;           // 4 (prompt) | 5 (extended + covariance seed)
+  std::string digiRefitSeedCovMode_ = "trackCov";  // "trackCov" (TTTrack helixCovMat, default) | "parametrized"
+  std::vector<double> digiRefitParamSigmas_;       // parametrized-mode seed sigmas: (rInv[cm^-1], phi0, tanL, z0[cm], d0[cm])
+  std::string digiRefitPixelavAngleSet_ = "";  // PixelAV angle sigma/bias/valid payload path
+  std::string digiRefitSmarthitFakeSet_ = "";  // Stack B inclusive noise payload path
+
+  // Correctionlib refs for the PixelAV angle response (loaded iff digiRefit).
+  correction::Correction::Ref corrAlphaSigma_, corrAlphaBias_;
+  correction::Correction::Ref corrBetaSigma_, corrBetaBias_, corrValidProb_;
+  // Stack B inclusive noise-angle distribution (used for no-link digis).
+  correction::Correction::Ref corrNoiseCotAlpha_, corrNoiseCotBeta_;
+
+  // Shared helix propagation + TBPX module lookup (built lazily; one impl w/ analyzer).
+  mutable smartpixels::HelixProjector projector_;
+
+  // Extra tokens for digiRefit (pixel digis, simlinks, sim tracks).
+  edm::EDGetTokenT<edm::DetSetVector<PixelDigi>> pixelDigiToken_;
+  edm::EDGetTokenT<edm::DetSetVector<PixelDigiSimLink>> pixelSimLinkToken_;
+  edm::EDGetTokenT<edm::SimTrackContainer> simTrackToken_;
+
+  // Loud-failure guard: count TP-matched tracks across the stream; if a
+  // truth-required mode sees zero over a reasonable window, throw (no silent
+  // passthrough). Reset/accumulated per stream; checked in endStream().
+  mutable unsigned long long digiRefitTracksSeen_ = 0;
+  mutable unsigned long long digiRefitTruthMatches_ = 0;
+  mutable unsigned long long digiRefitZeroCovTracks_ = 0;  // trackCov seeds with an all-zero helixCovMat
+
   edm::InputTag L1TrackInputTag;       // L1 track collection
   edm::InputTag MCTruthTrackInputTag;  // MC truth collection
   edm::InputTag MCTruthClusterInputTag;
@@ -368,6 +422,86 @@ L1SmartPixelsTrackProducer::L1SmartPixelsTrackProducer(edm::ParameterSet const& 
   getTokenBField_ = esConsumes<MagneticField, IdealMagneticFieldRecord>();
   getTokenHPHSetup_ = esConsumes<hph::Setup, trackerDTC::SetupRcd>();
 
+  // -----------------------------------------------------------------------------------------------
+  // digiRefit (Tier 2) configuration + payload loading. Kept entirely off the
+  // other modes' code paths.
+  if (smartPixelsEmulatorMode_ == "digiRefit") {
+    digiRefitWindowRPhi_ = iConfig.getParameter<double>("digiRefitWindowRPhi");
+    digiRefitWindowZ_ = iConfig.getParameter<double>("digiRefitWindowZ");
+    digiRefitMinHits_ = iConfig.getParameter<int>("digiRefitMinHits");
+    digiRefitUseAngles_ = iConfig.getParameter<std::string>("digiRefitUseAngles");
+    digiRefitMaxHitsPerWindow_ = iConfig.getParameter<int>("digiRefitMaxHitsPerWindow");
+    digiRefitMaxKFUpdates_ = iConfig.getParameter<int>("digiRefitMaxKFUpdates");
+    digiRefitGainMode_ = iConfig.getParameter<std::string>("digiRefitGainMode");
+    digiRefitSeedNPar_ = iConfig.getParameter<int>("digiRefitSeedNPar");
+    digiRefitSeedCovMode_ = iConfig.getParameter<std::string>("digiRefitSeedCovMode");
+    digiRefitParamSigmas_ = iConfig.getParameter<std::vector<double>>("digiRefitParamSigmas");
+    {
+      const std::string av = iConfig.getParameter<std::string>("digiRefitPixelavAngleSet");
+      digiRefitPixelavAngleSet_ = av.empty() ? std::string() : edm::FileInPath(av).fullPath();
+    }
+    {
+      const std::string fk = iConfig.getParameter<std::string>("digiRefitSmarthitFakeSet");
+      digiRefitSmarthitFakeSet_ = fk.empty() ? std::string() : edm::FileInPath(fk).fullPath();
+    }
+
+    if (digiRefitGainMode_ == "lut")
+      throw cms::Exception("NotImplemented")
+          << "digiRefit gainMode='lut' (table-driven Kalman gains) is a reserved placeholder; "
+             "use gainMode='full'.";
+    if (digiRefitSeedCovMode_ != "trackCov" && digiRefitSeedCovMode_ != "parametrized")
+      throw cms::Exception("Configuration")
+          << "digiRefit seedCovMode='" << digiRefitSeedCovMode_
+          << "' invalid; use 'trackCov' (TTTrack helixCovMat, default) or 'parametrized'.";
+    if (digiRefitSeedCovMode_ == "parametrized" && digiRefitParamSigmas_.size() != 5)
+      throw cms::Exception("Configuration")
+          << "digiRefitParamSigmas must have exactly 5 entries (rInv, phi0, tanL, z0, d0), got "
+          << digiRefitParamSigmas_.size() << ".";
+    if (digiRefitSeedNPar_ != 4 && digiRefitSeedNPar_ != 5)
+      throw cms::Exception("Configuration") << "digiRefit seedNPar must be 4 or 5.";
+    if (digiRefitUseAngles_ != "none" && digiRefitUseAngles_ != "alpha" && digiRefitUseAngles_ != "alphaBeta")
+      throw cms::Exception("Configuration") << "digiRefit useAngles='" << digiRefitUseAngles_ << "' invalid.";
+
+    // Reproducible randomness: require the RandomNumberGeneratorService.
+    edm::Service<edm::RandomNumberGenerator> rng;
+    if (!rng.isAvailable())
+      throw cms::Exception("Configuration")
+          << "digiRefit needs the RandomNumberGeneratorService for reproducible angle synthesis; "
+             "add it and give this module a seed (RandomNumberGeneratorService.<label>.initialSeed).";
+
+    pixelDigiToken_ =
+        consumes<edm::DetSetVector<PixelDigi>>(iConfig.getParameter<edm::InputTag>("pixelDigiInputTag"));
+    pixelSimLinkToken_ =
+        consumes<edm::DetSetVector<PixelDigiSimLink>>(iConfig.getParameter<edm::InputTag>("pixelDigiSimLinkInputTag"));
+    simTrackToken_ = consumes<edm::SimTrackContainer>(iConfig.getParameter<edm::InputTag>("simTrackInputTag"));
+
+    // PixelAV angle-response payload (required, non-empty). See
+    // doc/PixelAVAngleResponseSpec.md — the five load-bearing correction names.
+    if (digiRefitPixelavAngleSet_.empty())
+      throw cms::Exception("Configuration")
+          << "digiRefit requires a non-empty pixelavAngleSet (PixelAV angle-response payload).";
+    auto aset = correction::CorrectionSet::from_file(digiRefitPixelavAngleSet_);
+    corrAlphaSigma_ = aset->at("spx_angle_alpha_sigma");
+    corrAlphaBias_ = aset->at("spx_angle_alpha_bias");
+    corrBetaSigma_ = aset->at("spx_angle_beta_sigma");
+    corrBetaBias_ = aset->at("spx_angle_beta_bias");
+    corrValidProb_ = aset->at("spx_angle_valid_prob");
+
+    // Optional Stack B inclusive noise-angle distribution. When absent, no-link
+    // (noise) digis contribute position only (angles disabled for that hit).
+    if (!digiRefitSmarthitFakeSet_.empty()) {
+      auto fset = correction::CorrectionSet::from_file(digiRefitSmarthitFakeSet_);
+      try {
+        corrNoiseCotAlpha_ = fset->at("smarthit_noise_cotAlpha");
+      } catch (const std::out_of_range&) {
+      }
+      try {
+        corrNoiseCotBeta_ = fset->at("smarthit_noise_cotBeta");
+      } catch (const std::out_of_range&) {
+      }
+    }
+  }
+
   produces<TTTrackCollection>(outputCollectionName_);
 
   // -----------------------------------------------------------------------------------------------
@@ -406,6 +540,24 @@ L1SmartPixelsTrackProducer::~L1SmartPixelsTrackProducer() {
 void L1SmartPixelsTrackProducer::beginStream(edm::StreamID) {
 }
 void L1SmartPixelsTrackProducer::endStream() {
+  // Loud-failure guard: truth-required digiRefit must never silently degrade to
+  // per-track passthrough (stale/mismatched maps or wrong input posture would
+  // otherwise silently break every downstream study).
+  if (smartPixelsEmulatorMode_ == "digiRefit" && digiRefitTracksSeen_ > 0) {
+    if (digiRefitTruthMatches_ == 0)
+      throw cms::Exception("SmartPixelsTruthMissing")
+          << "digiRefit processed " << digiRefitTracksSeen_
+          << " tracks with ZERO truth (TP) matches. The TTTrackAssociationMap almost certainly "
+             "does not correspond to the input track collection (stale map + remade tracks, or "
+             "wrong truthSource posture). Run posture B (DIGI + L1TrackTrigger in-job) so tracks, "
+             "digis, simlinks and maps are self-consistent.";
+    if (digiRefitSeedCovMode_ == "trackCov" && digiRefitZeroCovTracks_ == digiRefitTracksSeen_)
+      throw cms::Exception("SmartPixelsSeedCovMissing")
+          << "digiRefit seedCovMode='trackCov' but ALL " << digiRefitTracksSeen_
+          << " seed tracks carried an all-zero helixCovMat. These look like schema-evolved "
+             "old-layout file tracks - run posture B so the in-job fit fills the covariance, "
+             "or use seedCovMode='parametrized'.";
+  }
 }
 
 // PRODUCE
@@ -458,6 +610,32 @@ void L1SmartPixelsTrackProducer::produce(edm::Event& iEvent, const edm::EventSet
   const TrackerTopology* const tTopo = tTopoHandle.product();
   const TrackerGeometry* const theTrackerGeom = tGeomHandle.product();
   const hph::Setup* hphSetup = hphHandle.product();
+
+  // -----------------------------------------------------------------------------------------------
+  // digiRefit (Tier 2) per-event inputs: real pixel digis + simlinks, SimTrack
+  // origin momenta (parent-angle synthesis), shared projector, RNG engine.
+  edm::Handle<edm::DetSetVector<PixelDigi>> drDigis;
+  edm::Handle<edm::DetSetVector<PixelDigiSimLink>> drSimlinks;
+  std::map<unsigned int, math::XYZTLorentzVectorD> drSimMomById;
+  CLHEP::HepRandomEngine* drEngine = nullptr;
+  std::array<bool, 4> drActiveLayer{{false, false, false, false}};
+  if (smartPixelsEmulatorMode_ == "digiRefit") {
+    iEvent.getByToken(pixelDigiToken_, drDigis);
+    iEvent.getByToken(pixelSimLinkToken_, drSimlinks);
+    edm::Handle<edm::SimTrackContainer> drSimTracks;
+    iEvent.getByToken(simTrackToken_, drSimTracks);
+    for (const auto& st : *drSimTracks)
+      drSimMomById[st.trackId()] = st.momentum();
+    for (size_t i = 0; i < drActiveLayer.size() && i < smartPixelsActiveLayers_.size(); ++i)
+      drActiveLayer[i] = (smartPixelsActiveLayers_[i] == '1');
+    if (std::none_of(drActiveLayer.begin(), drActiveLayer.end(), [](bool b) { return b; }))
+      throw cms::Exception("Configuration")
+          << "digiRefit requires at least one active layer (smartPixelsActiveLayers='"
+          << smartPixelsActiveLayers_ << "').";
+    projector_.build(*theTrackerGeom, *tTopo, 4);
+    edm::Service<edm::RandomNumberGenerator> rng;
+    drEngine = &rng->getEngine(iEvent.streamID());
+  }
 
   // ----------------------------------------------------------------------------------------------
   // loop over L1 stubs
@@ -1143,6 +1321,274 @@ void L1SmartPixelsTrackProducer::produce(edm::Event& iEvent, const edm::EventSet
 	} // end debug logging
       }
     } // end correctionlibRegression path
+    else if(smartPixelsEmulatorMode_ == "digiRefit") {
+      // ------------------------------------------------------------------------------------------
+      // Tier-2 interim refit: project the OT track into BPIX, window-collect the
+      // REAL pixel digis, classify each via PixelDigiSimLink, synthesize angle
+      // measurements (parent-truth incidence ⊕ PixelAV response payload), then
+      // Kalman-update the OT helix seeded from the track and its covariance.
+      // Exactly one output track per input track (refit or passthrough fallback).
+      ++digiRefitTracksSeen_;
+      if (!my_tp.isNull())
+        ++digiRefitTruthMatches_;
+
+      const bool useAlpha = (digiRefitUseAngles_ != "none");
+      const bool useBeta = (digiRefitUseAngles_ == "alphaBeta");
+
+      // Truth identity of THIS track, for same-TP vs other-TP digi classification.
+      // (Class does not change the measurement model here — other-TP digis carry
+      // their OWN parent's angle, which is the correct fake phenomenology.)
+      std::set<unsigned int> drMatchedSimIds;
+      EncodedEventId drMatchedEvtId;
+      if (!my_tp.isNull()) {
+        drMatchedEvtId = my_tp->eventId();
+        for (const auto& g4 : my_tp->g4Tracks())
+          drMatchedSimIds.insert(g4.trackId());
+      }
+
+      // ---- seed state (INVR, PHI0, TANL, Z0, D0) and covariance ----
+      ROOT::Math::SVector<double, 5> a;
+      a[0] = iterL1Track->rInv();
+      a[1] = iterL1Track->momentum().phi();
+      a[2] = iterL1Track->tanL();
+      a[3] = iterL1Track->z0();
+      a[4] = (digiRefitSeedNPar_ == 5 && iterL1Track->nFitPars() == 5) ? tmp_trk_d0 : 0.0;
+
+      ROOT::Math::SMatrix<double, 5, 5, ROOT::Math::MatRepSym<double, 5>> C;
+      bool seedCovOK = true;
+      if (digiRefitSeedCovMode_ == "trackCov") {
+        const auto& tc = iterL1Track->helixCovMat();
+        double diagSum = 0.;
+        for (int i = 0; i < 5; ++i) {
+          for (int j = 0; j <= i; ++j)
+            C(i, j) = tc(i, j);
+          diagSum += std::abs(tc(i, i));
+        }
+        if (!(diagSum > 0.)) {
+          // Schema-evolved old-layout file tracks carry a default (all-zero)
+          // covariance; refitting from a singular seed would be garbage. Fall
+          // back to passthrough for this track and count it — endStream throws
+          // if EVERY track looked like this (wrong input posture).
+          seedCovOK = false;
+          ++digiRefitZeroCovTracks_;
+        }
+      } else {  // "parametrized" fallback/ablation seed
+        for (int i = 0; i < 5; ++i)
+          C(i, i) = digiRefitParamSigmas_[i] * digiRefitParamSigmas_[i];
+      }
+      // 4-par seeds carry no d0 information: weak prior so the IT hits determine d0.
+      if (digiRefitSeedNPar_ == 4 || !(C(4, 4) > 0.))
+        C(4, 4) = std::max(C(4, 4), 0.25);  // (0.5 cm)^2
+
+      const MagneticField& drField = *bFieldHandle.product();
+      const auto makeHelix = [&](const ROOT::Math::SVector<double, 5>& s) {
+        smartpixels::HelixParams hp;
+        hp.rInv = s[0];
+        hp.phi0 = s[1];
+        hp.tanL = s[2];
+        hp.z0 = s[3];
+        // POCA position from (d0, phi0); satisfies d0 = x0*sin(phi0) - y0*cos(phi0).
+        hp.x0 = s[4] * std::sin(s[1]);
+        hp.y0 = -s[4] * std::cos(s[1]);
+        hp.pt = std::abs(MagConstant * b_field / (s[0] * 100.0));
+        return hp;
+      };
+
+      int nAcceptedHits = 0;
+      int nUpdates = 0;
+
+      for (int layer = 1; layer <= projector_.nLayers(); ++layer) {
+        if (!seedCovOK || nUpdates >= digiRefitMaxKFUpdates_)
+          break;
+        if (!drActiveLayer[layer - 1])
+          continue;
+
+        const smartpixels::Crossing cx = projector_.crossLayer(makeHelix(a), layer, drField);
+        if (!cx.valid)
+          continue;
+        const PixelGeomDetUnit* pixDet = cx.det;
+        const PixelTopology& pixTopo = pixDet->specificTopology();
+        const std::pair<float, float> pitch = pixTopo.pitch();
+        const double sigX = pitch.first / std::sqrt(12.0);
+        const double sigY = pitch.second / std::sqrt(12.0);
+
+        // ---- window-collect + classify digis (readout order, FPGA truncation) ----
+        struct HitCand {
+          double x = 0., y = 0.;
+          double cotA = -999., cotB = -999.;
+          double sigA = 0., sigB = 0.;
+          bool hasA = false, hasB = false;  // per-angle validity (a real payload may be alpha-only)
+          double sel = 0.;
+        };
+        std::vector<HitCand> cands;
+        const auto digiSet = drDigis->find(cx.detId);
+        if (digiSet != drDigis->end()) {
+          std::map<unsigned int, const PixelDigiSimLink*> linkByChannel;
+          const auto linkSet = drSimlinks->find(cx.detId);
+          if (linkSet != drSimlinks->end()) {
+            for (const auto& lk : *linkSet) {
+              auto it = linkByChannel.find(lk.channel());
+              if (it == linkByChannel.end() || it->second->fraction() < lk.fraction())
+                linkByChannel[lk.channel()] = &lk;
+            }
+          }
+          for (const auto& digi : *digiSet) {
+            if (static_cast<int>(cands.size()) >= digiRefitMaxHitsPerWindow_)
+              break;  // combinatorics truncation in readout order (hardware-like)
+            const LocalPoint dlp =
+                pixTopo.localPosition(MeasurementPoint(digi.row() + 0.5, digi.column() + 0.5));
+            if (std::abs(dlp.x() - cx.local.x()) > digiRefitWindowRPhi_ ||
+                std::abs(dlp.y() - cx.local.y()) > digiRefitWindowZ_)
+              continue;
+
+            HitCand cand;
+            cand.x = dlp.x();
+            cand.y = dlp.y();
+
+            const auto lit = linkByChannel.find(digi.channel());
+            if (lit != linkByChannel.end()) {
+              // Linked digi (same-TP or other-TP): angle from ITS OWN parent's
+              // origin-momentum incidence (payload-analyzer convention), smeared
+              // with the PixelAV response; validity coin from valid_prob.
+              const auto mit = drSimMomById.find(lit->second->SimTrackId());
+              if (mit != drSimMomById.end()) {
+                const auto& pm = mit->second;
+                const LocalVector plv = pixDet->toLocal(GlobalVector(pm.px(), pm.py(), pm.pz()));
+                const double ppz = (std::abs(plv.z()) > 1e-9) ? plv.z() : 1e-9;
+                const double trueCotA = plv.x() / ppz;
+                const double trueCotB = plv.y() / ppz;
+                const std::vector<std::variant<int, double, std::string>> pin = {
+                    layer, trueCotA, trueCotB, static_cast<double>(cx.bLocalY)};
+                if (CLHEP::RandFlat::shoot(drEngine) < corrValidProb_->evaluate(pin)) {
+                  cand.sigA = corrAlphaSigma_->evaluate(pin);
+                  cand.sigB = corrBetaSigma_->evaluate(pin);
+                  cand.cotA = trueCotA + corrAlphaBias_->evaluate(pin) +
+                              cand.sigA * CLHEP::RandGaussQ::shoot(drEngine);
+                  cand.cotB = trueCotB + corrBetaBias_->evaluate(pin) +
+                              cand.sigB * CLHEP::RandGaussQ::shoot(drEngine);
+                  cand.hasA = (cand.sigA > 0.);
+                  cand.hasB = (cand.sigB > 0.);
+                }
+              }
+            } else if (corrNoiseCotAlpha_ && corrNoiseCotBeta_) {
+              // No-link (noise) digi with a Stack-B inclusive angle model:
+              // inverse-CDF draw (layer, uniform quantile). Without the model,
+              // noise digis contribute position only.
+              const std::vector<std::variant<int, double, std::string>> na = {
+                  layer, CLHEP::RandFlat::shoot(drEngine)};
+              const std::vector<std::variant<int, double, std::string>> nb = {
+                  layer, CLHEP::RandFlat::shoot(drEngine)};
+              cand.cotA = corrNoiseCotAlpha_->evaluate(na);
+              cand.cotB = corrNoiseCotBeta_->evaluate(nb);
+              const std::vector<std::variant<int, double, std::string>> pin = {
+                  layer, cand.cotA, cand.cotB, static_cast<double>(cx.bLocalY)};
+              cand.sigA = corrAlphaSigma_->evaluate(pin);
+              cand.sigB = corrBetaSigma_->evaluate(pin);
+              cand.hasA = (cand.sigA > 0.);
+              cand.hasB = (cand.sigB > 0.);
+            }
+
+            // Selection chi2 against the prediction (position always; angles when enabled+valid).
+            double sel = std::pow((cand.x - cx.local.x()) / sigX, 2) +
+                         std::pow((cand.y - cx.local.y()) / sigY, 2);
+            if (useAlpha && cand.hasA)
+              sel += std::pow((cand.cotA - cx.cotAlpha) / cand.sigA, 2);
+            if (useBeta && cand.hasB)
+              sel += std::pow((cand.cotB - cx.cotBeta) / cand.sigB, 2);
+            cand.sel = sel;
+            cands.push_back(cand);
+          }
+        }
+        if (cands.empty())
+          continue;
+        const HitCand& best = *std::min_element(
+            cands.begin(), cands.end(), [](const HitCand& p, const HitCand& q) { return p.sel < q.sel; });
+
+        // ---- linearized measurement model h(a) = (localx, localy, cotAlpha, cotBeta) ----
+        // Numerical Jacobian against the SAME shared projector (consistency by
+        // construction). One-sided differences; if a perturbation falls off the
+        // nominal module, try the other side; else the column stays zero
+        // (parameter locally unobservable).
+        const double h0[4] = {cx.local.x(), cx.local.y(), cx.cotAlpha, cx.cotBeta};
+        double H[4][5] = {{0.}};
+        constexpr std::array<double, 5> kEps{{1e-6, 1e-5, 1e-5, 1e-3, 1e-3}};
+        for (int j = 0; j < 5; ++j) {
+          for (const double sgn : {+1., -1.}) {
+            ROOT::Math::SVector<double, 5> ap = a;
+            ap[j] += sgn * kEps[j];
+            const smartpixels::Crossing cp = projector_.crossLayer(makeHelix(ap), layer, drField);
+            if (!cp.valid || cp.detId != cx.detId)
+              continue;
+            const double inv = 1.0 / (sgn * kEps[j]);
+            H[0][j] = (cp.local.x() - h0[0]) * inv;
+            H[1][j] = (cp.local.y() - h0[1]) * inv;
+            H[2][j] = (cp.cotAlpha - h0[2]) * inv;
+            H[3][j] = (cp.cotBeta - h0[3]) * inv;
+            break;
+          }
+        }
+
+        // ---- sequential scalar Kalman updates (diagonal R; FPGA-friendly form) ----
+        const ROOT::Math::SVector<double, 5> aLin = a;
+        const auto scalarUpdate = [&](int k, double m, double sig) {
+          ROOT::Math::SVector<double, 5> Hrow;
+          for (int j = 0; j < 5; ++j)
+            Hrow[j] = H[k][j];
+          const ROOT::Math::SVector<double, 5> v = C * Hrow;
+          const double S = ROOT::Math::Dot(Hrow, v) + sig * sig;
+          if (!(S > 0.))
+            return;
+          const double r = m - h0[k] - ROOT::Math::Dot(Hrow, a - aLin);
+          const ROOT::Math::SVector<double, 5> K = v / S;
+          a += K * r;
+          for (int i = 0; i < 5; ++i)
+            for (int j = 0; j <= i; ++j)
+              C(i, j) -= K[i] * v[j];  // K = v/S -> K_i v_j symmetric
+        };
+        scalarUpdate(0, best.x, sigX);
+        scalarUpdate(1, best.y, sigY);
+        if (useAlpha && best.hasA)
+          scalarUpdate(2, best.cotA, best.sigA);
+        if (useBeta && best.hasB)
+          scalarUpdate(3, best.cotB, best.sigB);
+
+        ++nAcceptedHits;
+        ++nUpdates;
+      }  // layer loop
+
+      if (!seedCovOK || nAcceptedHits < digiRefitMinHits_) {
+        // 1:1 passthrough fallback (exact copy, original covariance included).
+        outputTracks->push_back(*iterL1Track);
+      } else {
+        L1Track::CovMat outCov;
+        for (int i = 0; i < 5; ++i)
+          for (int j = 0; j <= i; ++j)
+            outCov(i, j) = static_cast<float>(C(i, j));
+        // nFitPars kept from the input; the refit d0/covariance live in the
+        // float members either way (trackword packs d0 only for nPar=5).
+        L1Track track = L1Track(a[0],
+                                a[1],
+                                a[2],
+                                a[3],
+                                a[4],
+                                iterL1Track->chi2XY(),
+                                iterL1Track->chi2Z(),
+                                iterL1Track->trkMVA1(),
+                                iterL1Track->trkMVA2(),
+                                iterL1Track->trkMVA3(),
+                                iterL1Track->hitPattern(),
+                                iterL1Track->nFitPars(),
+                                b_field,
+                                iterL1Track->phiSector(),
+                                iterL1Track->etaSector(),
+                                iterL1Track->chi2BendRed(),
+                                iterL1Track->trackSeedType(),
+                                outCov);
+        track.setStubRefs(iterL1Track->getStubRefs());
+        track.setTrackWordBits();
+        outputTracks->push_back(track);
+      }
+    } // end digiRefit path
 
     // Summary info for track changes
     if (my_tp.isNull() == false) {
@@ -1248,6 +1694,23 @@ void L1SmartPixelsTrackProducer::fillDescriptions(edm::ConfigurationDescriptions
   desc.add<std::string>("smartPixelsEmulatorMode", "passthrough")->setComment("passthrough, passthroughFloat, passthroughHW, trackingParticleTruth, correctionlibRegression, correctionlibTPToySmear");
   desc.add<std::string>("smartPixelsActiveLayers", "0000")->setComment("Active layers of SmartPixels, '0000' is none active, '1111' is all active, '0110' has active 2nd and 3rd layers, and '1000' is only innermost layer active");
   desc.add<edm::FileInPath>("smartPixelsCorrectionSet")->setComment("Name of json file containing the correctionlib set used for smartPixelsEmulatorMode (correctionlibRegression | correctionlibTPToySmear )");
+  // --- digiRefit (Tier 2) ---
+  desc.add<double>("digiRefitWindowRPhi", 0.05)->setComment("digiRefit r-phi search-window half-width [cm]");
+  desc.add<double>("digiRefitWindowZ", 0.10)->setComment("digiRefit z search-window half-width [cm]");
+  desc.add<int>("digiRefitMinHits", 1)->setComment("min attached IT hits to emit a refit track (else passthrough copy)");
+  desc.add<std::string>("digiRefitUseAngles", "alpha")->setComment("which synthesized angles enter the refit: none | alpha | alphaBeta");
+  desc.add<int>("digiRefitMaxHitsPerWindow", 8)->setComment("combinatorics truncation: max in-window digis kept per layer (readout order)");
+  desc.add<int>("digiRefitMaxKFUpdates", 4)->setComment("max Kalman layer updates applied");
+  desc.add<std::string>("digiRefitGainMode", "full")->setComment("full (exact gains) | lut (RESERVED table-driven placeholder)");
+  desc.add<int>("digiRefitSeedNPar", 5)->setComment("seed-track parametrization for the KF: 4 | 5");
+  desc.add<std::string>("digiRefitSeedCovMode", "trackCov")->setComment("seed covariance: trackCov (TTTrack helixCovMat, default) | parametrized");
+  desc.add<std::vector<double>>("digiRefitParamSigmas", std::vector<double>{1e-4, 1e-3, 2e-3, 0.06, 0.05})
+      ->setComment("parametrized-mode seed sigmas (rInv[cm^-1], phi0, tanL, z0[cm], d0[cm])");
+  desc.add<std::string>("digiRefitPixelavAngleSet", "")->setComment("PixelAV angle-response correctionlib payload path (REQUIRED for digiRefit)");
+  desc.add<std::string>("digiRefitSmarthitFakeSet", "")->setComment("optional Stack B smarthit_fake payload (inclusive noise-angle model)");
+  desc.add<edm::InputTag>("pixelDigiInputTag", edm::InputTag("simSiPixelDigis", "Pixel"));
+  desc.add<edm::InputTag>("pixelDigiSimLinkInputTag", edm::InputTag("simSiPixelDigis", "Pixel"));
+  desc.add<edm::InputTag>("simTrackInputTag", edm::InputTag("g4SimHits"));
   descriptions.addWithDefaultLabel(desc);
 }
 ///////////////////////////

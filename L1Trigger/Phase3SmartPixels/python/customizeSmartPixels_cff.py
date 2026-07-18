@@ -63,6 +63,7 @@ DEFAULT_CORRECTION_SET = "L1Trigger/Phase3SmartPixels/data/spixel_smear_all_conf
 # ---------------------------------------------------------------------------
 DIGIREFIT_USEANGLES_CHOICES = ("none", "alpha", "alphaBeta")
 DIGIREFIT_GAINMODE_CHOICES = ("full", "lut")
+DIGIREFIT_SEEDCOVMODE_CHOICES = ("trackCov", "parametrized")
 
 DIGIREFIT_DEFAULTS = {
     # --- search window (module-local frame) ---
@@ -76,6 +77,10 @@ DIGIREFIT_DEFAULTS = {
     "maxHitsPerWindow": 8,    # combinatorics truncation: max in-window digis kept per layer
     "maxKFUpdates": 4,        # max Kalman updates applied (layer/update cap)
     "gainMode": "full",       # "full" (exact gain) | "lut" (RESERVED table-driven placeholder)
+    # --- Kalman seed (user decision 2026-07-18: config-switchable, trackCov default) ---
+    "seedNPar": 5,            # 4 | 5: seed-track parametrization entering the KF
+    "seedCovMode": "trackCov",  # "trackCov" (TTTrack helixCovMat) | "parametrized" (ablation/fallback)
+    "paramSigmas": (1e-4, 1e-3, 2e-3, 0.06, 0.05),  # parametrized-mode sigmas (rInv[cm^-1],phi0,tanL,z0[cm],d0[cm])
     # --- correctionlib payload paths (empty defaults acceptable for Phase 0) ---
     "smarthitTrueSet": "",    # Stack A "smarthit_true" payload (eff/residual/angle response)
     "smarthitFakeSet": "",    # Stack B "smarthit_fake" payload (window multiplicity / fakes)
@@ -112,6 +117,17 @@ def _resolveDigiRefitConfig(digiRefitConfig=None):
     raise ValueError(
         f"digiRefitConfig['gainMode']={resolved['gainMode']!r} invalid; "
         f"must be one of {DIGIREFIT_GAINMODE_CHOICES}")
+  if resolved["seedCovMode"] not in DIGIREFIT_SEEDCOVMODE_CHOICES:
+    raise ValueError(
+        f"digiRefitConfig['seedCovMode']={resolved['seedCovMode']!r} invalid; "
+        f"must be one of {DIGIREFIT_SEEDCOVMODE_CHOICES}")
+  if resolved["seedNPar"] not in (4, 5):
+    raise ValueError(
+        f"digiRefitConfig['seedNPar']={resolved['seedNPar']!r} invalid; must be 4 or 5")
+  if len(tuple(resolved["paramSigmas"])) != 5:
+    raise ValueError(
+        f"digiRefitConfig['paramSigmas'] must have exactly 5 entries "
+        f"(rInv, phi0, tanL, z0, d0), got {len(tuple(resolved['paramSigmas']))}")
   return resolved
 
 
@@ -169,6 +185,35 @@ def _allVariants():
           + [("correctionlibRegression", rconf) for rconf in REGRESSION_CONFIGS])
 
 
+def _applyDigiRefitConfig(module, resolved):
+  """Push a resolved (validated) digiRefit config dict onto a producer module."""
+  module.digiRefitWindowRPhi = cms.double(resolved["windowRPhi"])
+  module.digiRefitWindowZ = cms.double(resolved["windowZ"])
+  module.digiRefitMinHits = cms.int32(resolved["minHits"])
+  module.digiRefitUseAngles = cms.string(resolved["useAngles"])
+  module.digiRefitMaxHitsPerWindow = cms.int32(resolved["maxHitsPerWindow"])
+  module.digiRefitMaxKFUpdates = cms.int32(resolved["maxKFUpdates"])
+  module.digiRefitGainMode = cms.string(resolved["gainMode"])
+  module.digiRefitSeedNPar = cms.int32(resolved["seedNPar"])
+  module.digiRefitSeedCovMode = cms.string(resolved["seedCovMode"])
+  module.digiRefitParamSigmas = cms.vdouble(*resolved["paramSigmas"])
+  module.digiRefitPixelavAngleSet = cms.string(resolved["pixelavAngleSet"])
+  module.digiRefitSmarthitFakeSet = cms.string(resolved["smarthitFakeSet"])
+
+
+def _ensureDigiRefitRNG(process, label, baseSeed=20260718):
+  """Give a digiRefit producer instance a DETERMINISTIC RandomNumberGeneratorService
+  seed derived from its module label (stable across runs and machines, so two
+  identical cmsRun invocations give bitwise-identical refit collections)."""
+  if not hasattr(process, "RandomNumberGeneratorService"):
+    process.RandomNumberGeneratorService = cms.Service("RandomNumberGeneratorService")
+  svc = process.RandomNumberGeneratorService
+  if not hasattr(svc, label):
+    seed = (baseSeed + sum(ord(c) * (i + 1) for i, c in enumerate(label))) % 900000000
+    setattr(svc, label, cms.PSet(initialSeed=cms.untracked.uint32(seed),
+                                 engineName=cms.untracked.string("TRandom3")))
+
+
 def addSmartPixelsTrackProducerVariants(process, variants=None, correctionSet=DEFAULT_CORRECTION_SET,
                                         digiRefitConfig=None):
   """STEP1: instantiate the SmartPixels track producer (prompt+extended) for each variant.
@@ -179,8 +224,8 @@ def addSmartPixelsTrackProducerVariants(process, variants=None, correctionSet=DE
 
   digiRefitConfig: a dict merged over DIGIREFIT_DEFAULTS (validated loudly; see
   _resolveDigiRefitConfig). Only relevant when a digiRefit variant is present.
-  Phase 0: reaching a digiRefit variant's producer-instantiation point raises
-  NotImplementedError — the config surface is exercised, but nothing runs.
+  Phase 2: digiRefit variants are fully wired (params + deterministic per-label
+  RandomNumberGeneratorService seed); pixelavAngleSet is REQUIRED (ValueError).
 
   Returns (process, moduleNames); scheduling the modules is up to the caller
   (see smartPixelsCoexist/smartPixelsCoopt for path association).
@@ -200,11 +245,11 @@ def addSmartPixelsTrackProducerVariants(process, variants=None, correctionSet=DE
     # and raises the RESERVED (Tier 3 'refit') NotImplementedError here.
     prompt, extended = smartPixelsVariantLabels(mode, activeSP)
 
-    if mode == "digiRefit":
-      # Phase 0: config surface reserved, producer not yet implemented.
-      # digiRefitResolved is validated above; carry it forward when Phase 2 lands.
-      raise NotImplementedError(
-          "digiRefit producer lands in Phase 2 — config surface reserved")
+    if mode == "digiRefit" and not digiRefitResolved["pixelavAngleSet"]:
+      raise ValueError(
+          "digiRefit variant requested but digiRefitConfig['pixelavAngleSet'] is empty; "
+          "the PixelAV angle-response payload is REQUIRED (see doc/PixelAVAngleResponseSpec.md; "
+          "validatePixelAVAngleSet.py --write-example emits a structural stand-in for testing)")
 
     modules.append(prompt)
     modules.append(extended)
@@ -217,6 +262,9 @@ def addSmartPixelsTrackProducerVariants(process, variants=None, correctionSet=DE
       if mode in ACTIVE_LAYER_MODES:
         module.smartPixelsActiveLayers = activeSP
         module.smartPixelsCorrectionSet = cms.FileInPath(correctionSet)
+      if mode == "digiRefit":
+        _applyDigiRefitConfig(module, digiRefitResolved)
+        _ensureDigiRefitRNG(process, label)
 
   return process, modules
 
