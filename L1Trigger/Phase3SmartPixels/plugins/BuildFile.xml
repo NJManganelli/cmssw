@@ -13,6 +13,7 @@
   <use name="DataFormats/SiPixelDigi"/>
   <use name="DataFormats/TrackerCommon"/>
   <use name="CommonTools/UtilAlgos"/>
+  <use name="FWCore/AbstractServices"/>
   <use name="FWCore/Framework"/>
   <use name="FWCore/MessageLogger"/>
   <use name="FWCore/ParameterSet"/>
@@ -21,6 +22,7 @@
   <use name="Geometry/CommonTopologies"/>
   <use name="Geometry/Records"/>
   <use name="Geometry/TrackerGeometryBuilder"/>
+  <use name="L1Trigger/Phase3SmartPixels"/>
   <use name="L1Trigger/TrackFindingTracklet"/>
   <use name="L1Trigger/TrackTrigger"/>
   <use name="L1Trigger/TrackerDTC"/>
