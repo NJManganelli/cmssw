@@ -6,18 +6,45 @@ means the input TTTrack as produced by the tracklet chain (== `passthrough`).
 
 ## 1. Reproducibility (hard gate)
 
-- Two identical `digiRefit` runs (same input, same config, same seed policy)
-  produce **bitwise-identical** refit TTTrack collections. Randomness comes only
-  from `RandomNumberGeneratorService`: each producer label gets a deterministic,
-  label-derived seed (`_ensureDigiRefitRNG` in `customizeSmartPixels_cff.py`,
-  `TRandom3`), and draws come from the service's per-stream engine
-  (`getEngine(streamID)`) in `produce()`.
-- Scope of the guarantee: reproducibility holds for identical jobs (same input
-  file(s), same event set and order, same `nStreams`). It is **not**
-  event-order-independent: splitting the input, skipping events, or multi-stream
-  scheduling changes the draw sequence. Per-event deterministic seeding
-  (hash of label/run/lumi/event) is planned alongside the Phase-3 producer
-  changes, where split-job training productions first need it.
+- Two identical `digiRefit` runs (same input, same config) produce
+  **bitwise-identical** refit TTTrack collections **and** sidecar contents.
+- Randomness comes from a **local** CLHEP engine (`CLHEP::MixMaxRng`) constructed
+  per `produce()` call and seeded deterministically from
+  `hash(module label, run, lumi, event)` (FNV-1a 64-bit over the label chars,
+  then run/lumi/event folded in, reduced to a nonzero 31-bit seed; see
+  `digiRefitSeed()` in the producer). All angle-synthesis draws (`RandFlat`,
+  `RandGaussQ`) use this engine.
+- **Deliberate deviation from `RandomNumberGeneratorService`.** The service's
+  per-stream engine advances in event-processing order, so its draw sequence
+  depends on file splitting, skipped events, and stream scheduling. We seed
+  per-event from the physics event identity instead, which makes the guarantee
+  strictly stronger: reproducibility now covers **file splits, skipped events,
+  and stream scheduling**. A one-event physics event yields the same draws (hence
+  the same refit output) no matter which job or stream processes it, in which
+  position. This is the property training productions need: a split-job training
+  sample is bitwise-identical to the single-job sample, matched by event number.
+- Consequence: the module no longer requires (and no longer wires) a
+  `RandomNumberGeneratorService` PSet.
+
+## 1b. Refit sidecar + 1:1 sync invariant (hard gate)
+
+Authoritative contract: `doc/RefitSidecarSpec.md` (spec v0).
+
+- In `digiRefit` mode the producer emits a `smartpixels::SmartPixelsRefitSidecar`
+  alongside the refit track collection (same module, same instance label; prompt
+  and extended producers each emit their own). It carries the NEW SmartPixels
+  facts that do not exist in the OT-only TTTrack: per-layer-crossing hit residuals,
+  synthesized angles + sigmas, KF pulls, chi2 increments, window occupancy, and
+  truth-only class/parent-angle labels; plus a per-track status/counts record.
+- **1:1 output-sync invariant (spec §1).** Before `put()`, the producer asserts
+  `outputTracks->size() == inputTracks->size()` and, in digiRefit,
+  `sidecar.trackInfo.size() == sidecar.hitInfo.size() == inputTracks->size()`.
+  Violation throws `cms::Exception("SmartPixelsSyncBroken")`. Row `i` of every
+  product derives from input track `i`; passthrough-fallback tracks are
+  byte-identical copies with `status` bit0 unset and an empty `hitInfo[i]`.
+- The quantizers and 16-bit "compact" transmitted-subset word live in
+  `interface/SmartPixelsTransmittedSubset.h` (the single source of truth
+  ngtagger-train mirrors bit-exactly).
 
 ## 2. Passthrough invariance (hard gate)
 

@@ -56,10 +56,10 @@ SmartPixels chain exists:
   `PixelDigiSimLink`), **synthesizing only the angle information** (PixelAV response). It is
   an *active-layer* mode (reuses the activeSP `AAII` encoding to pick the refit layer set,
   e.g. `"1100"`) and is *truth-required* (needs pixel digis + `PixelDigiSimLink` +
-  TrackingParticles; posture-B/`inJob` or file-present IT products). The producer lands in
-  **Phase 2**; the config surface (`DIGIREFIT_DEFAULTS`, `digiRefitConfig=` kwarg on
-  `smartPixelsCoexist`/`smartPixelsCoopt`) is reserved now and building a `digiRefit`
-  variant raises `NotImplementedError` until then.
+  TrackingParticles; posture-B/`inJob` or file-present IT products). The producer is
+  implemented (Phase 2); the config surface is `DIGIREFIT_DEFAULTS` + the `digiRefitConfig=`
+  kwarg on `smartPixelsCoexist`/`smartPixelsCoopt`, and a `digiRefit` variant additionally
+  emits the refit sidecar product described below.
 - **`refit` (Tier 3, reserved)** — the true system: the producer will ingest OT L1Tracks
   plus a real `SmartTracklet` collection from an `L1SmartTracksFinder`. The mode name is
   accepted by the vocabulary but building a variant with it raises `NotImplementedError`
@@ -69,6 +69,29 @@ FPGA-fidelity handles live in `DIGIREFIT_DEFAULTS` from day one (float impl, eve
 truncation switchable to chart resolution-vs-fidelity curves): `useAngles`
 (`none`/`alpha`/`alphaBeta`), `maxHitsPerWindow` (combinatorics truncation), `maxKFUpdates`
 (Kalman-update cap), and `gainMode` (`full`/`lut` table-driven placeholder).
+
+### digiRefit sidecar product and RNG scheme
+
+`digiRefit` emits a `smartpixels::SmartPixelsRefitSidecar` next to the refit track
+collection (same module, same instance label; prompt and extended each emit their own).
+It is the single persistent home for every NEW SmartPixels fact absent from the OT-only
+`TTTrack`: one `SmartPixelsRefitHitInfo` per attempted layer crossing (residuals,
+synthesized angles + sigmas, KF pulls, per-crossing chi2 increments, window multiplicity,
+truth-only simlink class + parent angles) plus one `SmartPixelsRefitTrackInfo` per track
+(status bits, hit/update counts, chi2 totals). The authoritative contract is
+`doc/RefitSidecarSpec.md` (spec v0); the quantizers and the 16-bit "compact" transmitted
+word live header-only in `interface/SmartPixelsTransmittedSubset.h` (the single source of
+truth ngtagger-train mirrors). A **1:1 output-sync invariant** (one output track and one
+sidecar row per input track, in order) is asserted before `put()` and throws
+`cms::Exception("SmartPixelsSyncBroken")` on any size mismatch — so PF/Puppi track refs,
+DispVertex indices, and the truth table stay valid row-wise against the refit collection.
+
+Randomness (angle synthesis) uses a **local** `CLHEP::MixMaxRng` constructed per event and
+seeded from `hash(module label, run, lumi, event)` (FNV-1a). This replaces the old
+per-label `RandomNumberGeneratorService` stream engine: outputs are now
+event-order-independent and split-job invariant (a physics event yields the same refit
+result no matter which job/stream/position processes it), which is what bitwise-reproducible
+training productions require. No `RandomNumberGeneratorService` is wired for `digiRefit`.
 
 Migration of the jet-tagging workflow (STEP1/STEP2 with the NGJet tagger) to
 20_1/master is in progress; until that lands, the 15_1_0_pre1 instructions below

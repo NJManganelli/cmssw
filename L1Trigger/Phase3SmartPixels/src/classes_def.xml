@@ -1,0 +1,20 @@
+<lcgdict>
+  <!-- SmartPixels refit sidecar persistent data model. Contract:
+       L1Trigger/Phase3SmartPixels/doc/RefitSidecarSpec.md (spec v0.1). ClassVersion
+       is bumped in lockstep with the spec (spec §5). v0.1: SmartPixelsRefitTrackInfo
+       gained layerHitMask + maxWindowMult -> ClassVersion 4 for it and the Sidecar
+       that contains it; SmartPixelsRefitHitInfo layout is unchanged (stays 3). -->
+  <class name="smartpixels::SmartPixelsRefitHitInfo" ClassVersion="3">
+    <version ClassVersion="3" checksum="1145641242"/>
+  </class>
+  <class name="smartpixels::SmartPixelsRefitTrackInfo" ClassVersion="4">
+    <version ClassVersion="4" checksum="1922168177"/>
+  </class>
+  <class name="std::vector<smartpixels::SmartPixelsRefitHitInfo>"/>
+  <class name="std::vector<smartpixels::SmartPixelsRefitTrackInfo>"/>
+  <class name="std::vector<std::vector<smartpixels::SmartPixelsRefitHitInfo>>"/>
+  <class name="smartpixels::SmartPixelsRefitSidecar" ClassVersion="4">
+    <version ClassVersion="4" checksum="591261244"/>
+  </class>
+  <class name="edm::Wrapper<smartpixels::SmartPixelsRefitSidecar>"/>
+</lcgdict>

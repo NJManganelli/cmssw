@@ -215,19 +215,6 @@ def _applyDigiRefitConfig(module, resolved):
   module.digiRefitSmarthitFakeSet = cms.string(resolved["smarthitFakeSet"])
 
 
-def _ensureDigiRefitRNG(process, label, baseSeed=20260718):
-  """Give a digiRefit producer instance a DETERMINISTIC RandomNumberGeneratorService
-  seed derived from its module label (stable across runs and machines, so two
-  identical cmsRun invocations give bitwise-identical refit collections)."""
-  if not hasattr(process, "RandomNumberGeneratorService"):
-    process.RandomNumberGeneratorService = cms.Service("RandomNumberGeneratorService")
-  svc = process.RandomNumberGeneratorService
-  if not hasattr(svc, label):
-    seed = (baseSeed + sum(ord(c) * (i + 1) for i, c in enumerate(label))) % 900000000
-    setattr(svc, label, cms.PSet(initialSeed=cms.untracked.uint32(seed),
-                                 engineName=cms.untracked.string("TRandom3")))
-
-
 def addSmartPixelsTrackProducerVariants(process, variants=None, correctionSet=DEFAULT_CORRECTION_SET,
                                         digiRefitConfig=None):
   """STEP1: instantiate the SmartPixels track producer (prompt+extended) for each variant.
@@ -238,8 +225,9 @@ def addSmartPixelsTrackProducerVariants(process, variants=None, correctionSet=DE
 
   digiRefitConfig: a dict merged over DIGIREFIT_DEFAULTS (validated loudly; see
   _resolveDigiRefitConfig). Only relevant when a digiRefit variant is present.
-  Phase 2: digiRefit variants are fully wired (params + deterministic per-label
-  RandomNumberGeneratorService seed); pixelavAngleSet is REQUIRED (ValueError).
+  Phase 2: digiRefit variants are fully wired (params only); the producer seeds a
+  local RNG per-event from hash(module label, run, lumi, event), so no
+  RandomNumberGeneratorService is needed. pixelavAngleSet is REQUIRED (ValueError).
 
   Returns (process, moduleNames); scheduling the modules is up to the caller
   (see smartPixelsCoexist/smartPixelsCoopt for path association).
@@ -278,7 +266,10 @@ def addSmartPixelsTrackProducerVariants(process, variants=None, correctionSet=DE
         module.smartPixelsCorrectionSet = cms.FileInPath(correctionSet)
       if mode == "digiRefit":
         _applyDigiRefitConfig(module, digiRefitResolved)
-        _ensureDigiRefitRNG(process, label)
+        # No RandomNumberGeneratorService: the digiRefit producer uses a LOCAL
+        # engine seeded per-event from hash(module label, run, lumi, event), so
+        # outputs are event-order-independent and split-job invariant (see
+        # doc/Phase2Acceptance.md §1 and the producer's digiRefitSeed()).
 
   return process, modules
 
