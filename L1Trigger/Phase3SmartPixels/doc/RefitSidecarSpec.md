@@ -1,6 +1,10 @@
-# SmartPixels Refit Sidecar — data-model and adapter contract (spec v0.1)
+# SmartPixels Refit Sidecar — data-model and adapter contract (spec v0.2)
 
 Changelog:
+- v0.2 (2026-07-19): adds section 6 — the in-producer refit-quality BDT feature
+  vector (REFIT_BDT_FEATURES v0, 17 ordered features) and the KF numerical-guard
+  knobs (jacobianMaxAbs, chi2UpdateGate) motivated by the observed ~1% chi2
+  numerical-Jacobian tail (increments up to 3.3e9 on the PU production).
 - v0.1 (2026-07-19): SmartPixelsRefitTrackInfo gains `layerHitMask` and
   `maxWindowMult` so the per-track record is self-contained for the compact word;
   the canonical packing signature becomes `packCompactWord(trackInfo)` (the v0
@@ -8,7 +12,7 @@ Changelog:
   review — popcount(layerHitMask) == nAcceptedHits is now exact by construction).
 - v0 (2026-07-19): initial contract.
 
-Status: DRAFT v0.1 (2026-07-19). Companion to `PixelAVAngleResponseSpec.md`; same contract
+Status: DRAFT v0.2 (2026-07-19). Companion to `PixelAVAngleResponseSpec.md`; same contract
 discipline: consumers and producers MUST match this document exactly, and any change
 requires a version bump here first.
 
@@ -159,3 +163,66 @@ REQUIREMENTS:
 - Reserved for future versions (do NOT improvise): endcap layers (TEPX/TFPX ids),
   per-hit KF gain snapshots for `gainMode="lut"` studies, PixelAV high-res position
   fields (`spx_pos_*` era), per-candidate subset words materialized in the track word.
+
+## 6. In-producer refit-quality BDT and KF numerical guards (v0.2)
+
+### 6a. REFIT_BDT_FEATURES v0 — the feature contract
+
+The producer-side refit-quality BDT (the reserved `bdtModel` knob) evaluates a
+conifer-format GBDT on a FIXED, ORDERED feature vector computed in-flight per
+track (all quantities available at the end of the layer loop; no sidecar
+round-trip). ngtagger-train's `train-refitquality` MUST train/export with this
+exact order; the model JSON's feature count is validated against it at load.
+
+```
+ 0  nCrossings          (float-cast uint8)
+ 1  nAcceptedHits
+ 2  layerHitMask
+ 3  maxWindowMult
+ 4  anyWindowTruncated  (0/1)
+ 5  sumPullX2           (sum of pullX^2 over applied x updates)
+ 6  sumPullY2
+ 7  sumPullAlpha2
+ 8  sumPullBeta2
+ 9  chi2IncRPhiTot      (post-guard values, see 6b)
+10  chi2IncRZTot
+11  dRinv               (refit minus seed, this track)
+12  dPhi
+13  dTanl
+14  dZ0
+15  dD0
+16  seedTrkMVA1         (the INPUT track's classic TQ score - the refit BDT
+                         complements, not replaces, the legacy quality)
+```
+
+Rules: features are raw (no offline log/clip transforms - the guard in 5b bounds
+the chi2 features at source); passthrough tracks are NOT scored (their trkMVA1
+passes through unchanged); the score is written into the refit track's trkMVA1
+ctor slot + track-word MVA bits (spec section 4 adapter 1) and is the TS0
+transmitted subset. The in-producer BDT itself reads full-fidelity in-flight
+values by construction (it models on-chip logic ahead of the transmission
+boundary). Feature-vector changes require a version bump here and in the
+exported model metadata.
+
+### 6b. KF numerical guards (new config knobs, FPGA-fidelity handles)
+
+Motivation: on the 100-evt PU production ~1% of tracks (194/17324) carry chi2
+increments up to 3.3e9 - one-sided numerical-Jacobian pathologies (near-grazing
+perturbed crossings inflating H and the relinearization term in r). Guards:
+
+- `jacobianMaxAbs` (double, default from the investigation - order 1e4..1e6):
+  any |H[k][j]| above the bound invalidates that Jacobian column exactly like
+  the existing same-module guard (column zeroed -> parameter locally
+  unobservable for that measurement). Non-finite entries always zero the column.
+- `chi2UpdateGate` (double, default HIGH, order 1e6): a scalar update with
+  r^2/S above the gate is SKIPPED (no state/covariance change, no chi2
+  contribution, pull sentinel). This is a numerical-pathology gate, NOT an
+  outlier/quality gate: the deliberate no-selection-gate design (wrong-hit
+  contamination is the BDT's signal) stands - defaults must only remove the
+  non-physical tail. Both knobs are FPGA-fidelity handles (finite-precision
+  hardware bounds these quantities structurally).
+
+Both guards act at source, so sidecar/nano/compact-word chi2 values inherit
+them; the offline log-clip workaround in eval_refitq becomes unnecessary for
+post-guard productions.
+
