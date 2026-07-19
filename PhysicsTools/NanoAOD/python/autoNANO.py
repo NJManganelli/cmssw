@@ -93,8 +93,23 @@ autoNANO = {
                                                    'DPGAnalysis/Phase2L1TNanoAOD/l1tPh2Nano_cff.addPh2L1TrackTruth',
                                                    'DPGAnalysis/Phase2L1TNanoAOD/l1tPh2Nano_cff.addPh2L1DisplacedVertices',
                                                    'DPGAnalysis/Phase2L1TNanoAOD/l1tPh2Nano_cff.addGenObjects']),},
-    #  SmartPixels (Phase-3) flavours: general L1PFTrkNano + the Phase-3 SmartPixels track tables.
+    #  SmartPixels (Phase-3) flavours: a base L1 DPG tier + the Phase-3 SmartPixels track tables.
     #  Require the SmartPixels track collections from L1Trigger/Phase3SmartPixels.
+    #  One flavour per base tier (L1TrkNano/L1PFNano/L1PFTrkNano) x {,withGen},
+    #  each composing the base tier's customize chain then adding the SmartPixels
+    #  default-label track tables (mirrors how L1PFTrkNano composes @L1TrkNano).
+    'L1TrkNanoSmartPix' : {'sequence': '@Phase2L1DPG',
+                           'customize': '+'.join(['@L1TrkNano',
+                                                  'DPGAnalysis/Phase3SmartPixelsNanoAOD/l1tPh3SmartPixelsNano_cff.addPh3L1SmartPixelsTracks']),},
+    'L1TrkNanoSmartPixwithGen' : {'sequence': '@Phase2L1DPG',
+                                  'customize': '+'.join(['@L1TrkNanowithGen',
+                                                         'DPGAnalysis/Phase3SmartPixelsNanoAOD/l1tPh3SmartPixelsNano_cff.addPh3L1SmartPixelsTracks']),},
+    'L1PFNanoSmartPix' : {'sequence': '@Phase2L1DPG',
+                          'customize': '+'.join(['@L1PFNano',
+                                                 'DPGAnalysis/Phase3SmartPixelsNanoAOD/l1tPh3SmartPixelsNano_cff.addPh3L1SmartPixelsTracks']),},
+    'L1PFNanoSmartPixwithGen' : {'sequence': '@Phase2L1DPG',
+                                 'customize': '+'.join(['@L1PFNanowithGen',
+                                                        'DPGAnalysis/Phase3SmartPixelsNanoAOD/l1tPh3SmartPixelsNano_cff.addPh3L1SmartPixelsTracks']),},
     'L1PFTrkNanoSmartPix' : {'sequence': '@Phase2L1DPG',
                              'customize': '+'.join(['@L1PFTrkNano',
                                                     'DPGAnalysis/Phase3SmartPixelsNanoAOD/l1tPh3SmartPixelsNano_cff.addPh3L1SmartPixelsTracks']),},
