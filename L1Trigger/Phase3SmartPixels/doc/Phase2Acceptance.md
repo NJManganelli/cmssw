@@ -8,8 +8,16 @@ means the input TTTrack as produced by the tracklet chain (== `passthrough`).
 
 - Two identical `digiRefit` runs (same input, same config, same seed policy)
   produce **bitwise-identical** refit TTTrack collections. Randomness comes only
-  from `RandomNumberGeneratorService`, seeded per event by `event:luminosityBlock`
-  via `edm::Service<RandomNumberGenerator>` + a fresh engine per `produce()`.
+  from `RandomNumberGeneratorService`: each producer label gets a deterministic,
+  label-derived seed (`_ensureDigiRefitRNG` in `customizeSmartPixels_cff.py`,
+  `TRandom3`), and draws come from the service's per-stream engine
+  (`getEngine(streamID)`) in `produce()`.
+- Scope of the guarantee: reproducibility holds for identical jobs (same input
+  file(s), same event set and order, same `nStreams`). It is **not**
+  event-order-independent: splitting the input, skipping events, or multi-stream
+  scheduling changes the draw sequence. Per-event deterministic seeding
+  (hash of label/run/lumi/event) is planned alongside the Phase-3 producer
+  changes, where split-job training productions first need it.
 
 ## 2. Passthrough invariance (hard gate)
 
