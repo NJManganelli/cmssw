@@ -31,13 +31,17 @@
 #include "FWCore/ParameterSet/interface/ParameterSet.h"
 #include "FWCore/ServiceRegistry/interface/Service.h"
 #include "FWCore/Utilities/interface/Exception.h"
-#include "FWCore/AbstractServices/interface/RandomNumberGenerator.h"
-
-// digiRefit: random engine + shared projector + pixel digi/simlink formats
+// digiRefit: local per-event random engine + shared projector + pixel digi/simlink formats.
+// The RandomNumberGeneratorService stream engine is deliberately NOT used: a local
+// engine seeded from hash(label,run,lumi,event) makes outputs event-order-independent
+// and split-job invariant (see doc/Phase2Acceptance.md §1, doc/RefitSidecarSpec.md).
+#include "CLHEP/Random/MixMaxRng.h"
 #include "CLHEP/Random/RandGaussQ.h"
 #include "CLHEP/Random/RandFlat.h"
 #include "L1Trigger/Phase3SmartPixels/interface/SmartPixelsHelixProjector.h"
 #include "L1Trigger/Phase3SmartPixels/interface/SmartPixelsParentMap.h"
+#include "L1Trigger/Phase3SmartPixels/interface/SmartPixelsRefitSidecar.h"
+#include "L1Trigger/Phase3SmartPixels/interface/SmartPixelsTransmittedSubset.h"
 #include "DataFormats/Common/interface/DetSetVector.h"
 #include "DataFormats/SiPixelDigi/interface/PixelDigi.h"
 #include "DataFormats/DetId/interface/DetId.h"
@@ -116,11 +120,51 @@
 #include <memory>
 #include <string>
 #include <iostream>
+#include <cstdint>
 
 //////////////
 // NAMESPACES
 using namespace std;
 using namespace edm;
+
+namespace {
+  // Deterministic per-event seed for the digiRefit local RNG. FNV-1a 64-bit hash
+  // over the module label chars, then run/lumi/event folded in the SAME 1a step
+  // (xor-then-multiply) so the result depends on (label, run, lumi, event) only.
+  // This makes the angle-synthesis draw sequence identical for a given physics
+  // event regardless of file splitting, skipped events, or stream scheduling
+  // (bitwise split-job reproducibility for training productions). Reduced to a
+  // nonzero 31-bit CLHEP seed for CLHEP::MixMaxRng (good short-seed behavior).
+  inline long digiRefitSeed(const std::string& label,
+                            unsigned int run,
+                            unsigned int lumi,
+                            unsigned long long event) {
+    constexpr uint64_t kFnvOffset = 1469598103934665603ULL;
+    constexpr uint64_t kFnvPrime = 1099511628211ULL;
+    uint64_t h = kFnvOffset;
+    for (unsigned char c : label) {
+      h ^= static_cast<uint64_t>(c);
+      h *= kFnvPrime;
+    }
+    for (int shift = 0; shift < 64; shift += 8) {
+      h ^= static_cast<uint64_t>((static_cast<uint64_t>(run) >> shift) & 0xFFu);
+      h *= kFnvPrime;
+    }
+    for (int shift = 0; shift < 64; shift += 8) {
+      h ^= static_cast<uint64_t>((static_cast<uint64_t>(lumi) >> shift) & 0xFFu);
+      h *= kFnvPrime;
+    }
+    for (int shift = 0; shift < 64; shift += 8) {
+      h ^= static_cast<uint64_t>((event >> shift) & 0xFFu);
+      h *= kFnvPrime;
+    }
+    // Fold the high half into the low half, then mask to a nonzero 31-bit seed.
+    uint32_t s = static_cast<uint32_t>((h ^ (h >> 32)) & 0x7FFFFFFFu);
+    if (s == 0u)
+      s = 1u;
+    return static_cast<long>(s);
+  }
+}  // namespace
 
 //////////////////////////////
 //                          //
@@ -470,12 +514,10 @@ L1SmartPixelsTrackProducer::L1SmartPixelsTrackProducer(edm::ParameterSet const& 
     if (digiRefitUseAngles_ != "none" && digiRefitUseAngles_ != "alpha" && digiRefitUseAngles_ != "alphaBeta")
       throw cms::Exception("Configuration") << "digiRefit useAngles='" << digiRefitUseAngles_ << "' invalid.";
 
-    // Reproducible randomness: require the RandomNumberGeneratorService.
-    edm::Service<edm::RandomNumberGenerator> rng;
-    if (!rng.isAvailable())
-      throw cms::Exception("Configuration")
-          << "digiRefit needs the RandomNumberGeneratorService for reproducible angle synthesis; "
-             "add it and give this module a seed (RandomNumberGeneratorService.<label>.initialSeed).";
+    // Reproducible randomness comes from a LOCAL engine seeded per produce() call
+    // from hash(module label, run, lumi, event) -- see digiRefitSeed() and
+    // doc/Phase2Acceptance.md §1. The RandomNumberGeneratorService is deliberately
+    // NOT used (its per-stream engine makes outputs order-dependent).
 
     pixelDigiToken_ =
         consumes<edm::DetSetVector<PixelDigi>>(iConfig.getParameter<edm::InputTag>("pixelDigiInputTag"));
@@ -511,6 +553,12 @@ L1SmartPixelsTrackProducer::L1SmartPixelsTrackProducer(edm::ParameterSet const& 
   }
 
   produces<TTTrackCollection>(outputCollectionName_);
+
+  // digiRefit sidecar: one product per refit track collection (spec §2), same
+  // instance label as the tracks so downstream adapters resolve them together
+  // and rely on the 1:1 row-sync invariant (spec §1).
+  if (smartPixelsEmulatorMode_ == "digiRefit")
+    produces<smartpixels::SmartPixelsRefitSidecar>(outputCollectionName_);
 
   // -----------------------------------------------------------------------------------------------
   // Correctionlib loading
@@ -621,12 +669,15 @@ void L1SmartPixelsTrackProducer::produce(edm::Event& iEvent, const edm::EventSet
 
   // -----------------------------------------------------------------------------------------------
   // digiRefit (Tier 2) per-event inputs: real pixel digis + simlinks, SimTrack
-  // origin momenta (parent-angle synthesis), shared projector, RNG engine.
+  // origin momenta (parent-angle synthesis), shared projector, local RNG engine,
+  // and the per-collection refit sidecar (spec §2).
   edm::Handle<edm::DetSetVector<PixelDigi>> drDigis;
   edm::Handle<edm::DetSetVector<PixelDigiSimLink>> drSimlinks;
   smartpixels::ParentMomentumMap drParentMom;
+  std::unique_ptr<CLHEP::MixMaxRng> drEngineOwned;
   CLHEP::HepRandomEngine* drEngine = nullptr;
   std::array<bool, 4> drActiveLayer{{false, false, false, false}};
+  auto sidecar = std::make_unique<smartpixels::SmartPixelsRefitSidecar>();
   if (smartPixelsEmulatorMode_ == "digiRefit") {
     iEvent.getByToken(pixelDigiToken_, drDigis);
     iEvent.getByToken(pixelSimLinkToken_, drSimlinks);
@@ -644,8 +695,16 @@ void L1SmartPixelsTrackProducer::produce(edm::Event& iEvent, const edm::EventSet
           << "digiRefit requires at least one active layer (smartPixelsActiveLayers='"
           << smartPixelsActiveLayers_ << "').";
     projector_.build(*theTrackerGeom, *tTopo, 4);
-    edm::Service<edm::RandomNumberGenerator> rng;
-    drEngine = &rng->getEngine(iEvent.streamID());
+    // Local engine seeded deterministically from (module label, run, lumi, event):
+    // event-order-independent and split-job invariant (see digiRefitSeed()). The
+    // EDM module label (distinct for prompt vs extended) decorrelates the two
+    // producers' draw streams.
+    const long drSeed = digiRefitSeed(moduleDescription().moduleLabel(),
+                                      iEvent.id().run(),
+                                      iEvent.id().luminosityBlock(),
+                                      static_cast<unsigned long long>(iEvent.id().event()));
+    drEngineOwned = std::make_unique<CLHEP::MixMaxRng>(drSeed);
+    drEngine = drEngineOwned.get();
   }
 
   // ----------------------------------------------------------------------------------------------
@@ -1357,6 +1416,16 @@ void L1SmartPixelsTrackProducer::produce(edm::Event& iEvent, const edm::EventSet
           drMatchedSimIds.insert(g4.trackId());
       }
 
+      // ---- sidecar accumulators (spec §2): one hitInfo entry per valid layer
+      // crossing attempted (whether or not a hit is accepted), one trackInfo
+      // entry per track. Filled below and appended to the sidecar under the 1:1
+      // invariant. layerHitMask (bit0=L1..bit3=L4) feeds the compact word.
+      std::vector<smartpixels::SmartPixelsRefitHitInfo> drHitInfo;
+      smartpixels::SmartPixelsRefitTrackInfo drTrackInfo;
+      uint8_t drLayerHitMask = 0;
+      unsigned drMaxWindowMult = 0;
+      bool drAnyWindowTruncated = false;
+
       // ---- seed state (INVR, PHI0, TANL, Z0, D0) and covariance ----
       ROOT::Math::SVector<double, 5> a;
       a[0] = iterL1Track->rInv();
@@ -1423,6 +1492,12 @@ void L1SmartPixelsTrackProducer::produce(edm::Event& iEvent, const edm::EventSet
         const double sigX = pitch.first / std::sqrt(12.0);
         const double sigY = pitch.second / std::sqrt(12.0);
 
+        // A valid crossing was attempted: seed its sidecar record now (spec §2 -
+        // one hitInfo entry per valid crossing, whether or not a hit is accepted).
+        smartpixels::SmartPixelsRefitHitInfo hi;
+        hi.layer = static_cast<uint8_t>(layer);
+        hi.detId = cx.detId;
+
         // ---- window-collect + classify digis (readout order, FPGA truncation) ----
         struct HitCand {
           double x = 0., y = 0.;
@@ -1430,8 +1505,11 @@ void L1SmartPixelsTrackProducer::produce(edm::Event& iEvent, const edm::EventSet
           double sigA = 0., sigB = 0.;
           bool hasA = false, hasB = false;  // per-angle validity (a real payload may be alpha-only)
           double sel = 0.;
+          int8_t cls = 2;                   // simlink class: 0 sameTP, 1 otherTP, 2 noise
+          double parCotA = -999., parCotB = -999.;  // parent local angles (truth-only)
         };
         std::vector<HitCand> cands;
+        bool windowTruncated = false;
         const auto digiSet = drDigis->find(cx.detId);
         if (digiSet != drDigis->end()) {
           std::map<unsigned int, const PixelDigiSimLink*> linkByChannel;
@@ -1444,8 +1522,10 @@ void L1SmartPixelsTrackProducer::produce(edm::Event& iEvent, const edm::EventSet
             }
           }
           for (const auto& digi : *digiSet) {
-            if (static_cast<int>(cands.size()) >= digiRefitMaxHitsPerWindow_)
-              break;  // combinatorics truncation in readout order (hardware-like)
+            if (static_cast<int>(cands.size()) >= digiRefitMaxHitsPerWindow_) {
+              windowTruncated = true;  // combinatorics truncation in readout order (hardware-like)
+              break;
+            }
             const LocalPoint dlp =
                 pixTopo.localPosition(MeasurementPoint(digi.row() + 0.5, digi.column() + 0.5));
             if (std::abs(dlp.x() - cx.local.x()) > digiRefitWindowRPhi_[layer - 1] ||
@@ -1461,6 +1541,11 @@ void L1SmartPixelsTrackProducer::produce(edm::Event& iEvent, const edm::EventSet
               // Linked digi (same-TP or other-TP): angle from ITS OWN parent's
               // origin-momentum incidence (payload-analyzer convention), smeared
               // with the PixelAV response; validity coin from valid_prob.
+              // Class (truth-only): same TP as THIS track vs a different TP.
+              cand.cls = (lit->second->eventId() == drMatchedEvtId &&
+                          drMatchedSimIds.count(lit->second->SimTrackId()))
+                             ? int8_t(0)
+                             : int8_t(1);
               const auto mit = drParentMom.find({lit->second->eventId().rawId(), lit->second->SimTrackId()});
               if (mit != drParentMom.end()) {
                 const auto& pm = mit->second;
@@ -1468,6 +1553,8 @@ void L1SmartPixelsTrackProducer::produce(edm::Event& iEvent, const edm::EventSet
                 const double ppz = (std::abs(plv.z()) > 1e-9) ? plv.z() : 1e-9;
                 const double trueCotA = plv.x() / ppz;
                 const double trueCotB = plv.y() / ppz;
+                cand.parCotA = trueCotA;
+                cand.parCotB = trueCotB;
                 const std::vector<std::variant<int, double, std::string>> pin = {
                     layer, trueCotA, trueCotB, static_cast<double>(cx.bLocalY)};
                 if (CLHEP::RandFlat::shoot(drEngine) < corrValidProb_->evaluate(pin)) {
@@ -1482,6 +1569,7 @@ void L1SmartPixelsTrackProducer::produce(edm::Event& iEvent, const edm::EventSet
                 }
               }
             } else if (corrNoiseCotAlpha_ && corrNoiseCotBeta_) {
+              cand.cls = 2;  // no simlink -> noise
               // No-link (noise) digi with a Stack-B inclusive angle model:
               // inverse-CDF draw (layer, uniform quantile). Without the model,
               // noise digis contribute position only.
@@ -1510,8 +1598,22 @@ void L1SmartPixelsTrackProducer::produce(edm::Event& iEvent, const edm::EventSet
             cands.push_back(cand);
           }
         }
-        if (cands.empty())
+
+        // Crossing-level occupancy (post-truncation) recorded on the hit info.
+        hi.windowMult = static_cast<uint16_t>(cands.size());
+        if (windowTruncated) {
+          hi.flags |= smartpixels::hitflag::kWindowTruncated;
+          drAnyWindowTruncated = true;
+        }
+        drMaxWindowMult = std::max<unsigned>(drMaxWindowMult, cands.size());
+        ++drTrackInfo.nCrossings;
+
+        if (cands.empty()) {
+          // Valid crossing, no hit: sidecar record kept (selected-hit fields stay
+          // at their -999.f / class -1 sentinels), no KF update.
+          drHitInfo.push_back(hi);
           continue;
+        }
         const HitCand& best = *std::min_element(
             cands.begin(), cands.end(), [](const HitCand& p, const HitCand& q) { return p.sel < q.sel; });
 
@@ -1540,7 +1642,12 @@ void L1SmartPixelsTrackProducer::produce(edm::Event& iEvent, const edm::EventSet
         }
 
         // ---- sequential scalar Kalman updates (diagonal R; FPGA-friendly form) ----
+        // Per-scalar pull (r/sqrt(S), computed BEFORE the state update) and chi2
+        // increment (r^2/S), captured for the sidecar. k: 0=x 1=y 2=alpha 3=beta.
         const ROOT::Math::SVector<double, 5> aLin = a;
+        std::array<double, 4> pull{{-999., -999., -999., -999.}};
+        std::array<double, 4> chi2inc{{0., 0., 0., 0.}};
+        std::array<bool, 4> applied{{false, false, false, false}};
         const auto scalarUpdate = [&](int k, double m, double sig) {
           ROOT::Math::SVector<double, 5> Hrow;
           for (int j = 0; j < 5; ++j)
@@ -1550,6 +1657,9 @@ void L1SmartPixelsTrackProducer::produce(edm::Event& iEvent, const edm::EventSet
           if (!(S > 0.))
             return;
           const double r = m - h0[k] - ROOT::Math::Dot(Hrow, a - aLin);
+          pull[k] = r / std::sqrt(S);
+          chi2inc[k] = r * r / S;
+          applied[k] = true;
           const ROOT::Math::SVector<double, 5> K = v / S;
           a += K * r;
           for (int i = 0; i < 5; ++i)
@@ -1563,13 +1673,56 @@ void L1SmartPixelsTrackProducer::produce(edm::Event& iEvent, const edm::EventSet
         if (useBeta && best.hasB)
           scalarUpdate(3, best.cotB, best.sigB);
 
+        // ---- fill the accepted-hit sidecar record (spec §2) ----
+        hi.flags |= smartpixels::hitflag::kHitAccepted;
+        if (best.hasA)
+          hi.flags |= smartpixels::hitflag::kHasAlpha;
+        if (best.hasB)
+          hi.flags |= smartpixels::hitflag::kHasBeta;
+        hi.resX = static_cast<float>(best.x - cx.local.x());
+        hi.resY = static_cast<float>(best.y - cx.local.y());
+        hi.cotAlphaMeas = best.hasA ? static_cast<float>(best.cotA) : -999.f;
+        hi.cotBetaMeas = best.hasB ? static_cast<float>(best.cotB) : -999.f;
+        hi.sigAlpha = best.hasA ? static_cast<float>(best.sigA) : -999.f;
+        hi.sigBeta = best.hasB ? static_cast<float>(best.sigB) : -999.f;
+        hi.pullX = applied[0] ? static_cast<float>(pull[0]) : -999.f;
+        hi.pullY = applied[1] ? static_cast<float>(pull[1]) : -999.f;
+        hi.pullAlpha = applied[2] ? static_cast<float>(pull[2]) : -999.f;
+        hi.pullBeta = applied[3] ? static_cast<float>(pull[3]) : -999.f;
+        // rphi terms: x + alpha; rz terms: y + beta (spec §2).
+        const double incRPhi = (applied[0] ? chi2inc[0] : 0.) + (applied[2] ? chi2inc[2] : 0.);
+        const double incRZ = (applied[1] ? chi2inc[1] : 0.) + (applied[3] ? chi2inc[3] : 0.);
+        hi.chi2IncRPhi = static_cast<float>(incRPhi);
+        hi.chi2IncRZ = static_cast<float>(incRZ);
+        hi.selHitClass = best.cls;
+        hi.parCotAlpha = static_cast<float>(best.parCotA);
+        hi.parCotBeta = static_cast<float>(best.parCotB);
+        drHitInfo.push_back(hi);
+
+        // Compact-word layer bitmask + per-track chi2 totals (spec §2/§3).
+        drLayerHitMask |= static_cast<uint8_t>(1u << (layer - 1));
+        drTrackInfo.chi2IncRPhiTot =
+            (drTrackInfo.chi2IncRPhiTot < -900.f ? 0.f : drTrackInfo.chi2IncRPhiTot) + static_cast<float>(incRPhi);
+        drTrackInfo.chi2IncRZTot =
+            (drTrackInfo.chi2IncRZTot < -900.f ? 0.f : drTrackInfo.chi2IncRZTot) + static_cast<float>(incRZ);
+
         ++nAcceptedHits;
         ++nUpdates;
       }  // layer loop
 
       if (!seedCovOK || nAcceptedHits < digiRefitMinHits_) {
         // 1:1 passthrough fallback (exact copy, original covariance included).
+        // Sidecar: status bit0 unset, EMPTY hitInfo, zeros elsewhere (spec §2).
         outputTracks->push_back(*iterL1Track);
+        smartpixels::SmartPixelsRefitTrackInfo pt;  // all zero / status bit0 unset
+        if (seedCovOK)
+          pt.status |= smartpixels::trackstatus::kSeedCovOK;
+        if (digiRefitSeedCovMode_ == "parametrized")
+          pt.status |= smartpixels::trackstatus::kParametrizedSeed;
+        pt.chi2IncRPhiTot = 0.f;
+        pt.chi2IncRZTot = 0.f;
+        sidecar->trackInfo.push_back(pt);
+        sidecar->hitInfo.emplace_back();  // empty per spec
       } else {
         L1Track::CovMat outCov;
         for (int i = 0; i < 5; ++i)
@@ -1598,6 +1751,24 @@ void L1SmartPixelsTrackProducer::produce(edm::Event& iEvent, const edm::EventSet
         track.setStubRefs(iterL1Track->getStubRefs());
         track.setTrackWordBits();
         outputTracks->push_back(track);
+
+        // Finalize the per-track sidecar record (spec §2).
+        drTrackInfo.status |= smartpixels::trackstatus::kRefitPerformed;
+        drTrackInfo.status |= smartpixels::trackstatus::kSeedCovOK;
+        if (digiRefitSeedCovMode_ == "parametrized")
+          drTrackInfo.status |= smartpixels::trackstatus::kParametrizedSeed;
+        if (drAnyWindowTruncated)
+          drTrackInfo.status |= smartpixels::trackstatus::kAnyWindowTruncated;
+        drTrackInfo.nAcceptedHits = static_cast<uint8_t>(nAcceptedHits);
+        drTrackInfo.nKFUpdates = static_cast<uint8_t>(nUpdates);
+        drTrackInfo.layerHitMask = drLayerHitMask;  // popcount == nAcceptedHits (spec v0.1)
+        drTrackInfo.maxWindowMult = static_cast<uint16_t>(drMaxWindowMult);
+        if (drTrackInfo.chi2IncRPhiTot < -900.f)
+          drTrackInfo.chi2IncRPhiTot = 0.f;
+        if (drTrackInfo.chi2IncRZTot < -900.f)
+          drTrackInfo.chi2IncRZTot = 0.f;
+        sidecar->trackInfo.push_back(drTrackInfo);
+        sidecar->hitInfo.push_back(std::move(drHitInfo));
       }
     } // end digiRefit path
 
@@ -1685,6 +1856,24 @@ void L1SmartPixelsTrackProducer::produce(edm::Event& iEvent, const edm::EventSet
   //DEBUG
     edm::LogVerbatim("SmartPixelsTrackProducer") << "(L1SmartPixelsTrackProducer.cc) Event unmatched_tracks: " << unmatched_tracks << " matched_tracks: " << matched_tracks << std::endl;
   }
+  // 1:1 output-sync invariant (spec §1): exactly one output track per input
+  // track, and (in digiRefit) sidecar sizes equal to the track count. This
+  // contract is what keeps every externally-synced collection (PF/Puppi track
+  // refs, DispVertex indices, the truth table) valid row-wise. Fail LOUDLY.
+  const size_t nInput = TTTrackHandle->size();
+  if (outputTracks->size() != nInput)
+    throw cms::Exception("SmartPixelsSyncBroken")
+        << "output track count " << outputTracks->size() << " != input track count " << nInput
+        << " (1:1 output-sync invariant broken).";
+  if (smartPixelsEmulatorMode_ == "digiRefit") {
+    if (sidecar->trackInfo.size() != nInput || sidecar->hitInfo.size() != nInput)
+      throw cms::Exception("SmartPixelsSyncBroken")
+          << "digiRefit sidecar sizes (trackInfo=" << sidecar->trackInfo.size()
+          << ", hitInfo=" << sidecar->hitInfo.size() << ") != input track count " << nInput
+          << " (1:1 output-sync invariant broken).";
+    iEvent.put(std::move(sidecar), outputCollectionName_);
+  }
+
   iEvent.put(std::move(outputTracks), outputCollectionName_);
 }  // end of produce()
 
