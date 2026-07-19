@@ -17,18 +17,40 @@ Stack B "smarthit_fake" (per layer, |eta|):
   - mult_noise     : mean number of class-2 (noise) digis per window
   - ang_alpha_width: robust width of the inclusive class-1/2 cotAlpha distribution
   - ang_beta_width : robust width of the inclusive class-1/2 cotBeta distribution
+  - noise_cotAlpha : per-layer inverse CDF (layer, quantile) of the inclusive
+  - noise_cotBeta    wrong-hit cotAlpha/cotBeta population, consumed by the
+                     digiRefit producer to draw angles for no-link (noise)
+                     digis: cot = F^-1(layer, u), u ~ U(0,1)
+
+True noise digis carry no simlink and hence no measurable parent angle, so the
+noise inverse CDFs use the inclusive in-window wrong-hit population (class-1,
+plus any class-2 with a valid parent) as the stand-in: a noise cluster's
+reconstructed angle should look like "some random in-detector cluster's angle".
+The producer draws alpha and beta with independent uniforms (correlation
+neglected, v1). Layers with too few entries fall back to the pooled all-layer
+distribution; if the pool itself is empty the noise corrections are NOT written
+and the producer falls back to position-only noise digis (its designed default).
 
 Robust sigma = (q84 - q16)/2 (v0). Double-Gaussian core+tail is the documented
 upgrade path. Angle residuals use the parent's ORIGIN-momentum local angle
 (origin-momentum approximation, matching the analyzer).
 
+Provenance (input file, tree, crossings/events, git rev, timestamp, optional
+--sample/--provenance free text) is recorded in the CorrectionSet description
+and every correction description, per the payload-provenance requirement in
+doc/PixelAVAngleResponseSpec.md.
+
 Run (cmsenv):
   python3 L1Trigger/Phase3SmartPixels/python/fitSmartHitPayloads.py \
       --in_file payload_ntuple.root \
       --out_true smarthit_true_v0.json \
-      --out_fake smarthit_fake_v0.json
+      --out_fake smarthit_fake_v0.json \
+      --sample RelValTTbar_D121_noPU --version 1
 """
 import argparse
+import datetime
+import os
+import subprocess
 import numpy as np
 import uproot
 import correctionlib
@@ -46,6 +68,40 @@ def robust_sigma(x):
         return 0.0
     q16, q84 = np.quantile(x, [0.16, 0.84])
     return float((q84 - q16) / 2.0)
+
+
+def _git_rev():
+    """Best-effort git revision of the tree containing this script ('unknown' offline)."""
+    here = os.path.dirname(os.path.abspath(__file__))
+    try:
+        out = subprocess.run(["git", "-C", here, "rev-parse", "HEAD"],
+                             capture_output=True, text=True, timeout=10)
+        rev = out.stdout.strip()[:12]
+        if out.returncode == 0 and rev:
+            dirty = subprocess.run(["git", "-C", here, "diff", "--quiet", "HEAD"],
+                                   capture_output=True, timeout=10)
+            if dirty.returncode == 1:
+                rev += "+dirty"
+            return rev
+    except Exception:
+        pass
+    return "unknown"
+
+
+def _inverse_cdf_binning(values, n_quantile_bins, name="quantile"):
+    """Step-function inverse CDF as a Binning over the uniform quantile u in [0,1].
+
+    content[i] = empirical quantile of `values` at the i-th bin midpoint, so
+    evaluate(u ~ U(0,1)) reproduces the empirical distribution to a resolution
+    of 1/n_quantile_bins. Content is non-decreasing by construction; clamp flow
+    covers u == 0 and u == 1 exactly.
+    """
+    v = np.asarray(values, dtype=float)
+    v = v[np.isfinite(v)]
+    edges = np.linspace(0.0, 1.0, n_quantile_bins + 1)
+    mids = 0.5 * (edges[:-1] + edges[1:])
+    content = np.quantile(v, mids)
+    return _binning(edges, content, name)
 
 
 def _binning(edges, content, name, flow="clamp"):
@@ -74,12 +130,13 @@ def _layer_category(layers, per_layer_binnings, output_default=0.0):
     )
 
 
-def build_payloads(in_file, out_true, out_fake, tree="smartPixelsPayloadAnalyzer/crossings"):
+def build_payloads(in_file, out_true, out_fake, tree="smartPixelsPayloadAnalyzer/crossings",
+                   sample="", extra_provenance="", version=1, noise_quantile_bins=40):
     f = uproot.open(in_file)
     t = f[tree]
     arr = t.arrays(
         [
-            "trk_eta", "trk_tpMatched", "layer", "trk_cotAlpha", "trk_cotBeta",
+            "event", "trk_eta", "trk_tpMatched", "layer", "trk_cotAlpha", "trk_cotBeta",
             "nWinDigi", "digi_class", "digi_resx", "digi_resy",
             "digi_parCotAlpha", "digi_parCotBeta",
         ],
@@ -96,11 +153,34 @@ def build_payloads(in_file, out_true, out_fake, tree="smartPixelsPayloadAnalyzer
     eta_hi = np.array(ABS_ETA_EDGES[1:])
     nbins = len(eta_lo)
 
+    # ---- provenance: recorded in the CorrectionSet description and every
+    # correction description (payload-provenance requirement, see
+    # doc/PixelAVAngleResponseSpec.md section 6) ----
+    n_events = int(np.unique(arr["event"]).size)
+    stamp = datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    provenance = (
+        f"fitSmartHitPayloads.py rev={_git_rev()} generated={stamp}; "
+        f"input={os.path.basename(in_file)} tree={tree} crossings={n} events={n_events} "
+        f"layers={layers} abs_eta_edges={ABS_ETA_EDGES}"
+    )
+    if sample:
+        provenance += f"; sample={sample}"
+    if extra_provenance:
+        provenance += f"; {extra_provenance}"
+    print(f"Provenance: {provenance}")
+
+    def _desc(desc):
+        return f"{desc} | {provenance}"
+
     # per-(layer, eta-bin) accumulators
     A = {l: {"eff": [0.0] * nbins, "rx": [0.0] * nbins, "ry": [0.0] * nbins,
              "aa": [0.0] * nbins, "ab": [0.0] * nbins} for l in layers}
     B = {l: {"mo": [0.0] * nbins, "mn": [0.0] * nbins,
              "aa": [0.0] * nbins, "ab": [0.0] * nbins} for l in layers}
+    # per-layer inclusive wrong-hit angle pools (eta-inclusive) for the
+    # smarthit_noise_* inverse CDFs
+    noise_a = {l: [] for l in layers}
+    noise_b = {l: [] for l in layers}
 
     summary_rows = []
     for l in layers:
@@ -143,6 +223,8 @@ def build_payloads(in_file, out_true, out_fake, tree="smartPixelsPayloadAnalyzer
                     ga = pA > -900
                     ang_a_fake.extend(pA[ga].tolist())
                     ang_b_fake.extend(pB[ga].tolist())
+                    noise_a[l].extend(pA[ga].tolist())
+                    noise_b[l].extend(pB[ga].tolist())
 
             eff = (n_matched_hit / n_matched) if n_matched else 0.0
             A[l]["eff"][b] = eff
@@ -162,7 +244,7 @@ def build_payloads(in_file, out_true, out_fake, tree="smartPixelsPayloadAnalyzer
     # ---- Stack A correctionlib set ----
     def stackA_corr(key, desc, per_layer_key):
         return cs.Correction(
-            name=key, version=1, description=desc,
+            name=key, version=version, description=_desc(desc),
             inputs=[cs.Variable(name="layer", type="int", description="TBPX layer (1..4)"),
                     cs.Variable(name="abs_eta", type="real", description="|eta| of the L1 track")],
             output=cs.Variable(name=key, type="real", description=desc),
@@ -171,6 +253,7 @@ def build_payloads(in_file, out_true, out_fake, tree="smartPixelsPayloadAnalyzer
 
     cset_true = cs.CorrectionSet(
         schema_version=2,
+        description=_desc("SmartPixels Tier-2 Stack A smarthit_true payload"),
         corrections=[
             stackA_corr("smarthit_true_eff", "true-hit efficiency P(class-0 in window | TP-matched)", "eff"),
             stackA_corr("smarthit_true_res_x_sigma", "true-hit local-x residual robust sigma [cm]", "rx"),
@@ -182,21 +265,64 @@ def build_payloads(in_file, out_true, out_fake, tree="smartPixelsPayloadAnalyzer
 
     def stackB_corr(key, desc, per_layer_key):
         return cs.Correction(
-            name=key, version=1, description=desc,
+            name=key, version=version, description=_desc(desc),
             inputs=[cs.Variable(name="layer", type="int", description="TBPX layer (1..4)"),
                     cs.Variable(name="abs_eta", type="real", description="|eta| of the L1 track")],
             output=cs.Variable(name=key, type="real", description=desc),
             data=_layer_category(layers, [_binning(ABS_ETA_EDGES, B[l][per_layer_key], "abs_eta") for l in layers]),
         )
 
+    fake_corrs = [
+        stackB_corr("smarthit_fake_mult_otherTP", "mean class-1 (other-TP) digis per window", "mo"),
+        stackB_corr("smarthit_fake_mult_noise", "mean class-2 (noise) digis per window", "mn"),
+        stackB_corr("smarthit_fake_ang_alpha_width", "inclusive fake cotAlpha robust width", "aa"),
+        stackB_corr("smarthit_fake_ang_beta_width", "inclusive fake cotBeta robust width", "ab"),
+    ]
+
+    # ---- smarthit_noise_* inverse CDFs (consumed by the digiRefit producer
+    # for no-link digis: cot = F^-1(layer, u), u ~ U(0,1), independent draws
+    # for alpha and beta). Stand-in population: inclusive in-window wrong-hit
+    # parent angles (see module docstring). ----
+    kMinNoiseEntries = 10
+    pooled_a = [x for l in layers for x in noise_a[l]]
+    pooled_b = [x for l in layers for x in noise_b[l]]
+    if len(pooled_a) >= kMinNoiseEntries and len(pooled_b) >= kMinNoiseEntries:
+        def noise_corr(key, desc, pools, pooled):
+            per_layer = [pools[l] if len(pools[l]) >= kMinNoiseEntries else pooled for l in layers]
+            return cs.Correction(
+                name=key, version=version, description=_desc(desc),
+                inputs=[cs.Variable(name="layer", type="int", description="TBPX layer (1..4)"),
+                        cs.Variable(name="quantile", type="real",
+                                    description="uniform random quantile u in [0,1]")],
+                output=cs.Variable(name=key, type="real", description=desc),
+                data=cs.Category(
+                    nodetype="category",
+                    input="layer",
+                    content=[cs.CategoryItem(key=int(l),
+                                             value=_inverse_cdf_binning(p, noise_quantile_bins))
+                             for l, p in zip(layers, per_layer)],
+                    default=_inverse_cdf_binning(pooled, noise_quantile_bins),
+                ),
+            )
+        fake_corrs.append(noise_corr(
+            "smarthit_noise_cotAlpha",
+            "inverse CDF of the inclusive wrong-hit cotAlpha population (noise-angle stand-in)",
+            noise_a, pooled_a))
+        fake_corrs.append(noise_corr(
+            "smarthit_noise_cotBeta",
+            "inverse CDF of the inclusive wrong-hit cotBeta population (noise-angle stand-in)",
+            noise_b, pooled_b))
+        print(f"Noise inverse CDFs written from {len(pooled_a)} inclusive wrong-hit angles "
+              f"(per-layer: {[len(noise_a[l]) for l in layers]})")
+    else:
+        print("WARNING: too few inclusive wrong-hit angles "
+              f"({len(pooled_a)} < {kMinNoiseEntries}); smarthit_noise_* corrections NOT written "
+              "(producer falls back to position-only noise digis)")
+
     cset_fake = cs.CorrectionSet(
         schema_version=2,
-        corrections=[
-            stackB_corr("smarthit_fake_mult_otherTP", "mean class-1 (other-TP) digis per window", "mo"),
-            stackB_corr("smarthit_fake_mult_noise", "mean class-2 (noise) digis per window", "mn"),
-            stackB_corr("smarthit_fake_ang_alpha_width", "inclusive fake cotAlpha robust width", "aa"),
-            stackB_corr("smarthit_fake_ang_beta_width", "inclusive fake cotBeta robust width", "ab"),
-        ],
+        description=_desc("SmartPixels Tier-2 Stack B smarthit_fake payload"),
+        corrections=fake_corrs,
     )
 
     with open(out_true, "w") as fo:
@@ -214,6 +340,19 @@ def build_payloads(in_file, out_true, out_fake, tree="smartPixelsPayloadAnalyzer
         rx = tset["smarthit_true_res_x_sigma"].evaluate(test_layer, probe_eta)
         mo = fset["smarthit_fake_mult_otherTP"].evaluate(test_layer, probe_eta)
         print(f"  eval layer={test_layer} |eta|={probe_eta}: eff={eff:.3f} res_x_sigma={rx:.5f} mult_otherTP={mo:.2f}")
+    if any(c.name == "smarthit_noise_cotAlpha" for c in cset_fake.corrections):
+        for u in (0.05, 0.5, 0.95):
+            na = fset["smarthit_noise_cotAlpha"].evaluate(test_layer, u)
+            nb = fset["smarthit_noise_cotBeta"].evaluate(test_layer, u)
+            print(f"  noise draw layer={test_layer} u={u}: cotAlpha={na:.3f} cotBeta={nb:.3f}")
+        # an inverse CDF must be non-decreasing in u, for every layer and the default
+        probe_layers = layers + [max(layers) + 1]  # +1 exercises the Category default
+        for nm in ("smarthit_noise_cotAlpha", "smarthit_noise_cotBeta"):
+            for l in probe_layers:
+                vals = [fset[nm].evaluate(int(l), float(u)) for u in np.linspace(0.0, 1.0, 101)]
+                if not all(y2 >= y1 - 1e-12 for y1, y2 in zip(vals, vals[1:])):
+                    raise RuntimeError(f"{nm} layer {l}: inverse CDF not monotone")
+        print("  noise inverse-CDF monotonicity (all layers + default): OK")
 
     # ---- summary table ----
     print("\nSummary (layer, |eta|, nCross, nMatched, eff, res_x_sigma[cm], mult_otherTP, mult_noise):")
@@ -228,5 +367,12 @@ if __name__ == "__main__":
     ap.add_argument("--out_true", default="smarthit_true_v0.json")
     ap.add_argument("--out_fake", default="smarthit_fake_v0.json")
     ap.add_argument("--tree", default="smartPixelsPayloadAnalyzer/crossings")
+    ap.add_argument("--sample", default="", help="sample name recorded in the payload provenance")
+    ap.add_argument("--provenance", default="", help="extra free-text provenance to record")
+    ap.add_argument("--version", type=int, default=1, help="version stamped on every correction")
+    ap.add_argument("--noise_quantile_bins", type=int, default=40,
+                    help="quantile bins for the smarthit_noise_* inverse CDFs")
     opts = ap.parse_args()
-    build_payloads(opts.in_file, opts.out_true, opts.out_fake, tree=opts.tree)
+    build_payloads(opts.in_file, opts.out_true, opts.out_fake, tree=opts.tree,
+                   sample=opts.sample, extra_provenance=opts.provenance,
+                   version=opts.version, noise_quantile_bins=opts.noise_quantile_bins)
