@@ -38,6 +38,22 @@ magnetic field.
   Signed components in Tesla.
 - Charge sign is NOT an input: its effect enters through the signed cotAlpha and signed
   bLocalY (Lorentz drift direction).
+- **SOURCE-CONVENTION WARNING (verified 2026-07-19, do not re-derive)**: the PixelAV
+  simulation files and the SmartPixels regression-NN eval dumps label the angles
+  OPPOSITE to this spec. In those files the fine 50 um pitch runs along PixelAV
+  local-y (`y-midplane` span 50 um vs `x-midplane` 200 um), so their
+  `cotBeta = n_y/n_z` is the r-phi BENDING angle. Mapping any PixelAV-side source
+  into this spec therefore requires the swap:
+  spec `cotAlpha` (bending) <- source `cotBeta`/`cotB*`;
+  spec `cotBeta` (non-bending) <- source `cotAlpha`/`cotA*`.
+  Additionally the NN dump residual columns are (true - pred); this spec's bias is
+  median(pred - true), so the sign is negated on extraction. Extractors MUST apply
+  this mapping in exactly one clearly-marked place (see
+  ngtagger-train eval_spixel_angles/extract_pixelav_angle_payload.py,
+  `SWAP_ALPHA_BETA`). Payload JSONs themselves are ALWAYS in spec convention;
+  consumers are unaffected. Verified consistently across the Mlp_Slim-2bit,
+  Conv2D_Max-2bit, and Conv1D_Full-2bit variants. The Lorentz bias SIGN is not
+  measurable without a two-sign bLocalY scan (absent from current sources).
 
 ## 3. Payload format
 
