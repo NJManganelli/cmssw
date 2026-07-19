@@ -8,9 +8,51 @@ NanoAOD tables and autoNANO flavours for the Phase-3 SmartPixels L1 tracks
   general `l1tTracksTable`) and `addPh3L1SmartPixelsTracks(process, srcLabel=...,
   srcExtendedLabel=..., tableSuffix=...)`, which can target ANY SmartPixels variant
   collection and be called once per variant.
-- autoNANO flavours (in `PhysicsTools/NanoAOD/autoNANO.py`): `L1PFTrkNanoSmartPix`,
-  `L1PFTrkNanoSmartPixwithGen` = `@L1PFTrkNano{,withGen}` + the default SmartPixels
-  track tables.
+- `addPh3L1SmartPixelsRefitTables(process, ...)` (same module) + the
+  `L1SmartPixelsRefitTableProducer` plugin: the digiRefit sidecar nano adapter (spec
+  `L1Trigger/Phase3SmartPixels/doc/RefitSidecarSpec.md` v0.1 §4.4). ONLY for digiRefit
+  variants (the sidecar exists only in that mode); wired automatically from
+  `smartPixelsCoexist`/`smartPixelsCoopt` when a digiRefit variant is present.
+- autoNANO flavours (in `PhysicsTools/NanoAOD/autoNANO.py`): one per base L1 DPG tier
+  x `{,withGen}` -- `L1TrkNanoSmartPix{,withGen}`, `L1PFNanoSmartPix{,withGen}`,
+  `L1PFTrkNanoSmartPix{,withGen}` = `@L1TrkNano`/`@L1PFNano`/`@L1PFTrkNano`
+  (`{,withGen}`) + the default SmartPixels track tables. The base tiers live in
+  `DPGAnalysis/Phase2L1TNanoAOD` (not edited here).
+
+## digiRefit sidecar tables (spec §4.4)
+
+The digiRefit producer emits a `smartpixels::SmartPixelsRefitSidecar` 1:1 row-synced
+with its refit TTTrack collection under the SAME instance label (`Level1TTTracks`).
+`L1SmartPixelsRefitTableProducer` turns `(refit tracks + sidecar)` into two tables per
+producer instance (prompt and extended cloned separately):
+
+- **per-hit LINK table** `L1TSmartPixelsRefitHit<Suffix>` (extended:
+  `L1TSmartPixelsExtRefitHit<Suffix>`): one row per layer-crossing record across all
+  tracks. Columns: `trackIdx` (index of the owning track in the variant track table,
+  the `L1SC4NGJetCands` link pattern), `layer`, `detId`, `windowMult`, `flags` +
+  unpacked bools (`hitAccepted`, `windowTruncated`, `hasAlpha`, `hasBeta`), `resX`,
+  `resY` (full float), `cotAlphaMeas`, `cotBetaMeas`, `sigAlpha`, `sigBeta` (float12),
+  `pullX`, `pullY`, `pullAlpha`, `pullBeta` (full float), `chi2IncRPhi`, `chi2IncRZ`
+  (float12), and TRUTH-ONLY `selHitClass`, `parCotAlpha`, `parCotBeta`.
+- **track EXTENSION table** (`extension=True`, SAME name+length as the variant track
+  table `L1TSmartPixelsTrack<Suffix>` / `L1TSmartPixelsExtTrack<Suffix>`): `spxStatus`
+  + unpacked bools (`spxRefitPerformed`, `spxSeedCovOK`, `spxParametrizedSeed`,
+  `spxAnyWindowTruncated`), `spxNCrossings`, `spxNAcceptedHits`, `spxNKFUpdates`,
+  `spxLayerHitMask`, `spxMaxWindowMult`, `spxChi2IncRPhiTot`, `spxChi2IncRZTot`, and
+  `spxCompactWord` (= `packCompactWord(trackInfo)`, the 16-bit transmitted-subset word).
+
+Sentinel floats pass through as `-999.f` (consumers test `> -900`); passthrough tracks
+have `spxRefitPerformed=false`, empty per-hit rows, and sentinel chi2 totals.
+
+## Truth index-reuse (withGen tiers)
+
+There is NO refit-specific truth table, by design. The 1:1 output-sync invariant
+(spec §1) guarantees that row `i` of every variant's track table (and its extension
+columns) derives from input reference track `i`. The `withGen` tiers' reference-track
+truth table (`L1TTrackTruth` from `addPh2L1TrackTruth`) therefore aligns 1:1 with every
+variant's rows: analysis reads the truth label for a variant track by reusing that same
+row index against the reference truth table. Likewise, per-hit `trackIdx` -> variant
+track row -> reference truth row. No truth is ever re-keyed to a refit collection.
 
 Both workflows keep `--procModifiers nano_l1_hlt` in the recipes: it removes the
 HLT-side `dstTriggerAcceptFilter` and the nano-output `SelectEvents`, so ALL events

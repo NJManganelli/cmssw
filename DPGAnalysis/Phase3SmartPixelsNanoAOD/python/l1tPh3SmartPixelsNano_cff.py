@@ -62,3 +62,174 @@ def addPh3L1SmartPixelsTracks(process,
     setattr(process, f"p3L1SmartPixelsTracksTask{nameSuffix}", task)
     process.l1tPh2NanoTask.add(task)
     return process
+
+
+# ---------------------------------------------------------------------------
+# digiRefit sidecar tables (spec RefitSidecarSpec.md v0.1 §4.4)
+# ---------------------------------------------------------------------------
+# The digiRefit producer emits a smartpixels::SmartPixelsRefitSidecar 1:1 row-
+# synced with its refit TTTrack collection, under the SAME instance label
+# ("Level1TTTracks"). The L1SmartPixelsRefitTableProducer turns (tracks+sidecar)
+# into a per-crossing LINK table ("hit", one row per crossing, trackIdx links to
+# the variant track table) and an EXTENSION table ("trk", extension=True, same
+# name+length as the variant track table). See the plugin doc for the schemas.
+l1tPh3SmartPixelsRefitTable = cms.EDProducer(
+    "L1SmartPixelsRefitTableProducer",
+    tracks = cms.InputTag("l1tSmartPixelsTrackProducer", "Level1TTTracks"),
+    sidecar = cms.InputTag("l1tSmartPixelsTrackProducer", "Level1TTTracks"),
+    trackTableName = cms.string("L1TSmartPixelsTrack"),
+    hitTableName = cms.string("L1TSmartPixelsRefitHit"),
+)
+
+
+def addPh3L1SmartPixelsRefitTables(process,
+                                   srcLabel="l1tSmartPixelsTrackProducer",
+                                   srcExtendedLabel="l1tSmartPixelsTrackProducerExtended",
+                                   tableSuffix=""):
+    """Add the digiRefit sidecar tables (per-hit link + track extension) for one
+    variant (prompt+extended). ONLY valid for digiRefit variants -- the sidecar
+    product only exists in digiRefit mode. Non-digiRefit variants get tracks-only
+    tables via addPh3L1SmartPixelsTracks (no sidecar is produced, so consuming it
+    would throw ProductNotFound). The extension table name MUST equal the variant
+    track table name (from addPh3L1SmartPixelsTracks) so nano merges the columns.
+    """
+    nameSuffix = tableSuffix[:1].upper() + tableSuffix[1:] if tableSuffix else ""
+    # Module labels must END in "Table" (keep-pattern gotcha): NANOAOD event
+    # content keeps only nanoaodFlatTable_*Table_*_* and the output module's
+    # consumes (which trigger the unscheduled producers) derive from that.
+    promptRefitLabel = f"l1tPh3SmartPixelsRefit{nameSuffix}Table"
+    extendedRefitLabel = f"l1tPh3ExtSmartPixelsRefit{nameSuffix}Table"
+
+    setattr(process, promptRefitLabel, l1tPh3SmartPixelsRefitTable.clone(
+        tracks = cms.InputTag(srcLabel, "Level1TTTracks"),
+        sidecar = cms.InputTag(srcLabel, "Level1TTTracks"),
+        trackTableName = cms.string(f"L1TSmartPixelsTrack{nameSuffix}"),
+        hitTableName = cms.string(f"L1TSmartPixelsRefitHit{nameSuffix}"),
+    ))
+    setattr(process, extendedRefitLabel, l1tPh3SmartPixelsRefitTable.clone(
+        tracks = cms.InputTag(srcExtendedLabel, "Level1TTTracks"),
+        sidecar = cms.InputTag(srcExtendedLabel, "Level1TTTracks"),
+        trackTableName = cms.string(f"L1TSmartPixelsExtTrack{nameSuffix}"),
+        hitTableName = cms.string(f"L1TSmartPixelsExtRefitHit{nameSuffix}"),
+    ))
+
+    task = cms.Task(getattr(process, promptRefitLabel), getattr(process, extendedRefitLabel))
+    setattr(process, f"p3L1SmartPixelsRefitTask{nameSuffix}", task)
+    process.l1tPh2NanoTask.add(task)
+    return process
+
+
+# Nano table modules whose source objects are absent from some RelVal L1 menus
+# (posture-A fromFile productions read the file's HLT-process objects, and older
+# RelVals predate the NGJet producer / HPS PF taus). Removing the corresponding
+# tables avoids a ProductNotFound at output time. hpsTauTable is already dropped
+# by the nano_l1_hlt modifier; sc4NGJetTable + its cand link table are not.
+_ABSENT_MENU_TABLES_DEFAULT = ("sc4NGJetTable", "l1tSC4NGJetCandsTable", "hpsTauTable")
+
+
+def dropAbsentMenuTables(process, moduleLabels=_ABSENT_MENU_TABLES_DEFAULT):
+    """Remove nano table modules (by label) for L1 objects this input file lacks.
+
+    Removes each module from every task/sequence/path/endpath then deletes the
+    attribute, so the NanoAOD output module no longer consumes its product.
+    Silent no-op for labels not present. Intended for posture-A SmartPixels
+    productions on RelVals with a reduced L1 menu (see the l1nano workflow memory).
+    """
+    for label in moduleLabels:
+        if not hasattr(process, label):
+            continue
+        module = getattr(process, label)
+        for container in (list(process.tasks.values()) + list(process.sequences.values())
+                          + list(process.paths.values()) + list(process.endpaths.values())):
+            try:
+                container.remove(module)
+            except Exception:
+                pass
+        delattr(process, label)
+        print(f"SmartPixels posture-A: removed nano table '{label}' (source object absent from this input menu)")
+    return process
+
+
+# FlatTable-producer C++ types in the Phase-2/3 L1 nano packages whose primary
+# input is a single L1 object collection selected by an InputTag parameter. The
+# value is the parameter name carrying that InputTag. The auto-prune below only
+# considers these; link/extension/truth producers with multiple/optional inputs
+# are left alone (and are handled by the explicit drop list when needed).
+_SIMPLE_TABLE_SRC_PARAM = {
+    "SimpleTriggerL1SAMuonFlatTableProducer": "src",
+    "SimpleTriggerL1TrackerMuonFlatTableProducer": "src",
+    "SimpleTriggerL1PFJetFlatTableProducer": "src",
+    "SimpleTriggerL1PFTauFlatTableProducer": "src",
+    "SimpleTriggerL1HPSPFTauFlatTableProducer": "src",
+    "SimpleTriggerL1EGFlatTableProducer": "src",
+    "SimpleTriggerL1PFCandidateFlatTableProducer": "src",
+    "SimpleTriggerL1VertexWordFlatTableProducer": "src",
+    "SimpleL1TTTrackCandidateFlatTableProducer": "src",
+    "SimpleL1DisplacedVtxCandidateFlatTableProducer": "src",
+    "SimpleTriggerL1EtSumFlatTableProducer": "src",
+    "SimpleTriggerL1HGCalMulticlusterFlatTableProducer": "src",
+}
+
+
+def pruneAbsentSimpleTables(process, availableLabels, protectLabels=()):
+    """Auto-drop simple L1 FlatTable producers whose single src collection is not
+    available (posture-A on a reduced-menu RelVal).
+
+    availableLabels: iterable of module labels the input FILE provides (from its
+    provenance) -- a producer's src label is considered resolvable if it is a
+    producer in the process OR appears in availableLabels. protectLabels are
+    never dropped regardless (e.g. the SmartPixels + reference track tables).
+    Only the _SIMPLE_TABLE_SRC_PARAM producer types are auto-pruned; everything
+    else is untouched (drop those explicitly via dropAbsentMenuTables).
+    """
+    import FWCore.ParameterSet.Config as cms
+    available = set(availableLabels)
+    protect = set(protectLabels)
+    to_drop = []
+    for label, module in process.producers_().items():
+        if label in protect:
+            continue
+        ctype = getattr(module, "_TypedParameterizable__type", None)
+        param = _SIMPLE_TABLE_SRC_PARAM.get(ctype)
+        if param is None or not hasattr(module, param):
+            continue
+        src = getattr(module, param)
+        if not isinstance(src, cms.InputTag):
+            continue
+        srcLabel = src.getModuleLabel()
+        if srcLabel in available or hasattr(process, srcLabel):
+            continue
+        to_drop.append(label)
+    return dropAbsentMenuTables(process, to_drop)
+
+
+def useGenParticlesFromFile(process, genSrc="genParticles"):
+    """Adapt the withGen gen chain to a GEN-SIM(-DIGI-RAW) input that has
+    `genParticles` but NOT the MINIAOD `prunedGenParticles` (posture-A RelVals).
+
+    Repoints the finalGenParticles pruner at `genSrc` so genParticleTable and the
+    gen-iso/tau tables resolve, then auto-prunes any remaining gen/PAT-derived
+    tables whose source is still absent (e.g. slimmed collections). No-op if the
+    gen chain was not scheduled (non-withGen tiers).
+    """
+    import FWCore.ParameterSet.Config as cms
+    if hasattr(process, "finalGenParticles"):
+        process.finalGenParticles.src = cms.InputTag(genSrc)
+        print(f"SmartPixels posture-A: repointed finalGenParticles.src -> '{genSrc}' (no MINIAOD prunedGenParticles)")
+    # genIso (GenPartIsoProducer) needs MINIAOD packedGenParticles; drop it and
+    # the genParticleTable.iso external variable that consumes it. Core GenPart
+    # columns (kinematics, pdgId, status, mother, statusFlags) are unaffected.
+    if hasattr(process, "genParticleTable") and hasattr(process.genParticleTable, "externalVariables"):
+        if hasattr(process.genParticleTable.externalVariables, "iso"):
+            del process.genParticleTable.externalVariables.iso
+            print("SmartPixels posture-A: dropped genParticleTable.externalVariables.iso (no packedGenParticles)")
+    process = dropAbsentMenuTables(process, ("genIso",))
+    # The gen-jet / gen-jet-flavour chain is MINIAOD-coupled (slimmedGenJets et
+    # al.); it is not needed for SmartPixels track truth-matching (genParticles +
+    # the L1 track truth table are). Drop it so the withGen tier runs on a
+    # GEN-SIM RelVal. genParticles / gen taus / gen vertices stay.
+    _GENJET_TABLES = ("genJetTable", "genJetFlavourTable", "patJetPartonsNano",
+                      "genJetAK8Table", "genJetAK8FlavourAssociation", "genJetAK8FlavourTable",
+                      "genJetFlavourAssociation")
+    process = dropAbsentMenuTables(process, _GENJET_TABLES)
+    return process

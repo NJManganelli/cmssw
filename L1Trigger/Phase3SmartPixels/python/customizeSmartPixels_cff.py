@@ -435,13 +435,16 @@ def smartPixelsCoexist(process, variants=None, correctionSet=DEFAULT_CORRECTION_
   process = _applyTruthSource(process, truthSource, variants)
 
   if addNanoTables:
-    from DPGAnalysis.Phase3SmartPixelsNanoAOD.l1tPh3SmartPixelsNano_cff import addPh3L1SmartPixelsTracks
+    from DPGAnalysis.Phase3SmartPixelsNanoAOD.l1tPh3SmartPixelsNano_cff import (
+        addPh3L1SmartPixelsTracks, addPh3L1SmartPixelsRefitTables)
     for mode, activeSP in variants:
       prompt, extended = smartPixelsVariantLabels(mode, activeSP)
-      addPh3L1SmartPixelsTracks(process,
-                                srcLabel=prompt,
-                                srcExtendedLabel=extended,
-                                tableSuffix=smartPixelsVariantSuffix(mode, activeSP))
+      suffix = smartPixelsVariantSuffix(mode, activeSP)
+      addPh3L1SmartPixelsTracks(process, srcLabel=prompt, srcExtendedLabel=extended, tableSuffix=suffix)
+      # digiRefit variants ALSO emit a SmartPixelsRefitSidecar -> add the per-hit
+      # link table + track extension table. Other modes produce no sidecar.
+      if mode == "digiRefit":
+        addPh3L1SmartPixelsRefitTables(process, srcLabel=prompt, srcExtendedLabel=extended, tableSuffix=suffix)
   return process
 
 
@@ -486,11 +489,12 @@ def smartPixelsCoopt(process, mode="passthrough", activeSP=None,
                                            skipModuleTypes=skipModuleTypes)
 
   if addPh3Table:
-    from DPGAnalysis.Phase3SmartPixelsNanoAOD.l1tPh3SmartPixelsNano_cff import addPh3L1SmartPixelsTracks
-    addPh3L1SmartPixelsTracks(process,
-                              srcLabel=prompt,
-                              srcExtendedLabel=extended,
-                              tableSuffix=smartPixelsVariantSuffix(mode, activeSP))
+    from DPGAnalysis.Phase3SmartPixelsNanoAOD.l1tPh3SmartPixelsNano_cff import (
+        addPh3L1SmartPixelsTracks, addPh3L1SmartPixelsRefitTables)
+    suffix = smartPixelsVariantSuffix(mode, activeSP)
+    addPh3L1SmartPixelsTracks(process, srcLabel=prompt, srcExtendedLabel=extended, tableSuffix=suffix)
+    if mode == "digiRefit":
+      addPh3L1SmartPixelsRefitTables(process, srcLabel=prompt, srcExtendedLabel=extended, tableSuffix=suffix)
   return process
 
 
