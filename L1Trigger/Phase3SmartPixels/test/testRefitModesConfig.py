@@ -6,8 +6,10 @@ L1Trigger/Phase3SmartPixels/python/customizeSmartPixels_cff.py:
 
  (a) suffix/label generation for digiRefit variants works and labels still end
      so that derived nano tables end in 'Table' (keep-pattern gotcha);
- (b) a digiRefit variant wires the producer (Phase 2): params + deterministic
-     RNG seed land on the module; an empty pixelavAngleSet raises ValueError;
+ (b) a digiRefit variant wires the producer (Phase 2): params land on the module
+     and no RandomNumberGeneratorService is required (the producer seeds a local
+     per-event RNG from hash(label,run,lumi,event)); two identical builds produce
+     identical configs; an empty pixelavAngleSet raises ValueError;
  (c) mode 'refit' (Tier 3) raises the RESERVED NotImplementedError;
  (d) invalid digiRefitConfig keys / enum values raise ValueError;
  (e) existing modes (passthrough, correctionlibRegression) still normalize and
@@ -111,15 +113,17 @@ check(_m.digiRefitPixelavAngleSet.value() == _DR_CFG["pixelavAngleSet"],
       "pixelavAngleSet carried onto the module")
 check(list(_m.digiRefitParamSigmas) == list(DIGIREFIT_DEFAULTS["paramSigmas"]),
       "paramSigmas carried onto the module")
-check(hasattr(p_dr, "RandomNumberGeneratorService"), "RNG service added")
-check(hasattr(p_dr.RandomNumberGeneratorService, _dr_prompt),
-      "RNG service has a PSet for the digiRefit module label")
-_seed1 = getattr(p_dr.RandomNumberGeneratorService, _dr_prompt).initialSeed.value()
-p_dr2 = cms.Process("TEST2")
+# The RNG scheme is now producer-side (local per-event engine seeded from
+# hash(label,run,lumi,event)); NO RandomNumberGeneratorService is wired.
+check(not hasattr(p_dr, "RandomNumberGeneratorService"),
+      "no RandomNumberGeneratorService is added (RNG is per-event, producer-side)")
+# Determinism at config level: two identical builds produce identical module
+# configs (the dump strings match byte-for-byte).
+p_dr2 = cms.Process("TEST")
 p_dr2, _ = addSmartPixelsTrackProducerVariants(p_dr2, variants=[("digiRefit", "1100")],
                                                digiRefitConfig=_DR_CFG)
-_seed2 = getattr(p_dr2.RandomNumberGeneratorService, _dr_prompt).initialSeed.value()
-check(_seed1 == _seed2, "RNG seed is deterministic (label-derived)")
+check(getattr(p_dr2, _dr_prompt).dumpPython() == _m.dumpPython(),
+      "two identical digiRefit builds produce identical module configs")
 
 # a digiRefit variant WITHOUT a payload must fail loudly at config time
 def _build_digirefit_nopayload():

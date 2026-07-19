@@ -1,6 +1,14 @@
-# SmartPixels Refit Sidecar — data-model and adapter contract (spec v0)
+# SmartPixels Refit Sidecar — data-model and adapter contract (spec v0.1)
 
-Status: DRAFT v0 (2026-07-19). Companion to `PixelAVAngleResponseSpec.md`; same contract
+Changelog:
+- v0.1 (2026-07-19): SmartPixelsRefitTrackInfo gains `layerHitMask` and
+  `maxWindowMult` so the per-track record is self-contained for the compact word;
+  the canonical packing signature becomes `packCompactWord(trackInfo)` (the v0
+  two-argument form implied a mask fabricated from a count, which was rejected in
+  review — popcount(layerHitMask) == nAcceptedHits is now exact by construction).
+- v0 (2026-07-19): initial contract.
+
+Status: DRAFT v0.1 (2026-07-19). Companion to `PixelAVAngleResponseSpec.md`; same contract
 discipline: consumers and producers MUST match this document exactly, and any change
 requires a version bump here first.
 
@@ -71,6 +79,9 @@ struct SmartPixelsRefitTrackInfo { // one entry per track (refit or passthrough)
   uint8_t  nCrossings;     // valid layer crossings attempted
   uint8_t  nAcceptedHits;  // hits accepted into the KF
   uint8_t  nKFUpdates;     // scalar-update groups applied (== layers updated)
+  uint8_t  layerHitMask;   // accepted-hit bitmask, bit0=L1 .. bit3=L4;
+                           // popcount(layerHitMask) == nAcceptedHits (exact, v0.1)
+  uint16_t maxWindowMult;  // max windowMult over this track's crossings
   float chi2IncRPhiTot, chi2IncRZTot;  // sums over crossings
 };
 
