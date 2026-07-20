@@ -89,7 +89,12 @@ public:
       if (candsHandle.isValid()) {
         for (size_t icand = 0; icand < nCands; ++icand) {
           const auto& trkRef = (*candsHandle)[icand].pfTrack();
-          if (trkRef.isNonnull()) {
+          // isNonnull() only checks the Ref carries a ProductID+key; the referenced
+          // PFTrack collection may not be persisted in this event (e.g. PU files that
+          // keep l1tLayer1:PuppiRegional but drop the PFTrack collection it points to).
+          // isAvailable() gates the dereference so an unresolvable ref yields the -1
+          // sentinel instead of a ProductNotFound throw.
+          if (trkRef.isNonnull() && trkRef.isAvailable()) {
             const auto& ttRef = trkRef->track();
             if (ttRef.isNonnull() && tracksHandle.isValid() && ttRef.id() == tracksHandle.id()) {
               candTrackIdx[icand] = ttRef.key();
