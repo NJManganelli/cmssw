@@ -147,3 +147,20 @@ If Option B is chosen instead of Option A, replace the single
 `l1tLayer1_PuppiRegional` keep with the four `l1tLayer2Deregionizer:Puppi` +
 `l1tSC{4,8}PFL1PuppiCorrectedEmulator` keeps from §2 Option B (jets and their source
 Puppi from the same process).
+
+## Addendum (2026-07-20): Layer-1 Puppi completeness requirement
+
+Investigation of the current PU200 RelVal found its persisted `l1tLayer1:PuppiRegional`
+holds only 53-62 nonzero candidates/event, spanning |eta| <= 2.43: the Barrel and HGCal
+partitions are populated but **HF and HGCalNoTK produced ZERO Puppi candidates**. This is
+a property of the file (its HLT reprocessing), not of the re-emulation chain — our
+deregionizer + SeededCone re-run reproduces the file's own persisted jets essentially
+exactly, and neither the deregionizer caps (nPuppiFinalBuffer=128, not binding) nor any
+nano table cut (empty) are involved.
+
+Consequence for procurement: new PU inputs MUST have a COMPLETE Layer-1 Puppi output
+across all four partitions (Barrel, HGCal, HGCalNoTK, HF) — verify per-partition
+candidate counts are nonzero and the total multiplicity is O(200+) per PU200 event
+before accepting a sample. The current file remains fine for track-side studies and for
+exercising jet-side machinery, but is NOT a representative candidate-multiplicity sample
+for tagger training.
