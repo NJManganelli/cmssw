@@ -41,15 +41,46 @@ public:
     std::vector<float> tpPt(nCands, -1.f);
     std::vector<bool> tpFromHardInteraction(nCands, false);
 
-    if (candsHandle.isValid() && tracksHandle.isValid() && assocHandle.isValid()) {
+    // Sentinel convention (see DPGAnalysis/Phase3SmartPixelsNanoAOD/README.md):
+    //   -2 = PRODUCT-level failure: a collection needed to resolve the
+    //        PFCandidate->PFTrack->TTTrack->truth chain is unavailable in this event
+    //        (the PFTrack collection is dropped so its refs dangle, or the TTTrack /
+    //        TTTrackAssociationMap products are absent), so truth could not run for
+    //        ANY candidate. This replaces the former hard-deref of unstored PFTrack
+    //        refs (which threw ProductNotFound and forced the table to be dropped);
+    //        the table now self-guards and can always be scheduled.
+    //   -1 = ELEMENT-level no-match: the products ARE available but this specific
+    //        candidate has no resolvable track ref (e.g. a neutral candidate).
+    //    0 = the candidate's underlying track was resolved; the truth columns carry
+    //        the association result for it.
+    // Product-level probe for the PFTrack collection: isNonnull() only means the Ref
+    // carries a ProductID+key; isAvailable() detects whether the referenced PFTrack
+    // product is actually present. A single dangling ref => the product is missing.
+    bool pfTrackProductAvailable = true;
+    if (candsHandle.isValid()) {
       for (size_t i = 0; i < nCands; ++i) {
         const auto& trkRef = (*candsHandle)[i].pfTrack();
-        if (trkRef.isNull())
+        if (trkRef.isNonnull() && !trkRef.isAvailable()) {
+          pfTrackProductAvailable = false;
+          break;
+        }
+      }
+    }
+    const bool truthResolvable =
+        candsHandle.isValid() && tracksHandle.isValid() && assocHandle.isValid() && pfTrackProductAvailable;
+
+    std::vector<int32_t> truthStatus(nCands, truthResolvable ? -1 : -2);
+
+    if (truthResolvable) {
+      for (size_t i = 0; i < nCands; ++i) {
+        const auto& trkRef = (*candsHandle)[i].pfTrack();
+        if (trkRef.isNull() || !trkRef.isAvailable())
           continue;
         const auto& ttRef = trkRef->track();
         if (ttRef.isNull() || ttRef.id() != tracksHandle.id())
           continue;
         edm::Ptr<L1Track> ptr(tracksHandle, ttRef.key());
+        truthStatus[i] = 0;
         genuine[i] = assocHandle->isGenuine(ptr);
         loose[i] = assocHandle->isLooselyGenuine(ptr);
         combinatoric[i] = assocHandle->isCombinatoric(ptr);
@@ -63,6 +94,10 @@ public:
     }
 
     auto table = std::make_unique<nanoaod::FlatTable>(nCands, candTableName_, false, true);
+    table->addColumn<int32_t>(
+        "trkTruthStatus", truthStatus,
+        "candidate->track truth resolution: 0 = resolved (truth columns valid); -1 = candidate has no "
+        "resolvable track ref; -2 = the PFTrack/TTTrack/association product is unavailable this event");
     table->addColumn<bool>("trkGenuine", genuine, "underlying track is genuine (TTTrackAssociationMap)");
     table->addColumn<bool>("trkLooselyGenuine", loose, "underlying track is loosely genuine");
     table->addColumn<bool>("trkCombinatoric", combinatoric, "underlying track is a combinatoric fake");
