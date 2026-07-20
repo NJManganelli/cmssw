@@ -119,11 +119,74 @@ def addPh3L1SmartPixelsRefitTables(process,
     return process
 
 
+# ---------------------------------------------------------------------------
+# PF/Puppi/jet re-emulation for the reduced-menu PU RelVals (posture-C spirit)
+# ---------------------------------------------------------------------------
+# The 200PU RelVals persist l1tLayer1:PuppiRegional (the per-region Puppi PF
+# candidates) but NOT the flat l1tLayer2Deregionizer:Puppi collection, and their
+# pre-persisted SC4/SC8 jets have constituent Ptrs dangling into that absent
+# deregionizer product -- so consuming the file jets yields candIdx == -1 in the
+# L1JetCandLinkTableProducer. We therefore RE-EMULATE the flat Puppi candidates
+# and the SeededCone jets in-job from the persisted regional Puppi, exactly as
+# posture C rebuilds tracks from the file's stubs:
+#
+#   l1tLayer1:PuppiRegional (FILE) -> DeregionizerProducer (l1tLayer2Deregionizer)
+#                                  -> L1SeedConePFJetProducer SC4 / SC8 (corrected)
+#
+# The in-job jets' constituents Ptr into the fresh in-job deregionizer product, so
+# the L1PuppiCand candIdx crossref resolves. Same-label shadowing hides any file
+# HLT branch for downstream default-configured consumers, like posture C's tracks.
+# Only the PROMPT (non-extended) Puppi is re-run; L1PuppiCand.l1TrackIdx points at
+# the posture-C re-run l1tTTTracksFromTrackletEmulation. This is the hook the
+# PF-carrying SmartPix flavor wiring calls (see customize TODO in the report).
+def reemulateJetSideForPFTier(process,
+                              regionalPuppi=("l1tLayer1", "PuppiRegional"),
+                              doSC4=True, doSC8=True):
+    """Schedule the deregionizer + SC4/SC8 SeededCone jet producers in-job so the
+    L1PuppiCand / L1SC4JetCands / L1SC8JetCands / L1puppiJetSC{4,8} nano tables are
+    filled on a reduced-menu (posture-C) PU input. Idempotent: skips a producer if
+    its default label already exists (e.g. a full-menu input already ran it)."""
+    # Build from the BASE cfi modules, NOT l1pfJetMet_cff: that cff imports the
+    # ONNX-backed NG-jet producer at module scope, which bus-errors under native
+    # aarch64 cpuid probing and is not needed here.
+    from L1Trigger.Phase2L1ParticleFlow.l1tDeregionizerProducer_cfi import l1tDeregionizerProducer
+    from L1Trigger.Phase2L1ParticleFlow.l1SeedConePFJetEmulatorProducer_cfi import l1SeedConePFJetEmulatorProducer
+    _JEC = "L1Trigger/Phase2L1ParticleFlow/data/jecs/jecs_20220308.root"
+    seq = []
+    if not hasattr(process, "l1tLayer2Deregionizer"):
+        process.l1tLayer2Deregionizer = l1tDeregionizerProducer.clone(
+            RegionalPuppiCands=cms.InputTag(*regionalPuppi))
+        seq.append(process.l1tLayer2Deregionizer)
+    if doSC4 and not hasattr(process, "l1tSC4PFL1PuppiCorrectedEmulator"):
+        process.l1tSC4PFL1PuppiCorrectedEmulator = l1SeedConePFJetEmulatorProducer.clone(
+            L1PFObjects="l1tLayer2Deregionizer:Puppi",
+            doCorrections=cms.bool(True), correctorFile=cms.string(_JEC),
+            correctorDir=cms.string('L1PuppiSC4EmuJets'))
+        seq.append(process.l1tSC4PFL1PuppiCorrectedEmulator)
+    if doSC8 and not hasattr(process, "l1tSC8PFL1PuppiCorrectedEmulator"):
+        process.l1tSC8PFL1PuppiCorrectedEmulator = l1SeedConePFJetEmulatorProducer.clone(
+            L1PFObjects="l1tLayer2Deregionizer:Puppi",
+            coneSize=cms.double(0.8), wideConeJet=cms.bool(True),
+            doCorrections=cms.bool(True), correctorFile=cms.string(_JEC),
+            correctorDir=cms.string('L1PuppiSC4EmuJets'))
+        seq.append(process.l1tSC8PFL1PuppiCorrectedEmulator)
+    if seq:
+        s = cms.Sequence(seq[0])
+        for m in seq[1:]:
+            s *= m
+        process.smartPixelsJetReemulSequence = s
+        process.smartPixelsJetReemulPath = cms.Path(s)
+    return process
+
+
 # Nano table modules whose source objects are absent from some RelVal L1 menus
 # (posture-A fromFile productions read the file's HLT-process objects, and older
 # RelVals predate the NGJet producer / HPS PF taus). Removing the corresponding
 # tables avoids a ProductNotFound at output time. hpsTauTable is already dropped
 # by the nano_l1_hlt modifier; sc4NGJetTable + its cand link table are not.
+# NOTE: l1tSC8JetCandsTable / l1tSC4JetCandsTable (plain seededcone link tables)
+# are intentionally NOT in this default drop list -- when the PF-carrying tier
+# calls reemulateJetSideForPFTier() their deregionizer Puppi source exists in-job.
 _ABSENT_MENU_TABLES_DEFAULT = ("sc4NGJetTable", "l1tSC4NGJetCandsTable", "hpsTauTable")
 
 
