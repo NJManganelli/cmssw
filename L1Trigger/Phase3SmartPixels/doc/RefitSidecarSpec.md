@@ -1,6 +1,16 @@
 # SmartPixels Refit Sidecar — data-model and adapter contract (spec v0.2)
 
 Changelog:
+- v0.3 (2026-07-20): REFIT_BDT_FEATURES v1 (24 features: the v0 17 plus the
+  classic-7 TrackQuality hw features of the INPUT track, indices 17-23 — the
+  one evidenced gain of the model-space study, +0.014-0.017 AUC in 8/8 paired
+  seeds; the producer selects the assembly by the model's n_features, 17=v0 or
+  24=v1, anything else throws). SmartPixelsRefitHitInfo gains selChi2Margin
+  (runner-up minus best selection chi2; the top missing-feature candidate) —
+  HitInfo ClassVersion bumps. Section 6b gains the projector grazing-crossing
+  clamp: the chi2 pathology's root cause (non-physical predicted crossing
+  angles at near-grazing incidence) is now rejected at the projector, with the
+  chi2UpdateGate retained as the backstop.
 - v0.2 (2026-07-19): adds section 6 — the in-producer refit-quality BDT feature
   vector (REFIT_BDT_FEATURES v0, 17 ordered features) and the KF numerical-guard
   knobs (jacobianMaxAbs, chi2UpdateGate) motivated by the observed ~1% chi2
@@ -71,6 +81,10 @@ struct SmartPixelsRefitHitInfo {   // one entry per LAYER CROSSING attempted (no
   float pullX, pullY, pullAlpha, pullBeta;  // KF pulls r_k/sqrt(S_k) from the scalar updates
   float chi2IncRPhi;       // sum over this crossing's scalar updates of r^2/S, x + alpha terms
   float chi2IncRZ;         //                                              y + beta  terms
+  float selChi2Margin;     // v0.3: runner-up minus best selection chi2 (>=0); how unambiguous
+                           // the hit choice was. Sentinel -999.f when no hit accepted or the
+                           // window held fewer than 2 candidates. Hardware-plausible (computed
+                           // from in-window quantities); eligible for transmitted subsets v2+.
   // --- TRUTH-ONLY fields (never hardware-available; excluded from every transmitted subset) ---
   int8_t selHitClass;      // simlink class of the selected hit: 0 sameTP, 1 otherTP, 2 noise, -1 none
   float  parCotAlpha, parCotBeta;   // selected-hit parent local angles (-999.f if no parent)
@@ -195,7 +209,29 @@ exact order; the model JSON's feature count is validated against it at load.
                          complements, not replaces, the legacy quality)
 ```
 
-Rules: features are raw (no offline log/clip transforms - the guard in 5b bounds
+### v1 extension (v0.3): indices 17-23 = the classic-7 TrackQuality features
+
+The INPUT track's deployed-TQ hw features, decoded exactly as the trkquality
+training does (two's-complement for signed fields, bin indices for the binned
+chi2 quantities) — already on-chip, zero boundary bits, the one evidenced gain
+of the model-space study:
+
+```
+17  tanl               (twos_complement(hwTanl, 16))
+18  z0_scaled          (twos_complement(hwZ0, 12))
+19  bendchi2_bin       (hwBendChi2 bin index)
+20  nstub              (nStubs)
+21  nlaymiss_interior  (interior missed-layer count from hitPattern)
+22  chi2rphi_bin       (hwChi2RPhi bin index)
+23  chi2rz_bin         (hwChi2RZ bin index)
+```
+
+The producer selects the assembly by the loaded model's n_features: 17 -> v0
+vector, 24 -> v1 vector, anything else throws at construction. Exported model
+metadata MUST record the feature-vector version. ngtagger-train's spec-order
+builder mirrors both variants bit-exactly (same decode helpers as trkquality).
+
+Rules: features are raw (no offline log/clip transforms - the guard in 6b bounds
 the chi2 features at source); passthrough tracks are NOT scored (their trkMVA1
 passes through unchanged); the score is written into the refit track's trkMVA1
 ctor slot + track-word MVA bits (spec section 4 adapter 1) and is the TS0
@@ -225,4 +261,20 @@ perturbed crossings inflating H and the relinearization term in r). Guards:
 Both guards act at source, so sidecar/nano/compact-word chi2 values inherit
 them; the offline log-clip workaround in eval_refitq becomes unnecessary for
 post-guard productions.
+
+### Projector grazing-crossing clamp (v0.3 — the root-cause fix)
+
+The chi2 pathology's mechanism (measured 2026-07-19) is a NON-PHYSICAL
+predicted crossing angle at near-grazing incidence: cx.cotAlpha/cotBeta up to
+±30 against physical TBPX ranges of roughly ±0.6 / ±6, with the Jacobian
+column co-inflated only in that sub-population. v0.3 rejects such crossings at
+the projector: a crossing whose predicted |cotAlpha| or |cotBeta| exceeds a
+clamp bound (pinned by measuring the predicted-angle distributions with the
+same bulk/valley discipline used for the gate defaults; generous margins above
+the physical ranges) is treated as INVALID — no window, no sidecar record, no
+KF update, identical to an out-of-acceptance crossing. The chi2UpdateGate
+REMAINS as the numerical backstop; after the clamp its activation count on the
+reference PU sample should drop to (near) zero, which is the clamp's
+acceptance check. Both the clamp bounds and the observed activation shift are
+recorded in the producer/projector comments.
 
