@@ -30,10 +30,13 @@ from L1Trigger.Phase3SmartPixels.customizeSmartPixels_cff import (
     DIGIREFIT_DEFAULTS,
     PASSTHROUGH_MODES,
     RESERVED_MODES,
+    TRUTHSOURCE_CHOICES,
     TRUTH_REQUIRED_MODES,
+    _applyTruthSource,
     _normalizeVariants,
     _resolveDigiRefitConfig,
     addSmartPixelsTrackProducerVariants,
+    attachFromFileStubsChain,
     smartPixelsCoexist,
     smartPixelsVariantLabels,
     smartPixelsVariantSuffix,
@@ -252,6 +255,93 @@ check(_normalizeVariants(["passthrough", ("correctionlibRegression", "1100")])
 # unknown mode still rejected
 expect_raises(ValueError, lambda: smartPixelsVariantSuffix("totallyBogusMode"),
               "unknown mode raises ValueError", contains="unknown SmartPixels mode")
+
+# --- (f) truthSource="fromFileStubs" (posture C) wiring ---------------------
+print("[f] truthSource='fromFileStubs' (posture C) wiring")
+check("fromFileStubs" in TRUTHSOURCE_CHOICES,
+      "fromFileStubs is in the truthSource vocabulary")
+check(set(TRUTHSOURCE_CHOICES) == {"inJob", "fromFile", "fromFileStubs"},
+      "truthSource vocabulary is exactly {inJob, fromFile, fromFileStubs}")
+
+
+def _build_fromfilestubs(extendedTracks, seedCovMode="trackCov"):
+    """Full coexist build with truthSource=fromFileStubs on a process carrying a
+    dummy Path (so the posture-C Task has somewhere to associate)."""
+    p = cms.Process("TEST")
+    p.pdummy = cms.Path()  # somewhere for the posture-C Task to associate
+    return smartPixelsCoexist(
+        p, variants=[("digiRefit", "1100")], addNanoTables=False,
+        truthSource="fromFileStubs", extendedTracks=extendedTracks,
+        digiRefitConfig={"pixelavAngleSet": "dummy/x.json", "seedCovMode": seedCovMode})
+
+
+# extended ON (default): full prompt+extended posture-C chain present
+p_ffs = _build_fromfilestubs(extendedTracks=True)
+_PROMPT_CHAIN = ["ProducerDTC", "l1tTTTracksFromTrackletEmulation",
+                 "TTTrackAssociatorFromPixelDigis"]
+_EXT_CHAIN = ["l1tTTTracksFromExtendedTrackletEmulation",
+              "TTTrackAssociatorFromPixelDigisExtended"]
+for m in _PROMPT_CHAIN:
+    check(hasattr(p_ffs, m), f"posture-C chain module '{m}' present (default labels)")
+for m in _EXT_CHAIN:
+    check(hasattr(p_ffs, m), f"posture-C extended chain module '{m}' present (extendedTracks=True)")
+# the re-run track associator points at the NEW tracklet tracks (default label)
+check(list(p_ffs.TTTrackAssociatorFromPixelDigis.TTTracks)[0]
+      == cms.InputTag("l1tTTTracksFromTrackletEmulation", "Level1TTTracks"),
+      "prompt TTTrackAssociatorFromPixelDigis re-run against the new tracklet tracks")
+check(list(p_ffs.TTTrackAssociatorFromPixelDigisExtended.TTTracks)[0]
+      == cms.InputTag("l1tTTTracksFromExtendedTrackletEmulation", "Level1TTTracks"),
+      "extended associator re-run against the new extended tracklet tracks")
+# the cluster/stub map tags carry NO process name -> resolve to the file's HLT maps
+check(p_ffs.TTTrackAssociatorFromPixelDigis.TTClusterTruth.getProcessName() == "",
+      "TTClusterTruth has no process name (resolves to file HLT maps)")
+check(p_ffs.TTTrackAssociatorFromPixelDigis.TTStubTruth.getProcessName() == "",
+      "TTStubTruth has no process name (resolves to file HLT maps)")
+# DIGI-tier + cluster/stub associators are ABSENT (never scheduled in-process)
+for m in ("TTClusterAssociatorFromPixelDigis", "TTStubAssociatorFromPixelDigis",
+          "simSiPixelDigis", "mix", "offlineBeamSpot"):
+    check(not hasattr(p_ffs, m),
+          f"DIGI-tier/cluster-stub module '{m}' NOT scheduled in-process (posture C)")
+# the posture-C Task exists and contains exactly the chain modules
+check(hasattr(p_ffs, "l1tSmartPixelsFromFileStubsTask"),
+      "posture-C Task l1tSmartPixelsFromFileStubsTask exists")
+_task_names = {mod.label_() for mod in p_ffs.l1tSmartPixelsFromFileStubsTask._collection}
+check(_task_names == set(_PROMPT_CHAIN + _EXT_CHAIN),
+      f"posture-C Task holds exactly prompt+extended chain (got {sorted(_task_names)})")
+
+# extended OFF: prompt chain only. NOTE: the extended EMULATOR module
+# (l1tTTTracksFromExtendedTrackletEmulation) is still defined on the process --
+# the l1tTTTracksFromTrackletEmulation_cfi import brings both prompt and extended
+# emulator objects regardless -- but it is NOT on the posture-C Task and its
+# associator is not cloned. The knob's load-bearing effect is Task membership.
+p_ffs_p = _build_fromfilestubs(extendedTracks=False)
+for m in _PROMPT_CHAIN:
+    check(hasattr(p_ffs_p, m), f"prompt-only build still has '{m}'")
+check(not hasattr(p_ffs_p, "TTTrackAssociatorFromPixelDigisExtended"),
+      "extendedTracks=False -> extended track associator NOT cloned")
+_task_names_p = {mod.label_() for mod in p_ffs_p.l1tSmartPixelsFromFileStubsTask._collection}
+check(_task_names_p == set(_PROMPT_CHAIN),
+      f"prompt-only posture-C Task holds exactly the prompt chain (got {sorted(_task_names_p)})")
+check("l1tTTTracksFromExtendedTrackletEmulation" not in _task_names_p,
+      "extendedTracks=False -> extended emulator NOT on the posture-C Task")
+# extended ON vs OFF changes the scheduled module set (knob is live)
+_task_names_on = {mod.label_() for mod in p_ffs.l1tSmartPixelsFromFileStubsTask._collection}
+check(_task_names_on != _task_names_p and _EXT_CHAIN[0] in _task_names_on,
+      "extendedTracks on/off changes the scheduled posture-C module set")
+
+# unknown truthSource still raises loudly
+def _bad_truthsource():
+    p = cms.Process("TEST")
+    _applyTruthSource(p, "bogusPosture", [("passthrough", None)])
+expect_raises(ValueError, _bad_truthsource,
+              "unknown truthSource raises ValueError", contains="truthSource must be one of")
+
+# attachFromFileStubsChain returns the chain module list (prompt-only when off)
+p_direct = cms.Process("TEST")
+p_direct.pdummy = cms.Path()
+_p, _chain = attachFromFileStubsChain(p_direct, extendedTracks=False)
+check(_chain == _PROMPT_CHAIN,
+      f"attachFromFileStubsChain(extendedTracks=False) returns prompt chain (got {_chain})")
 
 # --- summary ---------------------------------------------------------------
 print()
