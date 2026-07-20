@@ -81,6 +81,12 @@ DIGIREFIT_DEFAULTS = {
     "maxHitsPerWindow": 8,    # combinatorics truncation: max in-window digis kept per layer
     "maxKFUpdates": 4,        # max Kalman updates applied (layer/update cap)
     "gainMode": "full",       # "full" (exact gain) | "lut" (RESERVED table-driven placeholder)
+    # KF numerical guards (spec §6b, FPGA-fidelity handles). Defaults from the PU
+    # chi2-tail investigation: physical |H|<~200 and the physical (incl. wrong-hit)
+    # chi2-increment ceiling is ~1.9e6, so 1e4/2e6 kill only the non-physical
+    # grazing-crossing tail (chi2 up to ~1e10) and leave the physical bulk untouched.
+    "jacobianMaxAbs": 1.0e4,  # |H[k][j]| above this (or non-finite) zeroes that Jacobian column
+    "chi2UpdateGate": 2.0e6,  # scalar update with r^2/S above this is skipped entirely
     # --- Kalman seed (user decision 2026-07-18: config-switchable, trackCov default) ---
     "seedNPar": 5,            # 4 | 5: seed-track parametrization entering the KF
     "seedCovMode": "trackCov",  # "trackCov" (TTTrack helixCovMat) | "parametrized" (ablation/fallback)
@@ -142,6 +148,19 @@ def _resolveDigiRefitConfig(digiRefitConfig=None):
           f"digiRefitConfig['{wk}'] must be a positive scalar or 4 per-layer "
           f"positive values (TBPX L1-L4), got {resolved[wk]!r}")
     resolved[wk] = wv
+  # KF numerical guards must be positive doubles (spec §6b).
+  for gk in ("jacobianMaxAbs", "chi2UpdateGate"):
+    gv = resolved[gk]
+    if not isinstance(gv, (int, float)) or isinstance(gv, bool) or gv <= 0:
+      raise ValueError(
+          f"digiRefitConfig['{gk}'] must be a positive number, got {resolved[gk]!r}")
+    resolved[gk] = float(gv)
+  # Refit-quality BDT model path (spec §6a): a string; "" disables scoring.
+  # Feature-count validation (n_features == 17) happens producer-side at load.
+  if not isinstance(resolved["bdtModel"], str):
+    raise ValueError(
+        f"digiRefitConfig['bdtModel'] must be a string path (\"\" = none), "
+        f"got {resolved['bdtModel']!r}")
   return resolved
 
 
@@ -208,11 +227,14 @@ def _applyDigiRefitConfig(module, resolved):
   module.digiRefitMaxHitsPerWindow = cms.int32(resolved["maxHitsPerWindow"])
   module.digiRefitMaxKFUpdates = cms.int32(resolved["maxKFUpdates"])
   module.digiRefitGainMode = cms.string(resolved["gainMode"])
+  module.digiRefitJacobianMaxAbs = cms.double(resolved["jacobianMaxAbs"])
+  module.digiRefitChi2UpdateGate = cms.double(resolved["chi2UpdateGate"])
   module.digiRefitSeedNPar = cms.int32(resolved["seedNPar"])
   module.digiRefitSeedCovMode = cms.string(resolved["seedCovMode"])
   module.digiRefitParamSigmas = cms.vdouble(*resolved["paramSigmas"])
   module.digiRefitPixelavAngleSet = cms.string(resolved["pixelavAngleSet"])
   module.digiRefitSmarthitFakeSet = cms.string(resolved["smarthitFakeSet"])
+  module.digiRefitBdtModel = cms.string(resolved["bdtModel"])
 
 
 def addSmartPixelsTrackProducerVariants(process, variants=None, correctionSet=DEFAULT_CORRECTION_SET,
