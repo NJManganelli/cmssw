@@ -120,6 +120,76 @@ def addPh3L1SmartPixelsRefitTables(process,
 
 
 # ---------------------------------------------------------------------------
+# Reference-track OT stub position tables (task Part B; viz true-anchor + refit
+# research). The L1SmartPixelsStubPosTableProducer walks getStubRefs() on a
+# reference TTTrack collection and emits ONE per-stub LINK table (one row per stub
+# across all tracks) carrying the stub's real global position (x,y,z,r,phi), its
+# tracker layer/disk id, isBarrel, detId, and FE bend. trackIdx links back to the
+# reference track table (the L1SC4NGJetCands / refit-hit link-table pattern).
+#
+# KEYED TO THE REFERENCE COLLECTIONS, NOT THE REFIT VARIANTS (task Part B.2):
+#   prompt  -> l1tTTTracksFromTrackletEmulation:Level1TTTracks       (nano "L1TTrack")
+#   extended-> l1tTTTracksFromExtendedTrackletEmulation:Level1TTTracks (nano "L1TExtTrack")
+# The refit variants reuse the SAME stub refs (setStubRefs) so the stub geometry is
+# identical -- but the SEED's stubs are the physics constraint being visualized, and
+# the reference tables are the untouched anchor that trackIdx and the L1TrackTruth
+# table both resolve against. Emitting once against the reference collections (rather
+# than once per variant) is therefore both correct AND avoids redundant identical
+# copies. Under posture C (fromFileStubs) these reference labels are re-run in-job
+# from the file's stubs, so the stub geometry is the fresh new-layout one.
+l1tPh3SmartPixelsStubTable = cms.EDProducer(
+    "L1SmartPixelsStubPosTableProducer",
+    tracks = cms.InputTag("l1tTTTracksFromTrackletEmulation", "Level1TTTracks"),
+    stubTableName = cms.string("L1TTrackStub"),
+    trackTableName = cms.string("L1TTrack"),
+)
+
+
+def addPh3L1SmartPixelsStubTables(process,
+                                  promptSrc=("l1tTTTracksFromTrackletEmulation", "Level1TTTracks"),
+                                  extendedSrc=("l1tTTTracksFromExtendedTrackletEmulation", "Level1TTTracks"),
+                                  promptTrackTable="L1TTrack",
+                                  extendedTrackTable="L1TExtTrack",
+                                  doExtended=True):
+    """Add the reference-track OT stub-position tables (prompt + extended).
+
+    One per-stub LINK table per reference collection, so the viz can render the
+    true OT anchors of whichever seed (prompt or extended) it visualizes. The
+    stub table's trackIdx links into promptTrackTable / extendedTrackTable (the
+    reference L1TTrack / L1TExtTrack nano tables), which the L1TrackTruth table
+    also aligns to -- so stubs, kinematics and truth all share one track index.
+
+    Idempotent per table name: skips if the label already exists (a job that
+    calls this twice, e.g. once per SmartPix flavor, adds each table once).
+    """
+    # Module labels must END in "Table" (keep-pattern gotcha): NANOAOD event
+    # content keeps only nanoaodFlatTable_*Table_*_* and the output module's
+    # consumes (which trigger the unscheduled producers) derive from that.
+    promptLabel = "l1tPh3SmartPixelsStubTable"
+    extendedLabel = "l1tPh3ExtSmartPixelsStubTable"
+    newModules = []
+    if not hasattr(process, promptLabel):
+        setattr(process, promptLabel, l1tPh3SmartPixelsStubTable.clone(
+            tracks = cms.InputTag(*promptSrc),
+            stubTableName = cms.string(f"{promptTrackTable}Stub"),
+            trackTableName = cms.string(promptTrackTable),
+        ))
+        newModules.append(promptLabel)
+    if doExtended and not hasattr(process, extendedLabel):
+        setattr(process, extendedLabel, l1tPh3SmartPixelsStubTable.clone(
+            tracks = cms.InputTag(*extendedSrc),
+            stubTableName = cms.string(f"{extendedTrackTable}Stub"),
+            trackTableName = cms.string(extendedTrackTable),
+        ))
+        newModules.append(extendedLabel)
+    if newModules:
+        task = cms.Task(*[getattr(process, m) for m in newModules])
+        process.p3L1SmartPixelsStubTask = task
+        process.l1tPh2NanoTask.add(task)
+    return process
+
+
+# ---------------------------------------------------------------------------
 # PF/Puppi/jet re-emulation for the reduced-menu PU RelVals (posture-C spirit)
 # ---------------------------------------------------------------------------
 # The 200PU RelVals persist l1tLayer1:PuppiRegional (the per-region Puppi PF
