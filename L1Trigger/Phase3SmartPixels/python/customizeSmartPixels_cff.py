@@ -356,8 +356,30 @@ def useTruthAssociationFromFile(process, associatorLabels=TRUTH_ASSOCIATOR_LABEL
 TRUTHSOURCE_CHOICES = ("inJob", "fromFile", "fromFileStubs")
 
 
-def attachFromFileStubsChain(process, extendedTracks=True):
+# The prompt tracklet producer defaults to Extended=False, Hnpar=4 (d0 pinned to
+# 0, 4x4 covariance). Setting Hnpar=5 (keeping Extended=False) makes the PROMPT
+# collection 5-par: a REAL fitted d0 and a REAL 5x5 helix covariance. Static trace
+# (2026-07-20): no guard couples Hnpar to Extended; the prompt USEHYBRID path runs
+# TMTT KFParamsComb dimensioned purely by nHelixPar (KFbase.cc:81 pins d0 on
+# nHelixPar==4, NOT on extended; L1fittedTrack.h fills the full 5x5 for nHelixPar==5).
+# This is the PRIME-TARGET seed for the prompt digiRefit (seedCovMode=trackCov). It is
+# LIKELY-WORKS-UNVALIDATED: off the shipped config path (no config pairs Extended=False
+# with Hnpar=5), and the 5-par KF layer/d0 cuts were tuned for the displaced seed
+# population -- so prompt-seed d0 resolution/efficiency needs a RUNTIME sanity pass
+# (deferred; RelVal inputs are offline). See the task report for the exact recipe.
+PROMPT_HNPAR_CHOICES = (4, 5)
+
+
+def attachFromFileStubsChain(process, extendedTracks=True, promptHnpar=4):
   """POSTURE C: rebuild NEW-layout L1 tracks from the FILE'S persisted stub tier.
+
+  promptHnpar (4 | 5): helix-parameter count of the PROMPT tracklet fit. 4 (default,
+  back-compat) keeps d0 pinned to 0 with a 4x4 covariance -- the prompt digiRefit then
+  seeds with the weak-d0-prior fallback (the producer's nFitPars()==5 guard auto-selects
+  it). 5 makes the prompt collection carry a REAL fitted d0 + 5x5 covariance, so the
+  prompt digiRefit seeds from a genuine 5-par covariance (seedCovMode=trackCov). The
+  extended chain is always Hnpar=5 regardless. Only affects the SEED helix/covariance;
+  the stub geometry (and hence the Part-B stub tables) is identical either way.
 
   The PU RelVal persists the entire stub tier WITH pileup (TTStubs + all three
   truth-association map sets + TrackingParticles + offlineBeamSpot, all HLT-process).
@@ -400,11 +422,19 @@ def attachFromFileStubsChain(process, extendedTracks=True):
   # the tracklet cfi pulls trklet::ProducerSetup; ProducerHPH_cff pulls hph::Setup
   # (consumed by the digiRefit producer). TrackTrigger_cff provides the TTStub
   # algorithm ES records the setups reference.
+  if promptHnpar not in PROMPT_HNPAR_CHOICES:
+    raise ValueError(f"promptHnpar must be one of {PROMPT_HNPAR_CHOICES}, got {promptHnpar!r}")
+
   process.load('L1Trigger.TrackTrigger.TrackTrigger_cff')
   process.load('L1Trigger.TrackerDTC.DTC_cff')
   process.load('L1Trigger.TrackFindingTracklet.l1tTTTracksFromTrackletEmulation_cfi')
   process.load('L1Trigger.TrackFindingTracklet.ProducerHPH_cff')
   process.load('SimTracker.TrackTriggerAssociation.TTTrackAssociation_cfi')
+
+  # PRIME TARGET: 5-par PROMPT seed. Keep Extended=False (the prompt seed geometry)
+  # and only bump the helix-parameter count so the prompt fit floats a real d0 + 5x5
+  # covariance. Extended stays Hnpar=5 unconditionally (its shipped clone default).
+  process.l1tTTTracksFromTrackletEmulation.Hnpar = cms.uint32(promptHnpar)
 
   # Re-run the PROMPT track associator against the NEW tracks; cluster/stub maps
   # and TPs resolve to the file's HLT branches (no in-process producer for them).
@@ -433,10 +463,14 @@ def attachFromFileStubsChain(process, extendedTracks=True):
     path.associate(process.l1tSmartPixelsFromFileStubsTask)
   for _, epath in process.endpaths_().items():
     epath.associate(process.l1tSmartPixelsFromFileStubsTask)
+  print(f"SmartPixels posture-C: prompt tracklet Hnpar={promptHnpar} "
+        + ("(5-par PRIME seed: real d0 + 5x5 cov -> prompt digiRefit trackCov)"
+           if promptHnpar == 5
+           else "(4-par: d0 pinned 0 -> prompt digiRefit weak-d0-prior fallback)"))
   return process, chainModules
 
 
-def _applyTruthSource(process, truthSource, variants, extendedTracks=True):
+def _applyTruthSource(process, truthSource, variants, extendedTracks=True, promptHnpar=4):
   if truthSource not in TRUTHSOURCE_CHOICES:
     raise ValueError(f"truthSource must be one of {TRUTHSOURCE_CHOICES}, got '{truthSource}'")
   # Truth is load-bearing for these modes (silent per-track passthrough otherwise):
@@ -458,7 +492,8 @@ def _applyTruthSource(process, truthSource, variants, extendedTracks=True):
     process = useTruthAssociationFromFile(
         process, associatorLabels=("TTClusterAssociatorFromPixelDigis",
                                    "TTStubAssociatorFromPixelDigis"))
-    process, attached = attachFromFileStubsChain(process, extendedTracks=extendedTracks)
+    process, attached = attachFromFileStubsChain(process, extendedTracks=extendedTracks,
+                                                 promptHnpar=promptHnpar)
     removed = ["TTClusterAssociatorFromPixelDigis", "TTStubAssociatorFromPixelDigis"]
   # Load-bearing summary line (posture, chains attached, what was removed).
   if truthSource == "inJob":
@@ -554,7 +589,7 @@ def injectSmartPixelsTrackProducer(process,
 # WF1: coexist — standard tracks AND SmartPixels variant tables in one L1Nano
 # ---------------------------------------------------------------------------
 def smartPixelsCoexist(process, variants=None, correctionSet=DEFAULT_CORRECTION_SET, addNanoTables=True,
-                       truthSource="inJob", digiRefitConfig=None, extendedTracks=True):
+                       truthSource="inJob", digiRefitConfig=None, extendedTracks=True, promptHnpar=4):
   """Add SmartPixels track collections (default: one passthrough variant)
   alongside the standard tracks, plus one pair of L1Nano track tables per
   variant. Nothing downstream is rewired: all other L1 objects still reflect
@@ -581,6 +616,19 @@ def smartPixelsCoexist(process, variants=None, correctionSet=DEFAULT_CORRECTION_
   chain so the extended digiRefit variant's inputs are fresh new-layout tracks
   (trackCov valid for them too). Default True.
 
+  promptHnpar (fromFileStubs only; 4 | 5): helix-parameter count of the PROMPT
+  tracklet fit. THE PRIME TARGET is promptHnpar=5 (keeping Extended=False): the
+  prompt collection then carries a REAL fitted d0 + 5x5 covariance, so the prompt
+  digiRefit variant seeds from a genuine 5-par covariance (seedCovMode=trackCov,
+  the digiRefit default). promptHnpar=4 (default, back-compat) keeps d0 pinned to 0;
+  the prompt digiRefit then uses the weak-d0-prior fallback (the producer's
+  nFitPars()==5 guard auto-selects it per-collection, so seedNPar=5/trackCov in the
+  config degrades correctly for a 4-par prompt without any config change). The
+  extended chain is always Hnpar=5. Only fromFileStubs honors this knob (inJob/
+  fromFile use the shipped prompt cfi default of 4). RUNTIME-DEFERRED: whether a
+  5-par prompt fit yields sane d0 + nonzero cov (the KF's 5-par layer cuts were
+  tuned for the displaced seed population) needs a validation pass -- see the report.
+
   digiRefitConfig: dict merged over DIGIREFIT_DEFAULTS (validated loudly),
   relevant only for a digiRefit variant. NOTE: combining truthSource='fromFile'
   (old posture A) with seedCovMode='trackCov' is not special-cased at config
@@ -597,11 +645,13 @@ def smartPixelsCoexist(process, variants=None, correctionSet=DEFAULT_CORRECTION_
   process, modules = addSmartPixelsTrackProducerVariants(process, variants, correctionSet,
                                                          digiRefitConfig=digiRefitConfig)
   process = _scheduleVariantModules(process, modules, "l1tSmartPixelsCoexistTask")
-  process = _applyTruthSource(process, truthSource, variants, extendedTracks=extendedTracks)
+  process = _applyTruthSource(process, truthSource, variants, extendedTracks=extendedTracks,
+                              promptHnpar=promptHnpar)
 
   if addNanoTables:
     from DPGAnalysis.Phase3SmartPixelsNanoAOD.l1tPh3SmartPixelsNano_cff import (
-        addPh3L1SmartPixelsTracks, addPh3L1SmartPixelsRefitTables)
+        addPh3L1SmartPixelsTracks, addPh3L1SmartPixelsRefitTables,
+        addPh3L1SmartPixelsStubTables)
     for mode, activeSP in variants:
       prompt, extended = smartPixelsVariantLabels(mode, activeSP)
       suffix = smartPixelsVariantSuffix(mode, activeSP)
@@ -610,6 +660,12 @@ def smartPixelsCoexist(process, variants=None, correctionSet=DEFAULT_CORRECTION_
       # link table + track extension table. Other modes produce no sidecar.
       if mode == "digiRefit":
         addPh3L1SmartPixelsRefitTables(process, srcLabel=prompt, srcExtendedLabel=extended, tableSuffix=suffix)
+    # Reference-track OT stub-position tables (task Part B): added ONCE per job,
+    # keyed to the reference L1TTrack / L1TExtTrack collections (not the refit
+    # variants -- the refit reuses the same stub refs). Idempotent, so calling it
+    # per coexist is safe. The prompt reference is 5-par when promptHnpar=5 (this
+    # only affects the seed helix; the stub geometry is unchanged either way).
+    addPh3L1SmartPixelsStubTables(process, doExtended=extendedTracks)
   return process
 
 
@@ -619,7 +675,7 @@ def smartPixelsCoexist(process, variants=None, correctionSet=DEFAULT_CORRECTION_
 def smartPixelsCoopt(process, mode="passthrough", activeSP=None,
                      correctionSet=DEFAULT_CORRECTION_SET,
                      addPh3Table=False, skipModuleTypes=None,
-                     truthSource="inJob", digiRefitConfig=None, extendedTracks=True):
+                     truthSource="inJob", digiRefitConfig=None, extendedTracks=True, promptHnpar=4):
   """Produce ONE SmartPixels variant in-job and inject it into every downstream
   consumer of the standard tracklet tracks. Any nano flavor run in this job then
   reflects that single track interpretation; comparisons are file-to-file
@@ -649,7 +705,8 @@ def smartPixelsCoopt(process, mode="passthrough", activeSP=None,
   process, modules = addSmartPixelsTrackProducerVariants(process, [(mode, activeSP)], correctionSet,
                                                          digiRefitConfig=digiRefitConfig)
   process = _scheduleVariantModules(process, modules, "l1tSmartPixelsCooptTask")
-  process = _applyTruthSource(process, truthSource, [(mode, activeSP)], extendedTracks=extendedTracks)
+  process = _applyTruthSource(process, truthSource, [(mode, activeSP)], extendedTracks=extendedTracks,
+                              promptHnpar=promptHnpar)
 
   prompt, extended = smartPixelsVariantLabels(mode, activeSP)
   process = injectSmartPixelsTrackProducer(process,
@@ -660,11 +717,17 @@ def smartPixelsCoopt(process, mode="passthrough", activeSP=None,
 
   if addPh3Table:
     from DPGAnalysis.Phase3SmartPixelsNanoAOD.l1tPh3SmartPixelsNano_cff import (
-        addPh3L1SmartPixelsTracks, addPh3L1SmartPixelsRefitTables)
+        addPh3L1SmartPixelsTracks, addPh3L1SmartPixelsRefitTables,
+        addPh3L1SmartPixelsStubTables)
     suffix = smartPixelsVariantSuffix(mode, activeSP)
     addPh3L1SmartPixelsTracks(process, srcLabel=prompt, srcExtendedLabel=extended, tableSuffix=suffix)
     if mode == "digiRefit":
       addPh3L1SmartPixelsRefitTables(process, srcLabel=prompt, srcExtendedLabel=extended, tableSuffix=suffix)
+    # Reference-track OT stub-position tables (task Part B), keyed to the reference
+    # L1TTrack / L1TExtTrack collections. In coopt the injector rewires downstream
+    # consumers to the variant, but the reference tracklet collections still exist
+    # (they are the injector's protected input) so the stub tables resolve.
+    addPh3L1SmartPixelsStubTables(process, doExtended=extendedTracks)
   return process
 
 
