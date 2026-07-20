@@ -157,6 +157,22 @@ _m_bdt = getattr(
     _dr_prompt)
 check(_m_bdt.digiRefitBdtModel.value() == "L1Trigger/Phase3SmartPixels/data/refitq_model.json",
       "bdtModel override flows onto the module")
+# smarthitTrueSet is RESERVED (Stack A): NOT consumed by Tier-2 but kept as a
+# validated key for a future ASIC-efficiency model. Shipped/default recipes must
+# pass NO real path (empty), and setting one must still validate + wire cleanly
+# (the producer will warn at construction -- cmsRun-gated, DEFERRED).
+check("smarthitTrueSet" in DIGIREFIT_DEFAULTS and DIGIREFIT_DEFAULTS["smarthitTrueSet"] == "",
+      "smarthitTrueSet is a RESERVED key defaulting to empty (no shipped path)")
+check(_m.digiRefitSmarthitTrueSet.value() == "",
+      "default recipe passes an EMPTY smarthitTrueSet path (Stack A not consumed)")
+_m_true = getattr(
+    addSmartPixelsTrackProducerVariants(
+        cms.Process("TEST"), variants=[("digiRefit", "1100")],
+        digiRefitConfig={"pixelavAngleSet": "dummy/x.json",
+                         "smarthitTrueSet": "dummy/smarthit_true_example.json"})[0],
+    _dr_prompt)
+check(_m_true.digiRefitSmarthitTrueSet.value() == "dummy/smarthit_true_example.json",
+      "setting smarthitTrueSet still validates and carries onto the module (RESERVED, warns at ctor)")
 # The RNG scheme is now producer-side (local per-event engine seeded from
 # hash(label,run,lumi,event)); NO RandomNumberGeneratorService is wired.
 check(not hasattr(p_dr, "RandomNumberGeneratorService"),
