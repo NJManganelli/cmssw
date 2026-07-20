@@ -87,6 +87,13 @@ DIGIREFIT_DEFAULTS = {
     # grazing-crossing tail (chi2 up to ~1e10) and leave the physical bulk untouched.
     "jacobianMaxAbs": 1.0e4,  # |H[k][j]| above this (or non-finite) zeroes that Jacobian column
     "chi2UpdateGate": 2.0e6,  # scalar update with r^2/S above this is skipped entirely
+    # Grazing-angle clamps (spec v0.4 §6b). measAngleMaxAbs is LOAD-BEARING (a
+    # synthesized measured cotAlpha/cotBeta beyond it invalidates that angle only,
+    # removing the measurement-driven chi2 pathology at source); predAngleMaxAbs is
+    # secondary hygiene (a predicted crossing angle beyond it invalidates the
+    # crossing at the projector). Both default 12.0.
+    "measAngleMaxAbs": 12.0,  # |synthesized measured cot| above this clears hasAlpha/hasBeta
+    "predAngleMaxAbs": 12.0,  # |predicted crossing cot| above this invalidates the crossing
     # --- Kalman seed (user decision 2026-07-18: config-switchable, trackCov default) ---
     "seedNPar": 5,            # 4 | 5: seed-track parametrization entering the KF
     "seedCovMode": "trackCov",  # "trackCov" (TTTrack helixCovMat) | "parametrized" (ablation/fallback)
@@ -148,8 +155,8 @@ def _resolveDigiRefitConfig(digiRefitConfig=None):
           f"digiRefitConfig['{wk}'] must be a positive scalar or 4 per-layer "
           f"positive values (TBPX L1-L4), got {resolved[wk]!r}")
     resolved[wk] = wv
-  # KF numerical guards must be positive doubles (spec §6b).
-  for gk in ("jacobianMaxAbs", "chi2UpdateGate"):
+  # KF numerical guards + grazing-angle clamps must be positive doubles (spec §6b).
+  for gk in ("jacobianMaxAbs", "chi2UpdateGate", "measAngleMaxAbs", "predAngleMaxAbs"):
     gv = resolved[gk]
     if not isinstance(gv, (int, float)) or isinstance(gv, bool) or gv <= 0:
       raise ValueError(
@@ -229,6 +236,8 @@ def _applyDigiRefitConfig(module, resolved):
   module.digiRefitGainMode = cms.string(resolved["gainMode"])
   module.digiRefitJacobianMaxAbs = cms.double(resolved["jacobianMaxAbs"])
   module.digiRefitChi2UpdateGate = cms.double(resolved["chi2UpdateGate"])
+  module.digiRefitMeasAngleMaxAbs = cms.double(resolved["measAngleMaxAbs"])
+  module.digiRefitPredAngleMaxAbs = cms.double(resolved["predAngleMaxAbs"])
   module.digiRefitSeedNPar = cms.int32(resolved["seedNPar"])
   module.digiRefitSeedCovMode = cms.string(resolved["seedCovMode"])
   module.digiRefitParamSigmas = cms.vdouble(*resolved["paramSigmas"])

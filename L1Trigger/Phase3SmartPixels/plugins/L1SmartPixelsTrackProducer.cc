@@ -123,6 +123,7 @@
 #include <cstdint>
 #include <cmath>
 #include <fstream>
+#include <limits>
 
 // Refit-quality BDT (spec §6a): conifer GBDT evaluated in-flight on the
 // REFIT_BDT_FEATURES v0 feature vector. ap_fixed.h pulls the HLS ap types that
@@ -172,6 +173,33 @@ namespace {
     if (s == 0u)
       s = 1u;
     return static_cast<long>(s);
+  }
+
+  // REFIT_BDT_FEATURES v1 (spec §6a v1): decode the INPUT track's classic-7
+  // TrackQuality hw features EXACTLY as ngtagger-train/train/trkquality.py does
+  // (so the producer's in-flight v1 vector is bit-identical to the training
+  // vector). twos_complement mirrors trkquality.twos_complement; nlaymissInterior
+  // mirrors trkquality.nlaymiss_interior (width 7).
+  inline double twosComplement(unsigned int bits, int width) {
+    const long v = static_cast<long>(bits);
+    const long half = (1L << (width - 1));
+    return static_cast<double>(v >= half ? v - (1L << width) : v);
+  }
+  inline double nlaymissInterior(unsigned int hitpattern, int width = 7) {
+    if (hitpattern == 0u)
+      return 0.0;
+    int first = -1, last = -1;
+    for (int b = 0; b < width; ++b)
+      if ((hitpattern >> b) & 1u) {
+        if (first < 0)
+          first = b;
+        last = b;
+      }
+    int miss = 0;
+    for (int b = first; b <= last; ++b)
+      if (!((hitpattern >> b) & 1u))
+        ++miss;
+    return static_cast<double>(miss);
   }
 }  // namespace
 
@@ -352,6 +380,12 @@ private:
   // non-physical grazing-crossing tail and leave the physical bulk untouched.
   double digiRefitJacobianMaxAbs_ = 1.0e4;  // |H[k][j]| above this (or non-finite) zeroes the column
   double digiRefitChi2UpdateGate_ = 2.0e6;  // scalar update with r^2/S above this is skipped entirely
+  // Grazing-angle clamps (spec v0.4 §6b). measAngleMaxAbs is the LOAD-BEARING
+  // clamp: a synthesized measured cotAlpha/cotBeta beyond it invalidates THAT
+  // ANGLE (the hit keeps its position). predAngleMaxAbs is secondary hygiene,
+  // passed to the projector to reject non-physical predicted crossings.
+  double digiRefitMeasAngleMaxAbs_ = 12.0;  // |synthesized measured cot| above this clears has{Alpha,Beta}
+  double digiRefitPredAngleMaxAbs_ = 12.0;  // |predicted crossing cot| above this invalidates the crossing
   int digiRefitSeedNPar_ = 5;           // 4 (prompt) | 5 (extended + covariance seed)
   std::string digiRefitSeedCovMode_ = "trackCov";  // "trackCov" (TTTrack helixCovMat, default) | "parametrized"
   std::vector<double> digiRefitParamSigmas_;       // parametrized-mode seed sigmas: (rInv[cm^-1], phi0, tanL, z0[cm], d0[cm])
@@ -360,8 +394,13 @@ private:
   std::string digiRefitBdtModel_ = "";  // refit-quality BDT (conifer JSON); empty = keep original trkMVA1
 
   // Refit-quality BDT (spec §6a). Loaded at construction iff digiRefitBdtModel_
-  // is non-empty; evaluated per refit track on the REFIT_BDT_FEATURES v0 vector.
-  static constexpr unsigned kRefitBdtNFeatures = 17;
+  // is non-empty; evaluated per refit track. The assembly is selected by the
+  // loaded model's n_features: 17 = REFIT_BDT_FEATURES v0; 24 = v1 (v0 + the
+  // classic-7 TrackQuality hw features of the INPUT track, spec §6a v1); any
+  // other count throws at construction.
+  static constexpr unsigned kRefitBdtNFeaturesV0 = 17;
+  static constexpr unsigned kRefitBdtNFeaturesV1 = 24;
+  unsigned digiRefitBdtNFeatures_ = 0;  // set at load: 17 or 24
   std::unique_ptr<conifer::BDT<float, float>> digiRefitBdt_;
 
   // Correctionlib refs for the PixelAV angle response (loaded iff digiRefit).
@@ -387,6 +426,8 @@ private:
   // KF numerical-guard activation counters (spec §6b), reported at endStream.
   mutable unsigned long long digiRefitGatedJacCols_ = 0;   // Jacobian columns zeroed by jacobianMaxAbs
   mutable unsigned long long digiRefitGatedUpdates_ = 0;   // scalar updates skipped by chi2UpdateGate
+  mutable unsigned long long digiRefitClampedMeasAngles_ = 0;  // synthesized measured angles cleared by measAngleMaxAbs (spec v0.4 §6b)
+  mutable unsigned long long digiRefitClampedPredCross_ = 0;   // predicted crossings rejected by predAngleMaxAbs (spec v0.4 §6b)
 
   edm::InputTag L1TrackInputTag;       // L1 track collection
   edm::InputTag MCTruthTrackInputTag;  // MC truth collection
@@ -511,6 +552,8 @@ L1SmartPixelsTrackProducer::L1SmartPixelsTrackProducer(edm::ParameterSet const& 
     digiRefitGainMode_ = iConfig.getParameter<std::string>("digiRefitGainMode");
     digiRefitJacobianMaxAbs_ = iConfig.getParameter<double>("digiRefitJacobianMaxAbs");
     digiRefitChi2UpdateGate_ = iConfig.getParameter<double>("digiRefitChi2UpdateGate");
+    digiRefitMeasAngleMaxAbs_ = iConfig.getParameter<double>("digiRefitMeasAngleMaxAbs");
+    digiRefitPredAngleMaxAbs_ = iConfig.getParameter<double>("digiRefitPredAngleMaxAbs");
     digiRefitSeedNPar_ = iConfig.getParameter<int>("digiRefitSeedNPar");
     digiRefitSeedCovMode_ = iConfig.getParameter<std::string>("digiRefitSeedCovMode");
     digiRefitParamSigmas_ = iConfig.getParameter<std::vector<double>>("digiRefitParamSigmas");
@@ -549,6 +592,12 @@ L1SmartPixelsTrackProducer::L1SmartPixelsTrackProducer(edm::ParameterSet const& 
     if (!(digiRefitChi2UpdateGate_ > 0.))
       throw cms::Exception("Configuration")
           << "digiRefitChi2UpdateGate must be a positive double, got " << digiRefitChi2UpdateGate_ << ".";
+    if (!(digiRefitMeasAngleMaxAbs_ > 0.))
+      throw cms::Exception("Configuration")
+          << "digiRefitMeasAngleMaxAbs must be a positive double, got " << digiRefitMeasAngleMaxAbs_ << ".";
+    if (!(digiRefitPredAngleMaxAbs_ > 0.))
+      throw cms::Exception("Configuration")
+          << "digiRefitPredAngleMaxAbs must be a positive double, got " << digiRefitPredAngleMaxAbs_ << ".";
 
     // Refit-quality BDT (spec §6a): load the conifer model at construction and
     // validate its feature count against REFIT_BDT_FEATURES v0 (17). conifer's
@@ -568,10 +617,12 @@ L1SmartPixelsTrackProducer::L1SmartPixelsTrackProducer(edm::ParameterSet const& 
             << "digiRefitBdtModel " << digiRefitBdtModel_
             << " is not a valid conifer JSON (n_features unreadable): " << e.what();
       }
-      if (nFeat != kRefitBdtNFeatures)
+      if (nFeat != kRefitBdtNFeaturesV0 && nFeat != kRefitBdtNFeaturesV1)
         throw cms::Exception("Configuration")
             << "digiRefitBdtModel " << digiRefitBdtModel_ << " has n_features=" << nFeat
-            << " but REFIT_BDT_FEATURES v0 requires exactly " << kRefitBdtNFeatures << ".";
+            << " but REFIT_BDT_FEATURES requires exactly " << kRefitBdtNFeaturesV0 << " (v0) or "
+            << kRefitBdtNFeaturesV1 << " (v1).";
+      digiRefitBdtNFeatures_ = nFeat;
       digiRefitBdt_ = std::make_unique<conifer::BDT<float, float>>(digiRefitBdtModel_);
     }
 
@@ -666,7 +717,9 @@ void L1SmartPixelsTrackProducer::endStream() {
     edm::LogVerbatim("SmartPixelsTrackProducer")
         << "digiRefit KF guards: jacobianMaxAbs zeroed " << digiRefitGatedJacCols_
         << " Jacobian column(s); chi2UpdateGate skipped " << digiRefitGatedUpdates_
-        << " scalar update(s) over " << digiRefitTracksSeen_ << " tracks.";
+        << " scalar update(s); measAngleMaxAbs cleared " << digiRefitClampedMeasAngles_
+        << " synthesized angle(s); predAngleMaxAbs rejected " << digiRefitClampedPredCross_
+        << " predicted crossing(s) over " << digiRefitTracksSeen_ << " tracks.";
     if (digiRefitTruthMatches_ == 0)
       throw cms::Exception("SmartPixelsTruthMissing")
           << "digiRefit processed " << digiRefitTracksSeen_
@@ -1555,9 +1608,20 @@ void L1SmartPixelsTrackProducer::produce(edm::Event& iEvent, const edm::EventSet
         if (!drActiveLayer[layer - 1])
           continue;
 
-        const smartpixels::Crossing cx = projector_.crossLayer(makeHelix(a), layer, drField);
-        if (!cx.valid)
+        const smartpixels::Crossing cx =
+            projector_.crossLayer(makeHelix(a), layer, drField, digiRefitPredAngleMaxAbs_);
+        if (!cx.valid) {
+          // Predicted-angle clamp (spec v0.4 §6b hygiene) or genuine off-acceptance.
+          // Count the clamp activations for the endStream report (attribute a
+          // rejected crossing to the clamp when the unclamped projection WOULD have
+          // been valid but exceeded the predicted-angle bound).
+          const smartpixels::Crossing cxUnclamped = projector_.crossLayer(makeHelix(a), layer, drField, 0.);
+          if (cxUnclamped.valid &&
+              (std::abs(cxUnclamped.cotAlpha) > digiRefitPredAngleMaxAbs_ ||
+               std::abs(cxUnclamped.cotBeta) > digiRefitPredAngleMaxAbs_))
+            ++digiRefitClampedPredCross_;
           continue;
+        }
         const PixelGeomDetUnit* pixDet = cx.det;
         const PixelTopology& pixTopo = pixDet->specificTopology();
         const std::pair<float, float> pitch = pixTopo.pitch();
@@ -1659,6 +1723,22 @@ void L1SmartPixelsTrackProducer::produce(edm::Event& iEvent, const edm::EventSet
               cand.hasB = (cand.sigB > 0.);
             }
 
+            // Measured-angle grazing clamp (spec v0.4 §6b, LOAD-BEARING): a
+            // synthesized measured cotAlpha/cotBeta beyond the physical bound is a
+            // near-grazing-parent synthesis breakdown (p_z at its 1e-9 floor ->
+            // |cot| up to ~2274). Invalidate THAT ANGLE ONLY (clear hasA/hasB); the
+            // hit keeps its position measurement. This removes the entire chi2
+            // pathology at source (77/77 gated updates were measurement-driven);
+            // chi2UpdateGate remains as the numerical backstop.
+            if (cand.hasA && std::abs(cand.cotA) > digiRefitMeasAngleMaxAbs_) {
+              cand.hasA = false;
+              ++digiRefitClampedMeasAngles_;
+            }
+            if (cand.hasB && std::abs(cand.cotB) > digiRefitMeasAngleMaxAbs_) {
+              cand.hasB = false;
+              ++digiRefitClampedMeasAngles_;
+            }
+
             // Selection chi2 against the prediction (position always; angles when enabled+valid).
             double sel = std::pow((cand.x - cx.local.x()) / sigX, 2) +
                          std::pow((cand.y - cx.local.y()) / sigY, 2);
@@ -1686,8 +1766,20 @@ void L1SmartPixelsTrackProducer::produce(edm::Event& iEvent, const edm::EventSet
           drHitInfo.push_back(hi);
           continue;
         }
-        const HitCand& best = *std::min_element(
+        const auto bestIt = std::min_element(
             cands.begin(), cands.end(), [](const HitCand& p, const HitCand& q) { return p.sel < q.sel; });
+        const HitCand& best = *bestIt;
+        // selChi2Margin (spec v0.4 §2): runner-up minus best selection chi2 (>=0),
+        // a hardware-plausible measure of how unambiguous the hit choice was.
+        // Sentinel -999.f when the window held fewer than 2 candidates (no runner-up).
+        double drSelChi2Margin = -999.;
+        if (cands.size() >= 2) {
+          double runnerUp = std::numeric_limits<double>::infinity();
+          for (auto it = cands.begin(); it != cands.end(); ++it)
+            if (it != bestIt && it->sel < runnerUp)
+              runnerUp = it->sel;
+          drSelChi2Margin = runnerUp - best.sel;  // >= 0 by construction
+        }
 
         // ---- linearized measurement model h(a) = (localx, localy, cotAlpha, cotBeta) ----
         // Numerical Jacobian against the SAME shared projector (consistency by
@@ -1701,7 +1793,8 @@ void L1SmartPixelsTrackProducer::produce(edm::Event& iEvent, const edm::EventSet
           for (const double sgn : {+1., -1.}) {
             ROOT::Math::SVector<double, 5> ap = a;
             ap[j] += sgn * kEps[j];
-            const smartpixels::Crossing cp = projector_.crossLayer(makeHelix(ap), layer, drField);
+            const smartpixels::Crossing cp =
+                projector_.crossLayer(makeHelix(ap), layer, drField, digiRefitPredAngleMaxAbs_);
             if (!cp.valid || cp.detId != cx.detId)
               continue;
             const double inv = 1.0 / (sgn * kEps[j]);
@@ -1802,6 +1895,7 @@ void L1SmartPixelsTrackProducer::produce(edm::Event& iEvent, const edm::EventSet
         const double incRZ = (applied[1] ? chi2inc[1] : 0.) + (applied[3] ? chi2inc[3] : 0.);
         hi.chi2IncRPhi = static_cast<float>(incRPhi);
         hi.chi2IncRZ = static_cast<float>(incRZ);
+        hi.selChi2Margin = (drSelChi2Margin > -900.) ? static_cast<float>(drSelChi2Margin) : -999.f;
         hi.selHitClass = best.cls;
         hi.parCotAlpha = static_cast<float>(best.parCotA);
         hi.parCotBeta = static_cast<float>(best.parCotB);
@@ -1846,7 +1940,7 @@ void L1SmartPixelsTrackProducer::produce(edm::Event& iEvent, const edm::EventSet
         if (digiRefitBdt_) {
           const double chi2RPhiTot = (drTrackInfo.chi2IncRPhiTot < -900.f) ? 0. : drTrackInfo.chi2IncRPhiTot;
           const double chi2RZTot = (drTrackInfo.chi2IncRZTot < -900.f) ? 0. : drTrackInfo.chi2IncRZTot;
-          const std::vector<float> feats = {
+          std::vector<float> feats = {
               static_cast<float>(drTrackInfo.nCrossings),               // 0
               static_cast<float>(nAcceptedHits),                        // 1
               static_cast<float>(drLayerHitMask),                       // 2
@@ -1864,6 +1958,19 @@ void L1SmartPixelsTrackProducer::produce(edm::Event& iEvent, const edm::EventSet
               static_cast<float>(a[3] - aSeed[3]),                      // 14 dZ0
               static_cast<float>(a[4] - aSeed[4]),                      // 15 dD0
               static_cast<float>(iterL1Track->trkMVA1())};              // 16 seedTrkMVA1
+          // v1 (spec §6a v1): append the INPUT track's classic-7 TrackQuality hw
+          // features (indices 17-23), decoded bit-exactly as trkquality.py does
+          // on the raw nano hw columns (getXxxBits() -> two's-complement / raw
+          // bin index; nStubs = getStubRefs().size(); nlaymiss over hitPattern()).
+          if (digiRefitBdtNFeatures_ == kRefitBdtNFeaturesV1) {
+            feats.push_back(static_cast<float>(twosComplement(iterL1Track->getTanlBits(), 16)));   // 17 tanl
+            feats.push_back(static_cast<float>(twosComplement(iterL1Track->getZ0Bits(), 12)));     // 18 z0_scaled
+            feats.push_back(static_cast<float>(iterL1Track->getBendChi2Bits()));                   // 19 bendchi2_bin
+            feats.push_back(static_cast<float>(iterL1Track->getStubRefs().size()));                // 20 nstub
+            feats.push_back(static_cast<float>(nlaymissInterior(iterL1Track->hitPattern(), 7)));   // 21 nlaymiss_interior
+            feats.push_back(static_cast<float>(iterL1Track->getChi2RPhiBits()));                   // 22 chi2rphi_bin
+            feats.push_back(static_cast<float>(iterL1Track->getChi2RZBits()));                     // 23 chi2rz_bin
+          }
           refitTrkMVA1 = digiRefitBdt_->decision_function(feats).at(0);
         }
 
@@ -2051,7 +2158,17 @@ void L1SmartPixelsTrackProducer::fillDescriptions(edm::ConfigurationDescriptions
       ->setComment("FPGA-fidelity KF guard: a scalar update with r^2/S above this gate is skipped entirely "
                    "(no state/cov change, no chi2 contribution, pull sentinel; the hit still counts as accepted). "
                    "Numerical-pathology gate ONLY - the physical wrong-hit-contamination ceiling is ~1.9e6, so "
-                   "2e6 removes only the non-physical tail (up to ~1e10) and does NOT gate genuine wrong hits.");
+                   "2e6 removes only the non-physical tail (up to ~1e10) and does NOT gate genuine wrong hits. "
+                   "Backstop to the v0.4 grazing-angle clamps.");
+  desc.add<double>("digiRefitMeasAngleMaxAbs", 12.0)
+      ->setComment("LOAD-BEARING grazing clamp (spec v0.4 §6b): a synthesized measured |cotAlpha|/|cotBeta| "
+                   "above this bound invalidates THAT ANGLE (hasAlpha/hasBeta cleared; the hit keeps its "
+                   "position). Removes the measurement-driven chi2 pathology at source (77/77 gated updates "
+                   "on the reference PU sample); default 12 preserves the O(1-6) wrong-hit signal.");
+  desc.add<double>("digiRefitPredAngleMaxAbs", 12.0)
+      ->setComment("secondary hygiene grazing clamp (spec v0.4 §6b): a predicted crossing |cotAlpha|/|cotBeta| "
+                   "above this bound invalidates the crossing at the projector (no window, no sidecar record). "
+                   "Rejects the ~18 non-physical predicted crossings (up to |cotAlpha| 51.8); NOT the gate driver.");
   desc.add<int>("digiRefitSeedNPar", 5)->setComment("seed-track parametrization for the KF: 4 | 5");
   desc.add<std::string>("digiRefitSeedCovMode", "trackCov")->setComment("seed covariance: trackCov (TTTrack helixCovMat, default) | parametrized");
   desc.add<std::vector<double>>("digiRefitParamSigmas", std::vector<double>{1e-4, 1e-3, 2e-3, 0.06, 0.05})
@@ -2059,9 +2176,10 @@ void L1SmartPixelsTrackProducer::fillDescriptions(edm::ConfigurationDescriptions
   desc.add<std::string>("digiRefitPixelavAngleSet", "")->setComment("PixelAV angle-response correctionlib payload path (REQUIRED for digiRefit)");
   desc.add<std::string>("digiRefitSmarthitFakeSet", "")->setComment("optional Stack B smarthit_fake payload (inclusive noise-angle model)");
   desc.add<std::string>("digiRefitBdtModel", "")
-      ->setComment("optional refit-quality BDT: conifer JSON over REFIT_BDT_FEATURES v0 (17 features, spec §6a). "
-                   "Empty = keep the input trkMVA1 (current behavior). When set, the score replaces the refit "
-                   "track's trkMVA1 ctor slot (+ track-word MVA bits); n_features must equal 17 or it throws at load.");
+      ->setComment("optional refit-quality BDT: conifer JSON over REFIT_BDT_FEATURES (spec §6a). The assembly is "
+                   "selected by the model's n_features: 17 = v0, 24 = v1 (v0 + the classic-7 TrackQuality hw "
+                   "features of the input track). Empty = keep the input trkMVA1. When set, the score replaces the "
+                   "refit track's trkMVA1 ctor slot (+ track-word MVA bits); n_features must be 17 or 24 or it throws.");
   desc.add<edm::InputTag>("pixelDigiInputTag", edm::InputTag("simSiPixelDigis", "Pixel"));
   desc.add<edm::InputTag>("pixelDigiSimLinkInputTag", edm::InputTag("simSiPixelDigis", "Pixel"));
   desc.add<edm::InputTag>("simTrackInputTag", edm::InputTag("g4SimHits"));

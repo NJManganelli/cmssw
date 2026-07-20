@@ -90,7 +90,7 @@ public:
     std::vector<int32_t> hitFlags;
     std::vector<bool> hitAccepted, windowTruncated, hasAlpha, hasBeta;
     std::vector<float> resX, resY, cotAlphaMeas, cotBetaMeas, sigAlpha, sigBeta;
-    std::vector<float> pullX, pullY, pullAlpha, pullBeta, chi2IncRPhi, chi2IncRZ;
+    std::vector<float> pullX, pullY, pullAlpha, pullBeta, chi2IncRPhi, chi2IncRZ, selChi2Margin;
     std::vector<int32_t> selHitClass;
     std::vector<float> parCotAlpha, parCotBeta;
 
@@ -132,6 +132,7 @@ public:
         pullBeta.push_back(hi.pullBeta);
         chi2IncRPhi.push_back(hi.chi2IncRPhi);
         chi2IncRZ.push_back(hi.chi2IncRZ);
+        selChi2Margin.push_back(hi.selChi2Margin);
         selHitClass.push_back(hi.selHitClass);
         parCotAlpha.push_back(hi.parCotAlpha);
         parCotBeta.push_back(hi.parCotBeta);
@@ -164,6 +165,7 @@ public:
     hitTable->addColumn<float>("pullBeta", pullBeta, "KF pull cotBeta = r/sqrt(S) (-999 if none)");
     hitTable->addColumn<float>("chi2IncRPhi", chi2IncRPhi, "crossing chi2 increment, r-phi (x+alpha) terms (-999 if none)", /*mantissaBits=*/12);
     hitTable->addColumn<float>("chi2IncRZ", chi2IncRZ, "crossing chi2 increment, r-z (y+beta) terms (-999 if none)", /*mantissaBits=*/12);
+    hitTable->addColumn<float>("selChi2Margin", selChi2Margin, "runner-up minus best selection chi2 (>=0; -999 if <2 candidates or no accepted hit)", /*mantissaBits=*/12);
     hitTable->addColumn<int32_t>("selHitClass", selHitClass, "TRUTH-ONLY simlink class of selected hit: 0 sameTP, 1 otherTP, 2 noise, -1 none");
     hitTable->addColumn<float>("parCotAlpha", parCotAlpha, "TRUTH-ONLY selected-hit parent local cotAlpha (-999 if none)", /*mantissaBits=*/12);
     hitTable->addColumn<float>("parCotBeta", parCotBeta, "TRUTH-ONLY selected-hit parent local cotBeta (-999 if none)", /*mantissaBits=*/12);
