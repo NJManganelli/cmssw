@@ -1,6 +1,21 @@
-# SmartPixels Refit Sidecar — data-model and adapter contract (spec v0.2)
+# SmartPixels Refit Sidecar — data-model and adapter contract (spec v0.4)
 
 Changelog:
+- v0.4 (2026-07-20): RELOCATES the grazing clamp. The v0.3 root-cause attribution
+  (non-physical PREDICTED crossing angles) was falsified by the pre-implementation
+  investigation: all 77 gated updates on the reference PU sample have physical
+  predicted angles (max |cotBeta| 5.66) and are driven by the MEASUREMENT term —
+  the synthesized measured angle explodes (to |cot| ~2274) when a wrong/noise
+  hit's parent momentum is near-grazing (local p_z -> the 1e-9 floor). The
+  load-bearing clamp is therefore on the SYNTHESIZED MEASURED angle
+  (digiRefitMeasAngleMaxAbs, default 12.0: catches 77/77 pathologies at any
+  bound in 8-20; 12 preserves most of the ambiguous [6,12) wrong-hit tail while
+  the payload domain ends at |cotBeta|=6 and >~15 is unambiguous synthesis
+  breakdown). The projector predicted-angle clamp is RETAINED as secondary
+  hygiene (digiRefitPredAngleMaxAbs, default 12.0) for the 18 genuinely
+  non-physical predicted crossings observed (windowMult ~0; not gate drivers).
+  chi2UpdateGate remains the numerical backstop; its activation count dropping
+  77 -> ~0 under the measured-angle clamp is the acceptance check.
 - v0.3 (2026-07-20): REFIT_BDT_FEATURES v1 (24 features: the v0 17 plus the
   classic-7 TrackQuality hw features of the INPUT track, indices 17-23 — the
   one evidenced gain of the model-space study, +0.014-0.017 AUC in 8/8 paired
@@ -22,7 +37,7 @@ Changelog:
   review — popcount(layerHitMask) == nAcceptedHits is now exact by construction).
 - v0 (2026-07-19): initial contract.
 
-Status: DRAFT v0.2 (2026-07-19). Companion to `PixelAVAngleResponseSpec.md`; same contract
+Status: DRAFT v0.4 (2026-07-19). Companion to `PixelAVAngleResponseSpec.md`; same contract
 discipline: consumers and producers MUST match this document exactly, and any change
 requires a version bump here first.
 
@@ -262,19 +277,40 @@ Both guards act at source, so sidecar/nano/compact-word chi2 values inherit
 them; the offline log-clip workaround in eval_refitq becomes unnecessary for
 post-guard productions.
 
-### Projector grazing-crossing clamp (v0.3 — the root-cause fix)
+### Grazing-angle clamps (v0.4 — root cause measured, fix relocated)
 
-The chi2 pathology's mechanism (measured 2026-07-19) is a NON-PHYSICAL
-predicted crossing angle at near-grazing incidence: cx.cotAlpha/cotBeta up to
-±30 against physical TBPX ranges of roughly ±0.6 / ±6, with the Jacobian
-column co-inflated only in that sub-population. v0.3 rejects such crossings at
-the projector: a crossing whose predicted |cotAlpha| or |cotBeta| exceeds a
-clamp bound (pinned by measuring the predicted-angle distributions with the
-same bulk/valley discipline used for the gate defaults; generous margins above
-the physical ranges) is treated as INVALID — no window, no sidecar record, no
-KF update, identical to an out-of-acceptance crossing. The chi2UpdateGate
-REMAINS as the numerical backstop; after the clamp its activation count on the
-reference PU sample should drop to (near) zero, which is the clamp's
-acceptance check. Both the clamp bounds and the observed activation shift are
-recorded in the producer/projector comments.
+Two successive investigations each falsified their predecessor's mechanism:
+the chi2 pathology is neither Jacobian blowup (v0.2 finding: physical |H| max
+177.5) nor a non-physical PREDICTED crossing angle (v0.3 hypothesis: falsified
+— all 77 gated updates have physical predictions, max |cotBeta| 5.66, and a
+projector clamp catches 0/77). The measured mechanism (77/77 decomposed): the
+SYNTHESIZED MEASURED angle for a wrong/noise hit explodes when the parent
+momentum is near-grazing to the sensor — `cand.cotA/cotB = p_loc/p_z` with
+p_z at its 1e-9 floor yields |cot| up to ~2274, while the prediction h0 stays
+physical; the innovation m - h0 is then measurement-dominated (relinearization
+term <= 0.05 in every gated case).
+
+v0.4 guards, all config knobs (FPGA-fidelity handles):
+
+- `digiRefitMeasAngleMaxAbs` (double, default 12.0) — THE LOAD-BEARING CLAMP:
+  a synthesized measured cotAlpha/cotBeta beyond the bound invalidates that
+  ANGLE (hasAlpha/hasBeta cleared; the hit keeps its position measurement).
+  Bound rationale: catches 77/77 pathologies at any bound in 8-20; the
+  wrong-hit signal the BDT needs lives at O(1-6); the PixelAV payload domain
+  ends at |cotBeta| = 6 (beyond it the sigma/bias are clamp-flow
+  extrapolations anyway); |cot| > ~15 is unambiguous synthesis breakdown
+  (track parallel to sensor cannot make a localizable hit). 12 removes the
+  pathology while cutting only the far ambiguous tail (~87 of the 185+ updates
+  in [6,12) survive vs a bound of 8).
+- `digiRefitPredAngleMaxAbs` (double, default 12.0) — secondary hygiene: a
+  PREDICTED crossing angle beyond the bound invalidates the crossing at the
+  projector (no window, no sidecar record). Catches the 18 observed
+  non-physical predicted crossings (up to |cotAlpha| 51.8); these have
+  windowMult ~0 and are NOT the gate drivers. The analyzer measurement path
+  must remain unclipped (analyzer defaults = no clamp) so payload fits see the
+  full distribution.
+- `chi2UpdateGate` (unchanged) — the numerical backstop. Acceptance check for
+  the v0.4 clamps: gate activations on the reference PU sample drop 77 -> ~0.
+
+Sidecar/nano/compact-word chi2 values inherit all guards at source.
 
