@@ -45,7 +45,8 @@ namespace smartpixels {
     built_ = true;
   }
 
-  Crossing HelixProjector::crossLayer(const HelixParams& h, int layer1based, const MagneticField& field) const {
+  Crossing HelixProjector::crossLayer(const HelixParams& h, int layer1based, const MagneticField& field,
+                                      double predAngleMaxAbs) const {
     Crossing out;
     if (!built_ || layer1based < 1 || layer1based > static_cast<int>(layerModules_.size()))
       return out;
@@ -214,6 +215,16 @@ namespace smartpixels {
     out.localMom = lmom;
     out.cotAlpha = lmom.x() / lpz;
     out.cotBeta = lmom.y() / lpz;
+    // Predicted-angle grazing clamp (spec v0.4 §6b, secondary hygiene): a
+    // near-grazing predicted crossing yields a non-physical local angle. When a
+    // finite bound is supplied (producer only; analyzer passes 0 = disabled),
+    // reject the crossing. Investigation: ~18/68k crossings on the PU sample have
+    // |cotAlpha| up to 51.8 with windowMult~0; these are not the gate drivers but
+    // are physically meaningless. Kept out of the analyzer so payload fits see the
+    // full distribution.
+    if (predAngleMaxAbs > 0. &&
+        (std::abs(out.cotAlpha) > predAngleMaxAbs || std::abs(out.cotBeta) > predAngleMaxAbs))
+      return Crossing{};  // invalid
     out.bLocalX = lB.x();
     out.bLocalY = lB.y();
     out.bLocalZ = lB.z();

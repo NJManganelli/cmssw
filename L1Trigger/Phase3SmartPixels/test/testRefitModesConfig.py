@@ -132,6 +132,20 @@ _m_ovr = getattr(
 check(_m_ovr.digiRefitJacobianMaxAbs.value() == 5.0e5
       and _m_ovr.digiRefitChi2UpdateGate.value() == 3.0e6,
       "jacobianMaxAbs / chi2UpdateGate overrides flow onto the module")
+# Grazing-angle clamps (spec v0.4 §6b): defaults 12.0 carried, overrides flow.
+check(_m.digiRefitMeasAngleMaxAbs.value() == DIGIREFIT_DEFAULTS["measAngleMaxAbs"] == 12.0,
+      "measAngleMaxAbs default (12.0) carried onto the module")
+check(_m.digiRefitPredAngleMaxAbs.value() == DIGIREFIT_DEFAULTS["predAngleMaxAbs"] == 12.0,
+      "predAngleMaxAbs default (12.0) carried onto the module")
+_m_clamp = getattr(
+    addSmartPixelsTrackProducerVariants(
+        cms.Process("TEST"), variants=[("digiRefit", "1100")],
+        digiRefitConfig={"pixelavAngleSet": "dummy/x.json", "measAngleMaxAbs": 8.0,
+                         "predAngleMaxAbs": 15.0})[0],
+    _dr_prompt)
+check(_m_clamp.digiRefitMeasAngleMaxAbs.value() == 8.0
+      and _m_clamp.digiRefitPredAngleMaxAbs.value() == 15.0,
+      "measAngleMaxAbs / predAngleMaxAbs overrides flow onto the module")
 # Refit-quality BDT model (spec §6a): default empty (no scoring), override flows.
 check(_m.digiRefitBdtModel.value() == DIGIREFIT_DEFAULTS["bdtModel"] == "",
       "bdtModel default is empty (no BDT scoring) and carried onto the module")
@@ -206,6 +220,15 @@ expect_raises(ValueError,
               lambda: _resolveDigiRefitConfig({"chi2UpdateGate": "big"}),
               "non-numeric chi2UpdateGate raises ValueError",
               contains="chi2UpdateGate")
+# Grazing-angle clamps must be positive doubles (spec v0.4 §6b).
+expect_raises(ValueError,
+              lambda: _resolveDigiRefitConfig({"measAngleMaxAbs": -1.0}),
+              "non-positive measAngleMaxAbs raises ValueError",
+              contains="measAngleMaxAbs")
+expect_raises(ValueError,
+              lambda: _resolveDigiRefitConfig({"predAngleMaxAbs": 0}),
+              "zero predAngleMaxAbs raises ValueError",
+              contains="predAngleMaxAbs")
 # Refit-quality BDT model must be a string path (spec §6a).
 expect_raises(ValueError,
               lambda: _resolveDigiRefitConfig({"bdtModel": 17}),
