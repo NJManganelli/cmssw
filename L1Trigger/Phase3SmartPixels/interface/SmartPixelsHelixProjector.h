@@ -87,7 +87,15 @@ namespace smartpixels {
     // module it lands on. Returns Crossing{valid=false} if the helix does not
     // reach the layer radius or lands off every module. `field` supplies the
     // local B at the module center.
-    Crossing crossLayer(const HelixParams& helix, int layer1based, const MagneticField& field) const;
+    //
+    // predAngleMaxAbs (spec v0.4 §6b, secondary hygiene clamp): if the predicted
+    // module-local |cotAlpha| or |cotBeta| exceeds this bound, the crossing is
+    // treated as INVALID (valid=false) — a near-grazing predicted crossing whose
+    // angle is non-physical. Default <=0 DISABLES the clamp: the analyzer
+    // measurement path must stay unclipped so payload fits see the full angle
+    // distribution; only the digiRefit producer passes a finite bound.
+    Crossing crossLayer(const HelixParams& helix, int layer1based, const MagneticField& field,
+                        double predAngleMaxAbs = 0.) const;
 
   private:
     bool built_ = false;

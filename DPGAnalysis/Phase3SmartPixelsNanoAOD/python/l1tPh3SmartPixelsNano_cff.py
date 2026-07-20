@@ -171,11 +171,20 @@ def reemulateJetSideForPFTier(process,
             correctorDir=cms.string('L1PuppiSC4EmuJets'))
         seq.append(process.l1tSC8PFL1PuppiCorrectedEmulator)
     if seq:
-        s = cms.Sequence(seq[0])
-        for m in seq[1:]:
-            s *= m
-        process.smartPixelsJetReemulSequence = s
-        process.smartPixelsJetReemulPath = cms.Path(s)
+        # Schedule the re-emulation modules UNSCHEDULED (on a Task), so the
+        # framework runs them by data dependency ahead of the nano PF-cand tables
+        # that consume l1tLayer2Deregionizer:Puppi / the corrected jets. A bare
+        # cms.Path attribute is NOT added to process.schedule automatically and
+        # would leave the products unproduced (ProductNotFound at output). Prefer
+        # the nano task when present; else fall back to a scheduled Path.
+        reemulTask = cms.Task(*seq)
+        process.smartPixelsJetReemulTask = reemulTask
+        if hasattr(process, "l1tPh2NanoTask"):
+            process.l1tPh2NanoTask.add(reemulTask)
+        else:
+            process.smartPixelsJetReemulPath = cms.Path(reemulTask)
+            if hasattr(process, "schedule") and process.schedule is not None:
+                process.schedule.append(process.smartPixelsJetReemulPath)
     return process
 
 
@@ -188,6 +197,60 @@ def reemulateJetSideForPFTier(process,
 # are intentionally NOT in this default drop list -- when the PF-carrying tier
 # calls reemulateJetSideForPFTier() their deregionizer Puppi source exists in-job.
 _ABSENT_MENU_TABLES_DEFAULT = ("sc4NGJetTable", "l1tSC4NGJetCandsTable", "hpsTauTable")
+
+
+def stitchPFTierForPostureC(process, doSC8=True):
+    """Wire the PF/Puppi/jet nano tables for a posture-C (fromFileStubs) PU run of
+    a PF-carrying SmartPix flavor (L1PFNano* / L1PFTrkNano*).
+
+    The 200PU RelVals persist l1tLayer1:PuppiRegional but not the flat
+    l1tLayer2Deregionizer:Puppi, so the PF-cand tables would otherwise resolve to
+    dangling refs (candIdx == -1) or ProductNotFound. This helper:
+      1. re-emulates the PROMPT deregionizer + SC4/SC8 corrected SeededCone jets
+         in-job (reemulateJetSideForPFTier), so l1tLayer2Deregionizer:Puppi and the
+         corrected jets exist as fresh in-job products;
+      2. schedules p2L1PFCandsTask on the nano task and UN-PRUNES the L1PuppiCand /
+         SC4 / SC8 link-table family (l1tPuppiCandsTable, l1tSC4JetCandsTable,
+         l1tSC8JetCandsTable, l1tPuppiCandTrackTruthTable) so those columns write;
+      3. drops the members that depend on products still absent under posture C
+         (extended deregionizer, layer-1 PF, NG-tagged jets, HGCal clusters):
+         l1tExtPuppiCandsTable, l1tPFCandsTable, l1tSC4NGJetCandsTable,
+         l1tHGCClusterTable, l1tPuppiCandHGCClusterLink,
+         l1tExtPuppiCandHGCClusterLink, l1tExtPuppiCandTrackTruthTable;
+      4. leaves exactly ONE plain link table writing the L1PuppiCand extension
+         (l1tSC4JetCandsTable: writeCandExtension=True; l1tSC8JetCandsTable:
+         writeCandExtension=False) so the jetIdx/l1TrackIdx extension columns are
+         written once. l1TrackIdx will be -1 (the file's PFTrack refs dangle);
+         that is expected and the candidate-extension deref is isAvailable()-guarded.
+    """
+    process = reemulateJetSideForPFTier(process, doSC4=True, doSC8=doSC8)
+
+    from DPGAnalysis.Phase2L1TNanoAOD.l1tPh2PFCandsNanotables_cff import p2L1PFCandsTask
+    if not hasattr(process, "l1tPh2NanoTask"):
+        raise RuntimeError("stitchPFTierForPostureC: l1tPh2NanoTask not present; "
+                           "the PF-carrying nano flavor did not schedule its base task.")
+    # Schedule the whole PF-cand task, then drop the posture-C-unavailable members.
+    process.l1tPh2NanoTask.add(p2L1PFCandsTask)
+    _drop = ["l1tExtPuppiCandsTable", "l1tPFCandsTable", "l1tSC4NGJetCandsTable",
+             "l1tHGCClusterTable", "l1tPuppiCandHGCClusterLink",
+             "l1tExtPuppiCandHGCClusterLink", "l1tExtPuppiCandTrackTruthTable",
+             # l1tPuppiCandTrackTruthTable (L1PFCandTrackTruthTableProducer) HARD-derefs
+             # each Puppi cand's l1t::io_v1::PFTrack ref to reach the TTTrack truth. On
+             # posture-C PU RelVals the file's PFTrack collection is not stored, so those
+             # refs dangle -> ProductNotFound (unlike the SC4 link-table candidate
+             # extension, which is isAvailable()-guarded). SmartPixels refit truth flows
+             # through trackIdx against the REFERENCE truth table anyway, so this
+             # PFTrack-chain truth table is not needed; drop it for posture-C PF flavors.
+             "l1tPuppiCandTrackTruthTable"]
+    if not doSC8:
+        _drop.append("l1tSC8JetCandsTable")
+    process = dropAbsentMenuTables(process, _drop)
+    print("SmartPixels posture-C PF tier: re-emulated deregionizer+SC4"
+          + ("+SC8" if doSC8 else "")
+          + "; kept L1PuppiCand + SC4"
+          + ("/SC8" if doSC8 else "")
+          + " link tables (SC4 writes the plain-cand extension) + PuppiCand track-truth.")
+    return process
 
 
 def dropAbsentMenuTables(process, moduleLabels=_ABSENT_MENU_TABLES_DEFAULT):
