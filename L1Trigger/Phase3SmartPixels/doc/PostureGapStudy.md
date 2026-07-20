@@ -163,6 +163,35 @@ production** (keep `mix` products + fresh tracks + maps) so downstream studies s
 All of this is dominated by posture C, which costs none of it.
 
 ## 7. Recommendation and productionization
+
+**IMPLEMENTED (2026-07-19).** Posture C is productionized as
+`truthSource="fromFileStubs"` in `customizeSmartPixels_cff.py`
+(`attachFromFileStubsChain` + the `fromFileStubs` branch of `_applyTruthSource`,
+threaded through `smartPixelsCoexist`/`smartPixelsCoopt` with an
+`extendedTracks=True` knob). Wiring exactly as prototyped: it loads
+`L1Trigger.TrackTrigger.TrackTrigger_cff`, `L1Trigger.TrackerDTC.DTC_cff`,
+`L1Trigger.TrackFindingTracklet.l1tTTTracksFromTrackletEmulation_cfi`,
+`L1Trigger.TrackFindingTracklet.ProducerHPH_cff`, and
+`SimTracker.TrackTriggerAssociation.TTTrackAssociation_cfi`; re-points the track
+associator(s) at the new tracklet tracks (default labels), leaves the cluster/stub
+map InputTags process-name-free (they resolve to the file's HLT maps by
+shadowing), removes only the cluster/stub associators, and puts
+`ProducerDTC` + the tracklet emulator(s) + the track associator(s) on a Task.
+`extendedTracks=True` additionally rebuilds
+`l1tTTTracksFromExtendedTrackletEmulation` + `TTTrackAssociatorFromPixelDigisExtended`
+so the extended digiRefit variants also get real covariance.
+
+Validated (ARM + x86): the customize-driven `fromFileStubs` path reproduces the
+PoC numbers to the digit (1738 tracks, cov nonzero 1738/1738, associator
+1440/273/25, |ΔrInv|/|Δphi0|/|Δd0| q50=0, refit engagement 88.2%) — i.e. the
+productionized wiring *is* the PoC wiring. A 20-event four-variant
+(1000/1100/1110/1111) `L1TrkNanoSmartPixwithGen` slice with
+`seedCovMode="trackCov"` ran rc=0 with `SmartPixelsSeedCovMissing` silent,
+`spxSeedCovOK` true on 100% of prompt (3433/3433) and extended (4771/4771) tracks
+in every variant, `spxParametrizedSeed` FALSE everywhere, sidecar row-counts
+consistent, and the extended tables filled. Config test section (f) asserts the
+wiring; x86 build + config test + 2-evt smoke certified.
+
 Adopt posture C as the standard PU posture for SmartPixels development. Concretely:
 - Add `truthSource="fromFileStubs"` as a third posture in `customizeSmartPixels_cff`:
   attach `ProducerDTC` + `l1tTTTracksFromTrackletEmulation` (+Extended, optional flag) +
