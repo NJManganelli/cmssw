@@ -99,7 +99,13 @@ DIGIREFIT_DEFAULTS = {
     "seedCovMode": "trackCov",  # "trackCov" (TTTrack helixCovMat) | "parametrized" (ablation/fallback)
     "paramSigmas": (1e-4, 1e-3, 2e-3, 0.06, 0.05),  # parametrized-mode sigmas (rInv[cm^-1],phi0,tanL,z0[cm],d0[cm])
     # --- correctionlib payload paths (empty defaults acceptable for Phase 0) ---
-    "smarthitTrueSet": "",    # Stack A "smarthit_true" payload (eff/residual/angle response)
+    # RESERVED: Stack A "smarthit_true" payload. Tier-2 does NOT consume it (position
+    # comes from the real digis, angle from the PixelAV response; Stack A only
+    # CHARACTERIZES true hits). The key is kept (present + validated) for a future
+    # SmartPixels ASIC on-chip readout-inefficiency model (smarthit_true_eff), so
+    # wiring is drop-in. Shipped recipes pass no path; if set, the producer warns
+    # (SmartPixelsStackAUnused) and loads nothing.
+    "smarthitTrueSet": "",    # RESERVED (see note above) -- do not ship a real path
     "smarthitFakeSet": "",    # Stack B "smarthit_fake" payload (window multiplicity / fakes)
     "pixelavAngleSet": "",    # PixelAV angle sigma/bias response payload
     # --- optional refit-aware TkQuality BDT ---
@@ -243,6 +249,9 @@ def _applyDigiRefitConfig(module, resolved):
   module.digiRefitParamSigmas = cms.vdouble(*resolved["paramSigmas"])
   module.digiRefitPixelavAngleSet = cms.string(resolved["pixelavAngleSet"])
   module.digiRefitSmarthitFakeSet = cms.string(resolved["smarthitFakeSet"])
+  # RESERVED, not consumed by Tier-2: passed through so future ASIC-efficiency
+  # wiring is drop-in. Non-empty triggers a LogWarning in the producer ctor.
+  module.digiRefitSmarthitTrueSet = cms.string(resolved["smarthitTrueSet"])
   module.digiRefitBdtModel = cms.string(resolved["bdtModel"])
 
 

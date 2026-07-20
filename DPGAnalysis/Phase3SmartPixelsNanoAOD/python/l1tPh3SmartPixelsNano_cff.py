@@ -211,7 +211,10 @@ def stitchPFTierForPostureC(process, doSC8=True):
          corrected jets exist as fresh in-job products;
       2. schedules p2L1PFCandsTask on the nano task and UN-PRUNES the L1PuppiCand /
          SC4 / SC8 link-table family (l1tPuppiCandsTable, l1tSC4JetCandsTable,
-         l1tSC8JetCandsTable, l1tPuppiCandTrackTruthTable) so those columns write;
+         l1tSC8JetCandsTable, l1tPuppiCandTrackTruthTable) so those columns write.
+         l1tPuppiCandTrackTruthTable is now scheduled (no longer dropped): its
+         producer isAvailable()-guards the PFTrack deref and self-reports the
+         product-level failure via trkTruthStatus == -2 rather than throwing;
       3. drops the members that depend on products still absent under posture C
          (extended deregionizer, layer-1 PF, NG-tagged jets, HGCal clusters):
          l1tExtPuppiCandsTable, l1tPFCandsTable, l1tSC4NGJetCandsTable,
@@ -220,8 +223,10 @@ def stitchPFTierForPostureC(process, doSC8=True):
       4. leaves exactly ONE plain link table writing the L1PuppiCand extension
          (l1tSC4JetCandsTable: writeCandExtension=True; l1tSC8JetCandsTable:
          writeCandExtension=False) so the jetIdx/l1TrackIdx extension columns are
-         written once. l1TrackIdx will be -1 (the file's PFTrack refs dangle);
-         that is expected and the candidate-extension deref is isAvailable()-guarded.
+         written once. On posture-C PU the file's PFTrack refs dangle, so the
+         candidate-extension deref is isAvailable()-guarded and l1TrackIdx == -2
+         (product-level failure) for all candidates; -1 marks an element-level
+         no-match when the product is present.
     """
     process = reemulateJetSideForPFTier(process, doSC4=True, doSC8=doSC8)
 
@@ -231,17 +236,17 @@ def stitchPFTierForPostureC(process, doSC8=True):
                            "the PF-carrying nano flavor did not schedule its base task.")
     # Schedule the whole PF-cand task, then drop the posture-C-unavailable members.
     process.l1tPh2NanoTask.add(p2L1PFCandsTask)
+    # l1tPuppiCandTrackTruthTable (L1PFCandTrackTruthTableProducer) is NO LONGER dropped:
+    # the producer now isAvailable()-guards the PFCandidate->PFTrack->TTTrack deref (the
+    # tolerance-family fix, cf. the SC4 link-table candidate extension). On posture-C PU
+    # RelVals the file's PFTrack collection is not stored, so the producer detects the
+    # product-level failure and writes trkTruthStatus == -2 (with the truth columns at
+    # their unknown defaults) instead of throwing ProductNotFound. It is scheduled again.
+    # l1tExtPuppiCandTrackTruthTable stays dropped: it targets the extended deregionizer
+    # product, which is genuinely absent under posture C (not merely dangling).
     _drop = ["l1tExtPuppiCandsTable", "l1tPFCandsTable", "l1tSC4NGJetCandsTable",
              "l1tHGCClusterTable", "l1tPuppiCandHGCClusterLink",
-             "l1tExtPuppiCandHGCClusterLink", "l1tExtPuppiCandTrackTruthTable",
-             # l1tPuppiCandTrackTruthTable (L1PFCandTrackTruthTableProducer) HARD-derefs
-             # each Puppi cand's l1t::io_v1::PFTrack ref to reach the TTTrack truth. On
-             # posture-C PU RelVals the file's PFTrack collection is not stored, so those
-             # refs dangle -> ProductNotFound (unlike the SC4 link-table candidate
-             # extension, which is isAvailable()-guarded). SmartPixels refit truth flows
-             # through trackIdx against the REFERENCE truth table anyway, so this
-             # PFTrack-chain truth table is not needed; drop it for posture-C PF flavors.
-             "l1tPuppiCandTrackTruthTable"]
+             "l1tExtPuppiCandHGCClusterLink", "l1tExtPuppiCandTrackTruthTable"]
     if not doSC8:
         _drop.append("l1tSC8JetCandsTable")
     process = dropAbsentMenuTables(process, _drop)

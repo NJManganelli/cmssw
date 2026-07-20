@@ -54,6 +54,44 @@ variant's rows: analysis reads the truth label for a variant track by reusing th
 row index against the reference truth table. Likewise, per-hit `trackIdx` -> variant
 track row -> reference truth row. No truth is ever re-keyed to a refit collection.
 
+## Candidate->track linking sentinels: -1 vs -2 (ratified convention)
+
+Candidate->track cross-reference columns in the L1 nano tables distinguish two failure
+modes with two sentinels. Do not conflate them:
+
+- **`-1` = ELEMENT-level no-match.** The referenced product IS available and matching
+  ran successfully for the collection, but this specific candidate genuinely has no
+  track partner (e.g. a neutral candidate with no `pfTrack`, or a constituent `Ptr`
+  that does not resolve into an otherwise-present candidate collection).
+- **`-2` = PRODUCT-level failure.** The whole referenced collection is not available in
+  this event (`isAvailable()` is false / a bare deref would be `ProductNotFound`), so
+  linking could not run for ANY candidate. Every row of that column is `-2`.
+
+Sites (all guarded, cf. the tolerance-family fix):
+
+- `L1JetCandLinkTableProducer` (`DPGAnalysis/Phase2L1TNanoAOD`):
+  - link table `candIdx` (jet-constituent -> `L1PuppiCand`): `-2` for all rows if the
+    `L1PuppiCand` collection is unavailable; else `-1` for a constituent `Ptr` that does
+    not resolve.
+  - candidate extension `l1TrackIdx` (`L1PuppiCand` -> `L1TTrack`): `-2` for all
+    candidates if the PFTrack (or TTTrack) product is unavailable — detected by probing
+    `pfTrack().isAvailable()`, since a dropped-but-referenced PFTrack collection dangles;
+    else `-1` for a candidate with no resolvable track ref. On posture-C PU RelVals (the
+    file's PFTrack collection is dropped) this reads `-2` for all candidates.
+- `L1PFCandTrackTruthTableProducer` (`DPGAnalysis/Phase2L1TNanoAOD`): the truth-status
+  column `trkTruthStatus` is `0` when the candidate's underlying track resolved (the
+  `trkGenuine`/`trkLooselyGenuine`/`trkCombinatoric`/`trkUnknown`/`trkTpPt` columns then
+  carry the association result), `-1` for an available product with no resolvable track
+  ref, and `-2` when the PFTrack / TTTrack / `TTTrackAssociationMap` product is
+  unavailable (the truth columns stay at their unknown defaults). This producer now
+  self-guards the PFCandidate->PFTrack->TTTrack deref, so the table is scheduled again
+  under posture C (previously it was dropped because it hard-dereffed unstored refs).
+
+Not a linking sentinel: the per-hit refit `trackIdx` in `L1SmartPixelsRefitTableProducer`
+is a within-event index into the same-producer, length-checked, 1:1-row-synced refit
+track collection (spec §1; a broken sync throws `SmartPixelsSyncBroken`). It has no
+product-availability or no-match failure mode and therefore uses NO -1/-2 sentinel.
+
 Both workflows keep `--procModifiers nano_l1_hlt` in the recipes: it removes the
 HLT-side `dstTriggerAcceptFilter` and the nano-output `SelectEvents`, so ALL events
 are stored (the denominator for trigger-rate/efficiency studies). L1-only and

@@ -390,6 +390,7 @@ private:
   std::string digiRefitSeedCovMode_ = "trackCov";  // "trackCov" (TTTrack helixCovMat, default) | "parametrized"
   std::vector<double> digiRefitParamSigmas_;       // parametrized-mode seed sigmas: (rInv[cm^-1], phi0, tanL, z0[cm], d0[cm])
   std::string digiRefitPixelavAngleSet_ = "";  // PixelAV angle sigma/bias/valid payload path
+  std::string digiRefitSmarthitTrueSet_ = "";  // Stack A (RESERVED): NOT consumed by Tier-2; warns if set
   std::string digiRefitSmarthitFakeSet_ = "";  // Stack B inclusive noise payload path
   std::string digiRefitBdtModel_ = "";  // refit-quality BDT (conifer JSON); empty = keep original trkMVA1
 
@@ -564,6 +565,24 @@ L1SmartPixelsTrackProducer::L1SmartPixelsTrackProducer(edm::ParameterSet const& 
     {
       const std::string fk = iConfig.getParameter<std::string>("digiRefitSmarthitFakeSet");
       digiRefitSmarthitFakeSet_ = fk.empty() ? std::string() : edm::FileInPath(fk).fullPath();
+    }
+    // Stack A "smarthit_true" (RESERVED): validated but deliberately NOT consumed
+    // by Tier-2. Tier-2 takes position from the real digis and angle from the
+    // PixelAV response; Stack A only CHARACTERIZES true hits. The key is kept for
+    // a future SmartPixels ASIC on-chip readout-inefficiency model (smarthit_true_eff),
+    // which the digitizer cannot express. Resolve the path (so a bad path still fails
+    // loudly), warn LOUDLY if set, and load nothing.
+    {
+      const std::string st = iConfig.getParameter<std::string>("digiRefitSmarthitTrueSet");
+      digiRefitSmarthitTrueSet_ = st.empty() ? std::string() : edm::FileInPath(st).fullPath();
+      if (!digiRefitSmarthitTrueSet_.empty())
+        edm::LogWarning("SmartPixelsStackAUnused")
+            << "digiRefit: smarthitTrueSet was provided (" << digiRefitSmarthitTrueSet_
+            << ") but is NOT consumed by Tier-2 and is being IGNORED. Tier-2 takes hit position "
+               "from the real pixel digis and hit angle from the PixelAV angle-response payload; "
+               "Stack A ('smarthit_true') only characterizes true hits. This config key is RESERVED "
+               "for a future SmartPixels ASIC on-chip readout-inefficiency model (smarthit_true_eff), "
+               "which is not yet wired. No Stack A payload will be loaded.";
     }
     {
       const std::string bm = iConfig.getParameter<std::string>("digiRefitBdtModel");
@@ -2175,6 +2194,11 @@ void L1SmartPixelsTrackProducer::fillDescriptions(edm::ConfigurationDescriptions
       ->setComment("parametrized-mode seed sigmas (rInv[cm^-1], phi0, tanL, z0[cm], d0[cm])");
   desc.add<std::string>("digiRefitPixelavAngleSet", "")->setComment("PixelAV angle-response correctionlib payload path (REQUIRED for digiRefit)");
   desc.add<std::string>("digiRefitSmarthitFakeSet", "")->setComment("optional Stack B smarthit_fake payload (inclusive noise-angle model)");
+  desc.add<std::string>("digiRefitSmarthitTrueSet", "")
+      ->setComment("RESERVED: Stack A smarthit_true payload path. NOT consumed by Tier-2 (position from real "
+                   "digis, angle from PixelAV; Stack A only characterizes true hits). Kept for a future "
+                   "SmartPixels ASIC on-chip readout-inefficiency model (smarthit_true_eff). If non-empty, "
+                   "the producer emits a LogWarning (category SmartPixelsStackAUnused) and loads nothing.");
   desc.add<std::string>("digiRefitBdtModel", "")
       ->setComment("optional refit-quality BDT: conifer JSON over REFIT_BDT_FEATURES (spec §6a). The assembly is "
                    "selected by the model's n_features: 17 = v0, 24 = v1 (v0 + the classic-7 TrackQuality hw "
