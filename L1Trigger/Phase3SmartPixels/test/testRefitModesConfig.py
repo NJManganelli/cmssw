@@ -113,6 +113,33 @@ check(_m.digiRefitPixelavAngleSet.value() == _DR_CFG["pixelavAngleSet"],
       "pixelavAngleSet carried onto the module")
 check(list(_m.digiRefitParamSigmas) == list(DIGIREFIT_DEFAULTS["paramSigmas"]),
       "paramSigmas carried onto the module")
+# KF numerical guards (spec §6b) default onto the module and take the
+# investigation-chosen values.
+check(_m.digiRefitJacobianMaxAbs.value() == DIGIREFIT_DEFAULTS["jacobianMaxAbs"] == 1.0e4,
+      "jacobianMaxAbs default (1e4) carried onto the module")
+check(_m.digiRefitChi2UpdateGate.value() == DIGIREFIT_DEFAULTS["chi2UpdateGate"] == 2.0e6,
+      "chi2UpdateGate default (2e6) carried onto the module")
+# and overrides flow through
+_m_ovr = getattr(
+    addSmartPixelsTrackProducerVariants(
+        cms.Process("TEST"), variants=[("digiRefit", "1100")],
+        digiRefitConfig={"pixelavAngleSet": "dummy/x.json", "jacobianMaxAbs": 5.0e5,
+                         "chi2UpdateGate": 3.0e6})[0],
+    _dr_prompt)
+check(_m_ovr.digiRefitJacobianMaxAbs.value() == 5.0e5
+      and _m_ovr.digiRefitChi2UpdateGate.value() == 3.0e6,
+      "jacobianMaxAbs / chi2UpdateGate overrides flow onto the module")
+# Refit-quality BDT model (spec §6a): default empty (no scoring), override flows.
+check(_m.digiRefitBdtModel.value() == DIGIREFIT_DEFAULTS["bdtModel"] == "",
+      "bdtModel default is empty (no BDT scoring) and carried onto the module")
+_m_bdt = getattr(
+    addSmartPixelsTrackProducerVariants(
+        cms.Process("TEST"), variants=[("digiRefit", "1100")],
+        digiRefitConfig={"pixelavAngleSet": "dummy/x.json",
+                         "bdtModel": "L1Trigger/Phase3SmartPixels/data/refitq_model.json"})[0],
+    _dr_prompt)
+check(_m_bdt.digiRefitBdtModel.value() == "L1Trigger/Phase3SmartPixels/data/refitq_model.json",
+      "bdtModel override flows onto the module")
 # The RNG scheme is now producer-side (local per-event engine seeded from
 # hash(label,run,lumi,event)); NO RandomNumberGeneratorService is wired.
 check(not hasattr(p_dr, "RandomNumberGeneratorService"),
@@ -163,6 +190,24 @@ expect_raises(ValueError,
               lambda: _resolveDigiRefitConfig(["not", "a", "dict"]),
               "non-dict digiRefitConfig raises ValueError",
               contains="must be a dict")
+# KF numerical guards must be positive doubles (spec §6b).
+expect_raises(ValueError,
+              lambda: _resolveDigiRefitConfig({"jacobianMaxAbs": -1.0}),
+              "non-positive jacobianMaxAbs raises ValueError",
+              contains="jacobianMaxAbs")
+expect_raises(ValueError,
+              lambda: _resolveDigiRefitConfig({"chi2UpdateGate": 0}),
+              "zero chi2UpdateGate raises ValueError",
+              contains="chi2UpdateGate")
+expect_raises(ValueError,
+              lambda: _resolveDigiRefitConfig({"chi2UpdateGate": "big"}),
+              "non-numeric chi2UpdateGate raises ValueError",
+              contains="chi2UpdateGate")
+# Refit-quality BDT model must be a string path (spec §6a).
+expect_raises(ValueError,
+              lambda: _resolveDigiRefitConfig({"bdtModel": 17}),
+              "non-string bdtModel raises ValueError",
+              contains="bdtModel")
 
 # valid config merges over defaults and does NOT mutate the defaults
 merged = _resolveDigiRefitConfig({"minHits": 3, "useAngles": "alphaBeta"})

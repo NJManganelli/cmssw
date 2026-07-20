@@ -121,6 +121,15 @@
 #include <string>
 #include <iostream>
 #include <cstdint>
+#include <cmath>
+#include <fstream>
+
+// Refit-quality BDT (spec §6a): conifer GBDT evaluated in-flight on the
+// REFIT_BDT_FEATURES v0 feature vector. ap_fixed.h pulls the HLS ap types that
+// conifer.h references; we instantiate the float/float emulation backend.
+#include "ap_fixed.h"
+#include "conifer.h"
+#include "nlohmann/json.hpp"
 
 //////////////
 // NAMESPACES
@@ -337,11 +346,23 @@ private:
   int digiRefitMaxHitsPerWindow_ = 8;   // combinatorics truncation
   int digiRefitMaxKFUpdates_ = 4;       // KF update / layer cap
   std::string digiRefitGainMode_ = "full";     // "full" | "lut" (RESERVED -> throws)
+  // KF numerical guards (spec §6b, FPGA-fidelity handles). Defaults chosen from
+  // the PU chi2-tail investigation: physical |H| tops out ~200 and the physical
+  // (incl. wrong-hit) chi2-increment ceiling is ~1.9e6, so 1e4/2e6 remove only the
+  // non-physical grazing-crossing tail and leave the physical bulk untouched.
+  double digiRefitJacobianMaxAbs_ = 1.0e4;  // |H[k][j]| above this (or non-finite) zeroes the column
+  double digiRefitChi2UpdateGate_ = 2.0e6;  // scalar update with r^2/S above this is skipped entirely
   int digiRefitSeedNPar_ = 5;           // 4 (prompt) | 5 (extended + covariance seed)
   std::string digiRefitSeedCovMode_ = "trackCov";  // "trackCov" (TTTrack helixCovMat, default) | "parametrized"
   std::vector<double> digiRefitParamSigmas_;       // parametrized-mode seed sigmas: (rInv[cm^-1], phi0, tanL, z0[cm], d0[cm])
   std::string digiRefitPixelavAngleSet_ = "";  // PixelAV angle sigma/bias/valid payload path
   std::string digiRefitSmarthitFakeSet_ = "";  // Stack B inclusive noise payload path
+  std::string digiRefitBdtModel_ = "";  // refit-quality BDT (conifer JSON); empty = keep original trkMVA1
+
+  // Refit-quality BDT (spec §6a). Loaded at construction iff digiRefitBdtModel_
+  // is non-empty; evaluated per refit track on the REFIT_BDT_FEATURES v0 vector.
+  static constexpr unsigned kRefitBdtNFeatures = 17;
+  std::unique_ptr<conifer::BDT<float, float>> digiRefitBdt_;
 
   // Correctionlib refs for the PixelAV angle response (loaded iff digiRefit).
   correction::Correction::Ref corrAlphaSigma_, corrAlphaBias_;
@@ -363,6 +384,9 @@ private:
   mutable unsigned long long digiRefitTracksSeen_ = 0;
   mutable unsigned long long digiRefitTruthMatches_ = 0;
   mutable unsigned long long digiRefitZeroCovTracks_ = 0;  // trackCov seeds with an all-zero helixCovMat
+  // KF numerical-guard activation counters (spec §6b), reported at endStream.
+  mutable unsigned long long digiRefitGatedJacCols_ = 0;   // Jacobian columns zeroed by jacobianMaxAbs
+  mutable unsigned long long digiRefitGatedUpdates_ = 0;   // scalar updates skipped by chi2UpdateGate
 
   edm::InputTag L1TrackInputTag;       // L1 track collection
   edm::InputTag MCTruthTrackInputTag;  // MC truth collection
@@ -485,6 +509,8 @@ L1SmartPixelsTrackProducer::L1SmartPixelsTrackProducer(edm::ParameterSet const& 
     digiRefitMaxHitsPerWindow_ = iConfig.getParameter<int>("digiRefitMaxHitsPerWindow");
     digiRefitMaxKFUpdates_ = iConfig.getParameter<int>("digiRefitMaxKFUpdates");
     digiRefitGainMode_ = iConfig.getParameter<std::string>("digiRefitGainMode");
+    digiRefitJacobianMaxAbs_ = iConfig.getParameter<double>("digiRefitJacobianMaxAbs");
+    digiRefitChi2UpdateGate_ = iConfig.getParameter<double>("digiRefitChi2UpdateGate");
     digiRefitSeedNPar_ = iConfig.getParameter<int>("digiRefitSeedNPar");
     digiRefitSeedCovMode_ = iConfig.getParameter<std::string>("digiRefitSeedCovMode");
     digiRefitParamSigmas_ = iConfig.getParameter<std::vector<double>>("digiRefitParamSigmas");
@@ -495,6 +521,10 @@ L1SmartPixelsTrackProducer::L1SmartPixelsTrackProducer(edm::ParameterSet const& 
     {
       const std::string fk = iConfig.getParameter<std::string>("digiRefitSmarthitFakeSet");
       digiRefitSmarthitFakeSet_ = fk.empty() ? std::string() : edm::FileInPath(fk).fullPath();
+    }
+    {
+      const std::string bm = iConfig.getParameter<std::string>("digiRefitBdtModel");
+      digiRefitBdtModel_ = bm.empty() ? std::string() : edm::FileInPath(bm).fullPath();
     }
 
     if (digiRefitGainMode_ == "lut")
@@ -513,6 +543,37 @@ L1SmartPixelsTrackProducer::L1SmartPixelsTrackProducer(edm::ParameterSet const& 
       throw cms::Exception("Configuration") << "digiRefit seedNPar must be 4 or 5.";
     if (digiRefitUseAngles_ != "none" && digiRefitUseAngles_ != "alpha" && digiRefitUseAngles_ != "alphaBeta")
       throw cms::Exception("Configuration") << "digiRefit useAngles='" << digiRefitUseAngles_ << "' invalid.";
+    if (!(digiRefitJacobianMaxAbs_ > 0.))
+      throw cms::Exception("Configuration")
+          << "digiRefitJacobianMaxAbs must be a positive double, got " << digiRefitJacobianMaxAbs_ << ".";
+    if (!(digiRefitChi2UpdateGate_ > 0.))
+      throw cms::Exception("Configuration")
+          << "digiRefitChi2UpdateGate must be a positive double, got " << digiRefitChi2UpdateGate_ << ".";
+
+    // Refit-quality BDT (spec §6a): load the conifer model at construction and
+    // validate its feature count against REFIT_BDT_FEATURES v0 (17). conifer's
+    // own decision_function() only assert()s the count (compiled out in opt
+    // builds), so we read n_features from the JSON and throw LOUDLY on mismatch.
+    if (!digiRefitBdtModel_.empty()) {
+      std::ifstream ifs(digiRefitBdtModel_);
+      if (!ifs.good())
+        throw cms::Exception("Configuration")
+            << "digiRefitBdtModel could not be opened: " << digiRefitBdtModel_;
+      unsigned nFeat = 0;
+      try {
+        const nlohmann::json j = nlohmann::json::parse(ifs);
+        nFeat = j.at("n_features").get<unsigned>();
+      } catch (const std::exception& e) {
+        throw cms::Exception("Configuration")
+            << "digiRefitBdtModel " << digiRefitBdtModel_
+            << " is not a valid conifer JSON (n_features unreadable): " << e.what();
+      }
+      if (nFeat != kRefitBdtNFeatures)
+        throw cms::Exception("Configuration")
+            << "digiRefitBdtModel " << digiRefitBdtModel_ << " has n_features=" << nFeat
+            << " but REFIT_BDT_FEATURES v0 requires exactly " << kRefitBdtNFeatures << ".";
+      digiRefitBdt_ = std::make_unique<conifer::BDT<float, float>>(digiRefitBdtModel_);
+    }
 
     // Reproducible randomness comes from a LOCAL engine seeded per produce() call
     // from hash(module label, run, lumi, event) -- see digiRefitSeed() and
@@ -600,6 +661,12 @@ void L1SmartPixelsTrackProducer::endStream() {
   // per-track passthrough (stale/mismatched maps or wrong input posture would
   // otherwise silently break every downstream study).
   if (smartPixelsEmulatorMode_ == "digiRefit" && digiRefitTracksSeen_ > 0) {
+    // KF numerical-guard activation summary (spec §6b). These count the
+    // non-physical grazing-crossing pathologies removed by the two guards.
+    edm::LogVerbatim("SmartPixelsTrackProducer")
+        << "digiRefit KF guards: jacobianMaxAbs zeroed " << digiRefitGatedJacCols_
+        << " Jacobian column(s); chi2UpdateGate skipped " << digiRefitGatedUpdates_
+        << " scalar update(s) over " << digiRefitTracksSeen_ << " tracks.";
     if (digiRefitTruthMatches_ == 0)
       throw cms::Exception("SmartPixelsTruthMissing")
           << "digiRefit processed " << digiRefitTracksSeen_
@@ -1425,6 +1492,9 @@ void L1SmartPixelsTrackProducer::produce(edm::Event& iEvent, const edm::EventSet
       uint8_t drLayerHitMask = 0;
       unsigned drMaxWindowMult = 0;
       bool drAnyWindowTruncated = false;
+      // Refit-BDT sum-of-squared-pull accumulators (spec §6a features 5-8),
+      // summed over all applied scalar updates across the track's crossings.
+      double drSumPullX2 = 0., drSumPullY2 = 0., drSumPullAlpha2 = 0., drSumPullBeta2 = 0.;
 
       // ---- seed state (INVR, PHI0, TANL, Z0, D0) and covariance ----
       ROOT::Math::SVector<double, 5> a;
@@ -1433,6 +1503,8 @@ void L1SmartPixelsTrackProducer::produce(edm::Event& iEvent, const edm::EventSet
       a[2] = iterL1Track->tanL();
       a[3] = iterL1Track->z0();
       a[4] = (digiRefitSeedNPar_ == 5 && iterL1Track->nFitPars() == 5) ? tmp_trk_d0 : 0.0;
+      // Seed snapshot for the refit-BDT parameter deltas (spec §6a features 11-15).
+      const ROOT::Math::SVector<double, 5> aSeed = a;
 
       ROOT::Math::SMatrix<double, 5, 5, ROOT::Math::MatRepSym<double, 5>> C;
       bool seedCovOK = true;
@@ -1640,6 +1712,25 @@ void L1SmartPixelsTrackProducer::produce(edm::Event& iEvent, const edm::EventSet
             break;
           }
         }
+        // jacobianMaxAbs (spec §6b): any Jacobian entry above the bound (or
+        // non-finite) makes that PARAMETER column locally unobservable -- zero it
+        // exactly like the same-module guard above. Physical |H| stays <~200 on the
+        // PU study; near-grazing crossings blow a column up (observed to ~900) or
+        // yield NaN/Inf. Column-zeroing keeps the update well-posed for the other
+        // parameters. FPGA-fidelity handle: finite-precision hardware bounds |H|.
+        for (int j = 0; j < 5; ++j) {
+          bool bad = false;
+          for (int k = 0; k < 4; ++k)
+            if (!std::isfinite(H[k][j]) || std::abs(H[k][j]) > digiRefitJacobianMaxAbs_) {
+              bad = true;
+              break;
+            }
+          if (bad) {
+            ++digiRefitGatedJacCols_;
+            for (int k = 0; k < 4; ++k)
+              H[k][j] = 0.;
+          }
+        }
 
         // ---- sequential scalar Kalman updates (diagonal R; FPGA-friendly form) ----
         // Per-scalar pull (r/sqrt(S), computed BEFORE the state update) and chi2
@@ -1657,8 +1748,20 @@ void L1SmartPixelsTrackProducer::produce(edm::Event& iEvent, const edm::EventSet
           if (!(S > 0.))
             return;
           const double r = m - h0[k] - ROOT::Math::Dot(Hrow, a - aLin);
+          const double chi2candidate = r * r / S;
+          // chi2UpdateGate (spec §6b): a scalar update whose r^2/S exceeds the gate
+          // is a numerical pathology (near-grazing crossing -> non-physical predicted
+          // angle and/or blown-up Jacobian column, innovation up to ~1e3 cot-units).
+          // Skip it ENTIRELY: no state/covariance change, no chi2 contribution, pull
+          // stays sentinel. This is a numerical-pathology gate, NOT an outlier/quality
+          // gate -- physical wrong-hit contamination (r^2/S <= ~2e6 on the PU study) is
+          // the BDT's signal and is left untouched. The hit still counts as accepted.
+          if (chi2candidate > digiRefitChi2UpdateGate_) {
+            ++digiRefitGatedUpdates_;
+            return;
+          }
           pull[k] = r / std::sqrt(S);
-          chi2inc[k] = r * r / S;
+          chi2inc[k] = chi2candidate;
           applied[k] = true;
           const ROOT::Math::SVector<double, 5> K = v / S;
           a += K * r;
@@ -1689,6 +1792,11 @@ void L1SmartPixelsTrackProducer::produce(edm::Event& iEvent, const edm::EventSet
         hi.pullY = applied[1] ? static_cast<float>(pull[1]) : -999.f;
         hi.pullAlpha = applied[2] ? static_cast<float>(pull[2]) : -999.f;
         hi.pullBeta = applied[3] ? static_cast<float>(pull[3]) : -999.f;
+        // Refit-BDT sum-of-squared-pull features (spec §6a features 5-8).
+        if (applied[0]) drSumPullX2 += pull[0] * pull[0];
+        if (applied[1]) drSumPullY2 += pull[1] * pull[1];
+        if (applied[2]) drSumPullAlpha2 += pull[2] * pull[2];
+        if (applied[3]) drSumPullBeta2 += pull[3] * pull[3];
         // rphi terms: x + alpha; rz terms: y + beta (spec §2).
         const double incRPhi = (applied[0] ? chi2inc[0] : 0.) + (applied[2] ? chi2inc[2] : 0.);
         const double incRZ = (applied[1] ? chi2inc[1] : 0.) + (applied[3] ? chi2inc[3] : 0.);
@@ -1728,6 +1836,37 @@ void L1SmartPixelsTrackProducer::produce(edm::Event& iEvent, const edm::EventSet
         for (int i = 0; i < 5; ++i)
           for (int j = 0; j <= i; ++j)
             outCov(i, j) = static_cast<float>(C(i, j));
+
+        // Refit-quality BDT score (spec §6a). When a model is loaded, assemble
+        // REFIT_BDT_FEATURES v0 (17 ordered features, all in-flight/full-fidelity)
+        // and evaluate; the score REPLACES the trkMVA1 ctor slot on this refit
+        // track. Empty model -> keep the input track's trkMVA1 (current behavior).
+        // Passthrough tracks are never scored (handled in the fallback branch).
+        double refitTrkMVA1 = iterL1Track->trkMVA1();
+        if (digiRefitBdt_) {
+          const double chi2RPhiTot = (drTrackInfo.chi2IncRPhiTot < -900.f) ? 0. : drTrackInfo.chi2IncRPhiTot;
+          const double chi2RZTot = (drTrackInfo.chi2IncRZTot < -900.f) ? 0. : drTrackInfo.chi2IncRZTot;
+          const std::vector<float> feats = {
+              static_cast<float>(drTrackInfo.nCrossings),               // 0
+              static_cast<float>(nAcceptedHits),                        // 1
+              static_cast<float>(drLayerHitMask),                       // 2
+              static_cast<float>(drMaxWindowMult),                      // 3
+              static_cast<float>(drAnyWindowTruncated ? 1 : 0),         // 4
+              static_cast<float>(drSumPullX2),                          // 5
+              static_cast<float>(drSumPullY2),                          // 6
+              static_cast<float>(drSumPullAlpha2),                      // 7
+              static_cast<float>(drSumPullBeta2),                       // 8
+              static_cast<float>(chi2RPhiTot),                          // 9
+              static_cast<float>(chi2RZTot),                            // 10
+              static_cast<float>(a[0] - aSeed[0]),                      // 11 dRinv
+              static_cast<float>(a[1] - aSeed[1]),                      // 12 dPhi
+              static_cast<float>(a[2] - aSeed[2]),                      // 13 dTanl
+              static_cast<float>(a[3] - aSeed[3]),                      // 14 dZ0
+              static_cast<float>(a[4] - aSeed[4]),                      // 15 dD0
+              static_cast<float>(iterL1Track->trkMVA1())};              // 16 seedTrkMVA1
+          refitTrkMVA1 = digiRefitBdt_->decision_function(feats).at(0);
+        }
+
         // nFitPars kept from the input; the refit d0/covariance live in the
         // float members either way (trackword packs d0 only for nPar=5).
         L1Track track = L1Track(a[0],
@@ -1737,7 +1876,7 @@ void L1SmartPixelsTrackProducer::produce(edm::Event& iEvent, const edm::EventSet
                                 a[4],
                                 iterL1Track->chi2XY(),
                                 iterL1Track->chi2Z(),
-                                iterL1Track->trkMVA1(),
+                                refitTrkMVA1,
                                 iterL1Track->trkMVA2(),
                                 iterL1Track->trkMVA3(),
                                 iterL1Track->hitPattern(),
@@ -1904,12 +2043,25 @@ void L1SmartPixelsTrackProducer::fillDescriptions(edm::ConfigurationDescriptions
   desc.add<int>("digiRefitMaxHitsPerWindow", 8)->setComment("combinatorics truncation: max in-window digis kept per layer (readout order)");
   desc.add<int>("digiRefitMaxKFUpdates", 4)->setComment("max Kalman layer updates applied");
   desc.add<std::string>("digiRefitGainMode", "full")->setComment("full (exact gains) | lut (RESERVED table-driven placeholder)");
+  desc.add<double>("digiRefitJacobianMaxAbs", 1.0e4)
+      ->setComment("FPGA-fidelity KF guard: any |H[k][j]| above this bound (or non-finite) zeroes that "
+                   "Jacobian column (parameter locally unobservable). Physical |H|<~200 on the PU study; "
+                   "1e4 leaves the physical+fake bulk untouched and only bounds grazing-crossing divergence.");
+  desc.add<double>("digiRefitChi2UpdateGate", 2.0e6)
+      ->setComment("FPGA-fidelity KF guard: a scalar update with r^2/S above this gate is skipped entirely "
+                   "(no state/cov change, no chi2 contribution, pull sentinel; the hit still counts as accepted). "
+                   "Numerical-pathology gate ONLY - the physical wrong-hit-contamination ceiling is ~1.9e6, so "
+                   "2e6 removes only the non-physical tail (up to ~1e10) and does NOT gate genuine wrong hits.");
   desc.add<int>("digiRefitSeedNPar", 5)->setComment("seed-track parametrization for the KF: 4 | 5");
   desc.add<std::string>("digiRefitSeedCovMode", "trackCov")->setComment("seed covariance: trackCov (TTTrack helixCovMat, default) | parametrized");
   desc.add<std::vector<double>>("digiRefitParamSigmas", std::vector<double>{1e-4, 1e-3, 2e-3, 0.06, 0.05})
       ->setComment("parametrized-mode seed sigmas (rInv[cm^-1], phi0, tanL, z0[cm], d0[cm])");
   desc.add<std::string>("digiRefitPixelavAngleSet", "")->setComment("PixelAV angle-response correctionlib payload path (REQUIRED for digiRefit)");
   desc.add<std::string>("digiRefitSmarthitFakeSet", "")->setComment("optional Stack B smarthit_fake payload (inclusive noise-angle model)");
+  desc.add<std::string>("digiRefitBdtModel", "")
+      ->setComment("optional refit-quality BDT: conifer JSON over REFIT_BDT_FEATURES v0 (17 features, spec §6a). "
+                   "Empty = keep the input trkMVA1 (current behavior). When set, the score replaces the refit "
+                   "track's trkMVA1 ctor slot (+ track-word MVA bits); n_features must equal 17 or it throws at load.");
   desc.add<edm::InputTag>("pixelDigiInputTag", edm::InputTag("simSiPixelDigis", "Pixel"));
   desc.add<edm::InputTag>("pixelDigiSimLinkInputTag", edm::InputTag("simSiPixelDigis", "Pixel"));
   desc.add<edm::InputTag>("simTrackInputTag", edm::InputTag("g4SimHits"));

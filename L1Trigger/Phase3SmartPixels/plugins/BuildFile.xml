@@ -1,5 +1,6 @@
 <library file="*.cc" name="Phase3SmartPixelsPlugins">
   <use name="clhep"/>
+  <use name="conifer"/>
   <use name="correctionlib"/>
   <use name="hls"/>
   <use name="root"/>
