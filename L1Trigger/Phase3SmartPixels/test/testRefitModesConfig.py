@@ -29,6 +29,7 @@ from L1Trigger.Phase3SmartPixels.customizeSmartPixels_cff import (
     ALL_MODES,
     DIGIREFIT_DEFAULTS,
     PASSTHROUGH_MODES,
+    PROMPT_HNPAR_CHOICES,
     RESERVED_MODES,
     TRUTHSOURCE_CHOICES,
     TRUTH_REQUIRED_MODES,
@@ -381,6 +382,118 @@ p_direct.pdummy = cms.Path()
 _p, _chain = attachFromFileStubsChain(p_direct, extendedTracks=False)
 check(_chain == _PROMPT_CHAIN,
       f"attachFromFileStubsChain(extendedTracks=False) returns prompt chain (got {_chain})")
+
+# --- (g) promptHnpar (PRIME target: 5-par prompt seed) ----------------------
+print("[g] promptHnpar wiring (5-par prompt seed -> prompt digiRefit trackCov)")
+check(set(PROMPT_HNPAR_CHOICES) == {4, 5},
+      "promptHnpar vocabulary is exactly {4, 5}")
+
+
+def _build_ffs_hnpar(promptHnpar):
+    """coexist + fromFileStubs digiRefit build with a given promptHnpar."""
+    p = cms.Process("TEST")
+    p.pdummy = cms.Path()
+    return smartPixelsCoexist(
+        p, variants=[("digiRefit", "1100")], addNanoTables=False,
+        truthSource="fromFileStubs", extendedTracks=True, promptHnpar=promptHnpar,
+        digiRefitConfig={"pixelavAngleSet": "dummy/x.json"})
+
+
+# promptHnpar=5 -> PRIME target: prompt tracklet producer set to Hnpar=5, extended
+# stays 5, and the prompt digiRefit variant seeds seedNPar=5 / seedCovMode=trackCov.
+p_h5 = _build_ffs_hnpar(5)
+check(p_h5.l1tTTTracksFromTrackletEmulation.Hnpar.value() == 5,
+      "promptHnpar=5 sets prompt l1tTTTracksFromTrackletEmulation.Hnpar = 5")
+check(p_h5.l1tTTTracksFromTrackletEmulation.Extended.value() is False,
+      "promptHnpar=5 keeps prompt Extended = False (5-par PROMPT, not displaced)")
+check(p_h5.l1tTTTracksFromExtendedTrackletEmulation.Hnpar.value() == 5,
+      "extended chain stays Hnpar = 5")
+_dr5 = getattr(p_h5, "l1tSmartPixelsTrackProducerWdigiRefitAAII")
+check(_dr5.digiRefitSeedNPar.value() == 5 and _dr5.digiRefitSeedCovMode.value() == "trackCov",
+      "prompt digiRefit variant seeds seedNPar=5 + seedCovMode=trackCov (prime target)")
+
+# promptHnpar=4 (default, back-compat) -> everything as before: prompt Hnpar=4.
+p_h4 = _build_ffs_hnpar(4)
+check(p_h4.l1tTTTracksFromTrackletEmulation.Hnpar.value() == 4,
+      "promptHnpar=4 leaves prompt Hnpar = 4 (d0 pinned; weak-d0-prior refit fallback)")
+check(p_h4.l1tTTTracksFromExtendedTrackletEmulation.Hnpar.value() == 5,
+      "promptHnpar=4 still has extended chain at Hnpar = 5")
+# default coexist (no promptHnpar passed) == promptHnpar=4 (back-compat)
+p_hdef = smartPixelsCoexist(
+    (lambda: (lambda pp: (setattr(pp, "pdummy", cms.Path()) or pp))(cms.Process("TEST")))(),
+    variants=[("digiRefit", "1100")], addNanoTables=False, truthSource="fromFileStubs",
+    digiRefitConfig={"pixelavAngleSet": "dummy/x.json"})
+check(p_hdef.l1tTTTracksFromTrackletEmulation.Hnpar.value() == 4,
+      "default promptHnpar (unspecified) == 4 (back-compat, prompt stays 4-par)")
+
+# out-of-vocabulary promptHnpar raises loudly
+expect_raises(ValueError, lambda: attachFromFileStubsChain(
+    (lambda pp: (setattr(pp, "pdummy", cms.Path()) or pp))(cms.Process("TEST")), promptHnpar=6),
+    "promptHnpar=6 raises ValueError", contains="promptHnpar must be one of")
+
+# --- (h) reference-track OT stub-position tables (Part B) --------------------
+print("[h] reference-track OT stub-position tables")
+from DPGAnalysis.Phase3SmartPixelsNanoAOD.l1tPh3SmartPixelsNano_cff import (
+    addPh3L1SmartPixelsStubTables)
+
+
+def _proc_with_nanotask():
+    p = cms.Process("TEST")
+    p.l1tPh2NanoTask = cms.Task()
+    return p
+
+
+# prompt + extended stub tables, keyed to the REFERENCE collections (not variants)
+p_stub = _proc_with_nanotask()
+addPh3L1SmartPixelsStubTables(p_stub, doExtended=True)
+check(hasattr(p_stub, "l1tPh3SmartPixelsStubTable"),
+      "prompt stub table module exists (label ends in 'Table')")
+check(hasattr(p_stub, "l1tPh3ExtSmartPixelsStubTable"),
+      "extended stub table module exists (label ends in 'Table')")
+check(p_stub.l1tPh3SmartPixelsStubTable.label().endswith("Table")
+      and p_stub.l1tPh3ExtSmartPixelsStubTable.label().endswith("Table"),
+      "both stub table module labels end in 'Table' (keep-pattern gotcha)")
+# keyed to the reference tracklet collections (NOT the SmartPixels refit variants)
+check(p_stub.l1tPh3SmartPixelsStubTable.tracks
+      == cms.InputTag("l1tTTTracksFromTrackletEmulation", "Level1TTTracks"),
+      "prompt stub table keyed to the reference l1tTTTracksFromTrackletEmulation")
+check(p_stub.l1tPh3ExtSmartPixelsStubTable.tracks
+      == cms.InputTag("l1tTTTracksFromExtendedTrackletEmulation", "Level1TTTracks"),
+      "extended stub table keyed to the reference l1tTTTracksFromExtendedTrackletEmulation")
+# trackIdx links into the reference L1TTrack / L1TExtTrack nano tables
+check(p_stub.l1tPh3SmartPixelsStubTable.trackTableName.value() == "L1TTrack",
+      "prompt stub trackIdx links to the L1TTrack reference table")
+check(p_stub.l1tPh3ExtSmartPixelsStubTable.trackTableName.value() == "L1TExtTrack",
+      "extended stub trackIdx links to the L1TExtTrack reference table")
+check(p_stub.l1tPh3SmartPixelsStubTable.stubTableName.value() == "L1TTrackStub"
+      and p_stub.l1tPh3ExtSmartPixelsStubTable.stubTableName.value() == "L1TExtTrackStub",
+      "stub table names are L1TTrackStub / L1TExtTrackStub")
+# added to the nano task (moduleNames flattens nested sub-tasks to leaf modules)
+_nano_mods = set(p_stub.l1tPh2NanoTask.moduleNames())
+check("l1tPh3SmartPixelsStubTable" in _nano_mods
+      and "l1tPh3ExtSmartPixelsStubTable" in _nano_mods,
+      "both stub tables added to l1tPh2NanoTask")
+# idempotent: a second call adds nothing new
+_n_before = len(p_stub.l1tPh2NanoTask.moduleNames())
+addPh3L1SmartPixelsStubTables(p_stub, doExtended=True)
+check(len(p_stub.l1tPh2NanoTask.moduleNames()) == _n_before,
+      "addPh3L1SmartPixelsStubTables is idempotent (no duplicate modules)")
+
+# doExtended=False -> prompt stub table only
+p_stub_p = _proc_with_nanotask()
+addPh3L1SmartPixelsStubTables(p_stub_p, doExtended=False)
+check(hasattr(p_stub_p, "l1tPh3SmartPixelsStubTable")
+      and not hasattr(p_stub_p, "l1tPh3ExtSmartPixelsStubTable"),
+      "doExtended=False adds prompt stub table only")
+
+# coexist(addNanoTables=True) wires the stub tables alongside the track tables
+p_cox = cms.Process("TEST")
+p_cox.pdummy = cms.Path()
+p_cox.l1tPh2NanoTask = cms.Task()
+smartPixelsCoexist(p_cox, variants=[("passthrough", None)], addNanoTables=True,
+                   truthSource="inJob")
+check(hasattr(p_cox, "l1tPh3SmartPixelsStubTable"),
+      "smartPixelsCoexist(addNanoTables=True) emits the reference stub table")
 
 # --- summary ---------------------------------------------------------------
 print()
