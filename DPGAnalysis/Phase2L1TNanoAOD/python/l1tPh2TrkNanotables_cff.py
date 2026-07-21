@@ -68,19 +68,6 @@ gttExtTracksTable = l1tExtTracksTable.clone(
         )
 )
 
-#### SmartPixels-augmented track collections
-#### (require the L1SmartPixelsTrackProducer from the smartpixels development branch)
-l1tSmartPixelsTracksTable = l1tTracksTable.clone(
-    src = cms.InputTag("l1tSmartPixelsTrackProducer", "Level1TTTracks"),
-    name = cms.string("L1TSmartPixelsTrack"),
-    doc = cms.string("L1T SmartPixels Tracks"),
-)
-
-l1tExtSmartPixelsTracksTable = l1tTracksTable.clone(
-    src = cms.InputTag("l1tSmartPixelsTrackProducerExtended", "Level1TTTracks"),
-    name = cms.string("L1TSmartPixelsExtTrack"),
-    doc = cms.string("L1T SmartPixels Extended Tracks"),
-)
 
 #### MC truth extension (nStubs always; genuine/fake + TrackingParticle info
 #### when the TTTrackAssociator ran in the workflow) -- inputs for the
@@ -140,9 +127,4 @@ p2L1TracksTask = cms.Task(
     gttTracksTable,
     l1tExtTracksTable,
     gttExtTracksTable,
-)
-
-p2L1SmartPixelsTracksTask = cms.Task(
-    l1tSmartPixelsTracksTable,
-    l1tExtSmartPixelsTracksTable,
 )
