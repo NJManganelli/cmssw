@@ -356,30 +356,36 @@ def useTruthAssociationFromFile(process, associatorLabels=TRUTH_ASSOCIATOR_LABEL
 TRUTHSOURCE_CHOICES = ("inJob", "fromFile", "fromFileStubs")
 
 
-# The prompt tracklet producer defaults to Extended=False, Hnpar=4 (d0 pinned to
-# 0, 4x4 covariance). Setting Hnpar=5 (keeping Extended=False) makes the PROMPT
-# collection 5-par: a REAL fitted d0 and a REAL 5x5 helix covariance. Static trace
+# FRAMING (user directive 2026-07-20): the ONLY story is 5-par OT-only vs 5-par
+# OT+IT. promptHnpar=5 is the DEFAULT for all SmartPix productions henceforth so the
+# PROMPT reference (OT-only L1TTrack) carries a REAL fitted d0 + 5x5 covariance, the
+# right seed for b-tagging impact-parameter / vertexing resolution-vs-truth. 4-par
+# (d0 pinned to 0) remains SELECTABLE for ablation but is off the default path.
+#
+# The prompt tracklet producer's shipped default is Extended=False, Hnpar=4. Setting
+# Hnpar=5 (keeping Extended=False) makes the PROMPT collection 5-par. Static trace
 # (2026-07-20): no guard couples Hnpar to Extended; the prompt USEHYBRID path runs
 # TMTT KFParamsComb dimensioned purely by nHelixPar (KFbase.cc:81 pins d0 on
 # nHelixPar==4, NOT on extended; L1fittedTrack.h fills the full 5x5 for nHelixPar==5).
-# This is the PRIME-TARGET seed for the prompt digiRefit (seedCovMode=trackCov). It is
-# LIKELY-WORKS-UNVALIDATED: off the shipped config path (no config pairs Extended=False
-# with Hnpar=5), and the 5-par KF layer/d0 cuts were tuned for the displaced seed
-# population -- so prompt-seed d0 resolution/efficiency needs a RUNTIME sanity pass
-# (deferred; RelVal inputs are offline). See the task report for the exact recipe.
+# This is the PRIME-TARGET seed for the prompt digiRefit (seedCovMode=trackCov); at
+# scale it VALIDATED (mem:smartpixels-prime-target-production: 100% nonzero prompt d0,
+# spxSeedCovOK all-True across 4 variants x 3 PU files). The extended chain is always
+# Hnpar=5 regardless.
 PROMPT_HNPAR_CHOICES = (4, 5)
 
 
-def attachFromFileStubsChain(process, extendedTracks=True, promptHnpar=4):
+def attachFromFileStubsChain(process, extendedTracks=True, promptHnpar=5):
   """POSTURE C: rebuild NEW-layout L1 tracks from the FILE'S persisted stub tier.
 
-  promptHnpar (4 | 5): helix-parameter count of the PROMPT tracklet fit. 4 (default,
-  back-compat) keeps d0 pinned to 0 with a 4x4 covariance -- the prompt digiRefit then
-  seeds with the weak-d0-prior fallback (the producer's nFitPars()==5 guard auto-selects
-  it). 5 makes the prompt collection carry a REAL fitted d0 + 5x5 covariance, so the
-  prompt digiRefit seeds from a genuine 5-par covariance (seedCovMode=trackCov). The
-  extended chain is always Hnpar=5 regardless. Only affects the SEED helix/covariance;
-  the stub geometry (and hence the Part-B stub tables) is identical either way.
+  promptHnpar (4 | 5): helix-parameter count of the PROMPT tracklet fit. 5 (DEFAULT,
+  the 5-par-only framing) makes the prompt collection carry a REAL fitted d0 + 5x5
+  covariance, so the prompt digiRefit seeds from a genuine 5-par covariance
+  (seedCovMode=trackCov) and the OT-only prompt reference has real d0 for b-tagging /
+  resolution-vs-truth. 4 (ablation only) keeps d0 pinned to 0 with a 4x4 covariance --
+  the prompt digiRefit then seeds with the weak-d0-prior fallback (the producer's
+  nFitPars()==5 guard auto-selects it). The extended chain is always Hnpar=5 regardless.
+  Only affects the SEED helix/covariance; the stub geometry (and hence the Part-B stub
+  tables) is identical either way.
 
   The PU RelVal persists the entire stub tier WITH pileup (TTStubs + all three
   truth-association map sets + TrackingParticles + offlineBeamSpot, all HLT-process).
@@ -470,7 +476,7 @@ def attachFromFileStubsChain(process, extendedTracks=True, promptHnpar=4):
   return process, chainModules
 
 
-def _applyTruthSource(process, truthSource, variants, extendedTracks=True, promptHnpar=4):
+def _applyTruthSource(process, truthSource, variants, extendedTracks=True, promptHnpar=5):
   if truthSource not in TRUTHSOURCE_CHOICES:
     raise ValueError(f"truthSource must be one of {TRUTHSOURCE_CHOICES}, got '{truthSource}'")
   # Truth is load-bearing for these modes (silent per-track passthrough otherwise):
@@ -589,7 +595,7 @@ def injectSmartPixelsTrackProducer(process,
 # WF1: coexist — standard tracks AND SmartPixels variant tables in one L1Nano
 # ---------------------------------------------------------------------------
 def smartPixelsCoexist(process, variants=None, correctionSet=DEFAULT_CORRECTION_SET, addNanoTables=True,
-                       truthSource="inJob", digiRefitConfig=None, extendedTracks=True, promptHnpar=4):
+                       truthSource="inJob", digiRefitConfig=None, extendedTracks=True, promptHnpar=5):
   """Add SmartPixels track collections (default: one passthrough variant)
   alongside the standard tracks, plus one pair of L1Nano track tables per
   variant. Nothing downstream is rewired: all other L1 objects still reflect
@@ -617,17 +623,17 @@ def smartPixelsCoexist(process, variants=None, correctionSet=DEFAULT_CORRECTION_
   (trackCov valid for them too). Default True.
 
   promptHnpar (fromFileStubs only; 4 | 5): helix-parameter count of the PROMPT
-  tracklet fit. THE PRIME TARGET is promptHnpar=5 (keeping Extended=False): the
-  prompt collection then carries a REAL fitted d0 + 5x5 covariance, so the prompt
-  digiRefit variant seeds from a genuine 5-par covariance (seedCovMode=trackCov,
-  the digiRefit default). promptHnpar=4 (default, back-compat) keeps d0 pinned to 0;
-  the prompt digiRefit then uses the weak-d0-prior fallback (the producer's
-  nFitPars()==5 guard auto-selects it per-collection, so seedNPar=5/trackCov in the
-  config degrades correctly for a 4-par prompt without any config change). The
-  extended chain is always Hnpar=5. Only fromFileStubs honors this knob (inJob/
-  fromFile use the shipped prompt cfi default of 4). RUNTIME-DEFERRED: whether a
-  5-par prompt fit yields sane d0 + nonzero cov (the KF's 5-par layer cuts were
-  tuned for the displaced seed population) needs a validation pass -- see the report.
+  tracklet fit. DEFAULT 5 (the 5-par-only framing: 5-par OT-only vs 5-par OT+IT is
+  the whole story): the prompt collection carries a REAL fitted d0 + 5x5 covariance,
+  so the OT-only prompt reference has real d0 for b-tagging / resolution-vs-truth and
+  the prompt digiRefit variant seeds from a genuine 5-par covariance
+  (seedCovMode=trackCov, the digiRefit default). promptHnpar=4 (ablation only) keeps
+  d0 pinned to 0; the prompt digiRefit then uses the weak-d0-prior fallback (the
+  producer's nFitPars()==5 guard auto-selects it per-collection). The extended chain
+  is always Hnpar=5. Only fromFileStubs honors this knob (inJob/fromFile use the
+  shipped prompt cfi default of 4). The 5-par prompt path is VALIDATED at scale
+  (mem:smartpixels-prime-target-production: 100% nonzero prompt d0, spxSeedCovOK
+  all-True across 4 variants x 3 PU files).
 
   digiRefitConfig: dict merged over DIGIREFIT_DEFAULTS (validated loudly),
   relevant only for a digiRefit variant. NOTE: combining truthSource='fromFile'
@@ -675,7 +681,7 @@ def smartPixelsCoexist(process, variants=None, correctionSet=DEFAULT_CORRECTION_
 def smartPixelsCoopt(process, mode="passthrough", activeSP=None,
                      correctionSet=DEFAULT_CORRECTION_SET,
                      addPh3Table=False, skipModuleTypes=None,
-                     truthSource="inJob", digiRefitConfig=None, extendedTracks=True, promptHnpar=4):
+                     truthSource="inJob", digiRefitConfig=None, extendedTracks=True, promptHnpar=5):
   """Produce ONE SmartPixels variant in-job and inject it into every downstream
   consumer of the standard tracklet tracks. Any nano flavor run in this job then
   reflects that single track interpretation; comparisons are file-to-file

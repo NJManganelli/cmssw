@@ -412,19 +412,19 @@ _dr5 = getattr(p_h5, "l1tSmartPixelsTrackProducerWdigiRefitAAII")
 check(_dr5.digiRefitSeedNPar.value() == 5 and _dr5.digiRefitSeedCovMode.value() == "trackCov",
       "prompt digiRefit variant seeds seedNPar=5 + seedCovMode=trackCov (prime target)")
 
-# promptHnpar=4 (default, back-compat) -> everything as before: prompt Hnpar=4.
+# promptHnpar=4 (ablation only, still selectable) -> prompt Hnpar=4, d0 pinned.
 p_h4 = _build_ffs_hnpar(4)
 check(p_h4.l1tTTTracksFromTrackletEmulation.Hnpar.value() == 4,
-      "promptHnpar=4 leaves prompt Hnpar = 4 (d0 pinned; weak-d0-prior refit fallback)")
+      "promptHnpar=4 (ablation) leaves prompt Hnpar = 4 (d0 pinned; weak-d0-prior refit fallback)")
 check(p_h4.l1tTTTracksFromExtendedTrackletEmulation.Hnpar.value() == 5,
       "promptHnpar=4 still has extended chain at Hnpar = 5")
-# default coexist (no promptHnpar passed) == promptHnpar=4 (back-compat)
+# 5-par-only framing: default coexist (no promptHnpar passed) == promptHnpar=5.
 p_hdef = smartPixelsCoexist(
     (lambda: (lambda pp: (setattr(pp, "pdummy", cms.Path()) or pp))(cms.Process("TEST")))(),
     variants=[("digiRefit", "1100")], addNanoTables=False, truthSource="fromFileStubs",
     digiRefitConfig={"pixelavAngleSet": "dummy/x.json"})
-check(p_hdef.l1tTTTracksFromTrackletEmulation.Hnpar.value() == 4,
-      "default promptHnpar (unspecified) == 4 (back-compat, prompt stays 4-par)")
+check(p_hdef.l1tTTTracksFromTrackletEmulation.Hnpar.value() == 5,
+      "default promptHnpar (unspecified) == 5 (5-par-only framing: real prompt d0 + 5x5 cov)")
 
 # out-of-vocabulary promptHnpar raises loudly
 expect_raises(ValueError, lambda: attachFromFileStubsChain(
