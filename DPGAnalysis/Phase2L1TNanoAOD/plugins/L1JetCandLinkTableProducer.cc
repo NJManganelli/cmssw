@@ -55,12 +55,19 @@ public:
     const size_t nCands = candsHandle.isValid() ? candsHandle->size() : 0;
     std::vector<int32_t> candJetIdx(nCands, -1);
 
+    // Sentinel convention (see DPGAnalysis/Phase3SmartPixelsNanoAOD/README.md):
+    //   -2 = PRODUCT-level failure (the L1PuppiCand collection is not available in
+    //        this event, so no jet-constituent link can resolve for ANY row);
+    //   -1 = ELEMENT-level no-match (the collection IS available but this specific
+    //        constituent Ptr does not resolve into it).
+    const bool candsProductAvailable = candsHandle.isValid();
+
     for (size_t ijet = 0; ijet < jets.size(); ++ijet) {
       const auto& constituents = jets[ijet].constituents();
       for (size_t islot = 0; islot < constituents.size(); ++islot) {
         const auto& ptr = constituents[islot];
-        int32_t candIdx = -1;
-        if (candsHandle.isValid() && ptr.isNonnull() && ptr.id() == candsHandle.id()) {
+        int32_t candIdx = candsProductAvailable ? -1 : -2;
+        if (candsProductAvailable && ptr.isNonnull() && ptr.id() == candsHandle.id()) {
           candIdx = ptr.key();
           if (candJetIdx[ptr.key()] < 0) {
             candJetIdx[ptr.key()] = ijet;
@@ -76,7 +83,10 @@ public:
     auto linkTable = std::make_unique<nanoaod::FlatTable>(linkJetIdx.size(), linkTableName_, false, false);
     linkTable->addColumn<int32_t>("jetIdx", linkJetIdx, "index of the jet in the " + jetTableName_ + " table");
     linkTable->addColumn<int32_t>(
-        "candIdx", linkCandIdx, "index of the constituent in the " + candTableName_ + " table (-1 if not available)");
+        "candIdx", linkCandIdx,
+        "index of the constituent in the " + candTableName_ +
+            " table (-1 if this constituent does not resolve; -2 if the " + candTableName_ +
+            " collection is unavailable in this event)");
     linkTable->addColumn<int16_t>(
         "slot", linkSlot, "position in the stored constituent list (order consumed by the jet tagger)");
     linkTable->addColumn<bool>(
@@ -85,13 +95,37 @@ public:
     iEvent.put(std::move(linkTable), "link");
 
     if (writeCandExtension_) {
-      std::vector<int32_t> candTrackIdx(nCands, -1);
+      // Sentinel convention (see DPGAnalysis/Phase3SmartPixelsNanoAOD/README.md):
+      //   -2 = PRODUCT-level failure: the PFTrack (or the TTTrack) collection needed
+      //        to resolve ANY candidate->track link is unavailable in this event, so
+      //        linking could not run for anyone. isNonnull() only checks that a Ref
+      //        carries a ProductID+key; the referenced PFTrack collection may not be
+      //        persisted (e.g. PU files that keep l1tLayer1:PuppiRegional but drop the
+      //        PFTrack collection it points to). isAvailable() detects that.
+      //   -1 = ELEMENT-level no-match: the products ARE available but this specific
+      //        candidate has no resolvable track ref (e.g. a neutral candidate).
+      // Product-level probe: if any nonnull pfTrack ref is unavailable, the whole
+      // PFTrack product is missing. Also treat an unavailable TTTrack collection as a
+      // product-level failure (nothing can index into it).
+      bool pfTrackProductAvailable = true;
       if (candsHandle.isValid()) {
         for (size_t icand = 0; icand < nCands; ++icand) {
           const auto& trkRef = (*candsHandle)[icand].pfTrack();
-          if (trkRef.isNonnull()) {
+          if (trkRef.isNonnull() && !trkRef.isAvailable()) {
+            pfTrackProductAvailable = false;
+            break;
+          }
+        }
+      }
+      const bool trackLinkResolvable = candsHandle.isValid() && tracksHandle.isValid() && pfTrackProductAvailable;
+
+      std::vector<int32_t> candTrackIdx(nCands, trackLinkResolvable ? -1 : -2);
+      if (trackLinkResolvable) {
+        for (size_t icand = 0; icand < nCands; ++icand) {
+          const auto& trkRef = (*candsHandle)[icand].pfTrack();
+          if (trkRef.isNonnull() && trkRef.isAvailable()) {
             const auto& ttRef = trkRef->track();
-            if (ttRef.isNonnull() && tracksHandle.isValid() && ttRef.id() == tracksHandle.id()) {
+            if (ttRef.isNonnull() && ttRef.id() == tracksHandle.id()) {
               candTrackIdx[icand] = ttRef.key();
             }
           }
@@ -101,7 +135,9 @@ public:
       candTable->addColumn<int32_t>(
           "jetIdx", candJetIdx, "index of the first " + jetTableName_ + " jet clustering this candidate (-1 if none)");
       candTable->addColumn<int32_t>(
-          "l1TrackIdx", candTrackIdx, "index of the underlying track in the " + trackTableName_ + " table (-1 if none)");
+          "l1TrackIdx", candTrackIdx,
+          "index of the underlying track in the " + trackTableName_ +
+              " table (-1 if this candidate has no resolvable track; -2 if the track/PFTrack product is unavailable)");
       iEvent.put(std::move(candTable), "cands");
     }
   }

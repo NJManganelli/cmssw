@@ -78,6 +78,29 @@ l1tSC4JetCandsTable = l1tSC4NGJetCandsTable.clone(
     trackTableName = cms.string("L1TTrack"),
 )
 
+# SeededCone 0.8 jet <-> Puppi-constituent link table (SC8 analogue of
+# l1tSC4JetCandsTable). Same candidate-index semantics: candIdx points into the
+# L1PuppiCand table (l1tLayer2Deregionizer:Puppi) and l1TrackIdx into L1TTrack.
+# SC8 has no NG-tagged variant, so this mirrors the plain SC4 link table (not the
+# NG one). The SC8 jets MUST be clustered from the SAME l1tLayer2Deregionizer
+# Puppi product that fills L1PuppiCand for the candIdx crossref to resolve -- i.e.
+# re-emulate (or persist) the deregionizer in the same job that produces the jets;
+# consuming pre-persisted SC8 jets whose constituents Ptr into an absent
+# deregionizer product yields candIdx == -1 (see doc/ProcurementKeeps.md).
+# writeCandExtension is False: the L1PuppiCand jetIdx/l1TrackIdx extension columns
+# are already written once by l1tSC4JetCandsTable off the SAME candidate table;
+# a second extension on the same table would collide.
+l1tSC8JetCandsTable = l1tSC4NGJetCandsTable.clone(
+    jets = cms.InputTag("l1tSC8PFL1PuppiCorrectedEmulator"),
+    cands = cms.InputTag("l1tLayer2Deregionizer", "Puppi"),
+    tracks = cms.InputTag("l1tTTTracksFromTrackletEmulation", "Level1TTTracks"),
+    linkTableName = cms.string("L1SC8JetCands"),
+    candTableName = cms.string("L1PuppiCand"),
+    jetTableName = cms.string("L1puppiJetSC8"),
+    trackTableName = cms.string("L1TTrack"),
+    writeCandExtension = cms.bool(False),
+)
+
 #### HGCal multicluster table (placeholder for the jet ntupler cluster_*
 #### inputs). Covers hOverE / sigmaRR / zBarycenter; the egVsPion / egVsPU
 #### MVA outputs are not stored on any central dataformat (they were
@@ -154,6 +177,7 @@ p2L1PFCandsTask = cms.Task(
     l1tPFCandsTable,
     l1tSC4NGJetCandsTable,
     l1tSC4JetCandsTable,
+    l1tSC8JetCandsTable,
     l1tHGCClusterTable,
     l1tPuppiCandHGCClusterLink,
     l1tExtPuppiCandHGCClusterLink,
