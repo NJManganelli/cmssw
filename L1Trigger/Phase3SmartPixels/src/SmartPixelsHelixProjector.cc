@@ -55,7 +55,20 @@ namespace smartpixels {
     if (Rl <= 0.)
       return out;
 
-    const double rInv = h.rInv;
+    // SIGN FIX: the analytic parametrization below (centre = (x0 - R sinPhi0,
+    // y0 + R cosPhi0); x = x0 + (sin(phi0+psi) - sinPhi0)/rInv) curls the OPPOSITE
+    // way to the CMSSW TTTrack rInv convention that seeds this projector. With the
+    // raw stored rInv it places the crossing on the mirror-image azimuthal side, so
+    // the predicted IT hit position drifts from the real digi as r^2/R: ~0 at L1
+    // but ~2 mm at L4 (r=16 cm), i.e. O(100 sigma) position pulls at the outer
+    // layers. Verified three ways on RelVal PU200: (a) the drawn seed helix only
+    // lands on its own OT stubs with negated curvature (<0.1 mm vs up to 25 cm),
+    // (b) the real per-hit resX/pullX grow monotonically L1->L4 (0.023->0.23 cm,
+    // pull 0.7->142) with resY flat, (c) the matched-TP truth helix (its own charge)
+    // hits the OT stubs only when negated. Negating the signed curvature once here
+    // flips the centre, turning direction, crossing point AND momentum direction
+    // consistently; z0/tanL and the arc length (sTransverse >= 0) are untouched.
+    const double rInv = -h.rInv;
     const double phi0 = h.phi0;
     const double x0 = h.x0;
     const double y0 = h.y0;
