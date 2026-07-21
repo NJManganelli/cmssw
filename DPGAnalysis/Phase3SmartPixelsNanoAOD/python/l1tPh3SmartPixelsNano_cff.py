@@ -209,6 +209,106 @@ def addPh3L1SmartPixelsStubTables(process,
 # Only the PROMPT (non-extended) Puppi is re-run; L1PuppiCand.l1TrackIdx points at
 # the posture-C re-run l1tTTTracksFromTrackletEmulation. This is the hook the
 # PF-carrying SmartPix flavor wiring calls (see customize TODO in the report).
+# ---------------------------------------------------------------------------
+# COOPT single-coherent-view: re-run the WHOLE Layer-1 correlator + emulated PV
+# FROM one config's (refit) tracks, so vertex->PF->PUPPI->jets follow that view.
+# ---------------------------------------------------------------------------
+# The posture-C PU RelVal persists l1tLayer1:PuppiRegional + l1tVertexFinderEmulator
+# built from the FILE'S ORIGINAL tracklet tracks. reemulateJetSideForPFTier() reads
+# that file Puppi -> the jets are the FILE-track PF view, IDENTICAL whether or not a
+# refit variant was injected (empirically byte-identical coexist vs coopt). To make
+# the downstream genuinely COHERENT with an injected (refit) track collection we must
+# RE-RUN the correlator + emulated vertex in-job from those tracks. Both chains read
+# tracks through exactly two InputTags that carry the reference label
+# l1tTTTracksFromTrackletEmulation:Level1TTTracks:
+#   correlator: l1tPFTracksFromL1Tracks (feeds every region of l1ctLayer1_cff)
+#   vertex:     l1tGTTInputProducer -> l1tTrackSelectionProducer -> l1tVertexFinderEmulator
+# We repoint those two to `trackSrc` (the injected refit collection). The re-run
+# correlator emits l1tLayer1:PuppiRegional + l1tVertexFinderEmulator:L1VerticesEmulation
+# with the SAME labels -> they shadow the file products, so reemulateJetSideForPFTier /
+# stitchPFTierForPostureC / addNGJetTier consume the refit-driven Puppi/vertex with no
+# further change. l1ctLayer1_cff imports clean on native aarch64 (no module-scope ONNX).
+# Every non-track correlator input is persisted in the RelVal EXCEPT the barrel EM
+# clusters (l1tPhase2GCTBarrelToCorrelatorLayer1Emulator:GCTEmDigiClusters); doBarrelEM
+# re-emulates them from persisted GCT products (2 extra producers), else the barrel EM
+# input is blanked (charged-hadron + HGCal jets are unaffected -- the tagger's
+# track-driven content is intact either way).
+def stitchCorrelatorFromTracks(process,
+                               trackSrc="l1tTTTracksFromTrackletEmulation",
+                               extendedTrackSrc="l1tTTTracksFromExtendedTrackletEmulation",
+                               doBarrelEM=False, doExtended=True):
+    """Re-run Layer-1 correlator + emulated primary vertex from `trackSrc` so the
+    whole PF/Puppi/jet chain is coherent with that (refit) track view. Must run
+    BEFORE reemulateJetSideForPFTier/stitchPFTierForPostureC/addNGJetTier (it
+    produces the l1tLayer1:PuppiRegional + emulated vertex those consume). Returns
+    process. Intended for the coopt (WF2) single-coherent-view productions."""
+    import FWCore.ParameterSet.Config as cms
+    process.load("L1Trigger.Phase2L1ParticleFlow.l1ctLayer1_cff")
+    # Emulated PV chain (GTTInput -> selection -> vertex), track-driven.
+    from L1Trigger.L1TTrackMatch.l1tGTTInputProducer_cfi import l1tGTTInputProducer
+    from L1Trigger.L1TTrackMatch.l1tTrackSelectionProducer_cfi import l1tTrackSelectionProducer
+    from L1Trigger.VertexFinder.l1tVertexProducer_cfi import l1tVertexProducer
+
+    if not hasattr(process, "l1tGTTInputProducer"):
+        process.l1tGTTInputProducer = l1tGTTInputProducer.clone()
+    if not hasattr(process, "l1tTrackSelectionProducer"):
+        process.l1tTrackSelectionProducer = l1tTrackSelectionProducer.clone()
+    if not hasattr(process, "l1tVertexFinderEmulator"):
+        process.l1tVertexFinderEmulator = l1tVertexProducer.clone(VertexReconstruction=dict(Algorithm="fastHistoEmulation"))
+
+    # Repoint the ONLY two track tags carrying the reference label to `trackSrc`
+    # (the correlator PFTrack decoder + the GTTInput vertex feeder). Everything
+    # else in the correlator resolves to persisted calo/HGCal/muon products.
+    process.l1tPFTracksFromL1Tracks.L1TrackTag = cms.InputTag(trackSrc, "Level1TTTracks")
+    process.l1tGTTInputProducer.l1TracksInputTag = cms.InputTag(trackSrc, "Level1TTTracks")
+    if doExtended and hasattr(process, "l1tPFTracksFromL1TracksExtended"):
+        process.l1tPFTracksFromL1TracksExtended.L1TrackTag = cms.InputTag(extendedTrackSrc, "Level1TTTracks")
+
+    if doBarrelEM:
+        # Re-emulate the barrel EM clusters (the one non-persisted correlator input)
+        # from persisted GCT products. Inputs verified persisted: GCTFullTowers,
+        # GCTClusters, GCTDigitizedClusterToCorrelator, simHcalTriggerPrimitiveDigis.
+        from L1Trigger.L1CaloTrigger.l1tPhase2CaloPFClusterEmulator_cfi import l1tPhase2CaloPFClusterEmulator
+        from L1Trigger.L1CaloTrigger.l1tPhase2GCTBarrelToCorrelatorLayer1Emulator_cfi import l1tPhase2GCTBarrelToCorrelatorLayer1Emulator
+        if not hasattr(process, "l1tPhase2CaloPFClusterEmulator"):
+            process.l1tPhase2CaloPFClusterEmulator = l1tPhase2CaloPFClusterEmulator.clone()
+        if not hasattr(process, "l1tPhase2GCTBarrelToCorrelatorLayer1Emulator"):
+            process.l1tPhase2GCTBarrelToCorrelatorLayer1Emulator = \
+                l1tPhase2GCTBarrelToCorrelatorLayer1Emulator.clone()
+    else:
+        # No barrel EM: blank the tag so the barrel correlator runs without it.
+        # HGCal/HF hadronic + all charged (track) PF are unaffected.
+        process.l1tLayer1Barrel.emClusters = cms.InputTag("")
+
+    # Schedule the correlator regions + vertex trio unscheduled on the nano task
+    # (data dependency runs them ahead of the deregionizer/PF-cand tables). We do
+    # NOT re-run the calo-cluster producers (l1tPFClustersFromCombinedCaloHCal/HF,
+    # l1tPFClustersFromL1EGClusters): their outputs are PERSISTED in the RelVal and
+    # re-running them needs the CaloTPGRecord ES setup not loaded in a NANO job.
+    # Only the correlator regions (which read TRACKS -> the injected refit view) and
+    # the track PFTrack decoder are re-run; calo/HGCal/muon inputs resolve to the
+    # file's persisted products.
+    corrModules = ["l1tPFTracksFromL1Tracks",
+                   "l1tLayer1Barrel", "l1tLayer1HGCal", "l1tLayer1HGCalNoTK",
+                   "l1tLayer1HF", "l1tLayer1"]
+    if doExtended:
+        corrModules += ["l1tPFTracksFromL1TracksExtended", "l1tLayer1BarrelExtended",
+                        "l1tLayer1HGCalExtended", "l1tLayer1Extended"]
+    vtxModules = ["l1tGTTInputProducer", "l1tTrackSelectionProducer", "l1tVertexFinderEmulator"]
+    emModules = (["l1tPhase2CaloPFClusterEmulator",
+                  "l1tPhase2GCTBarrelToCorrelatorLayer1Emulator"] if doBarrelEM else [])
+    members = [m for m in (corrModules + vtxModules + emModules) if hasattr(process, m)]
+    process.smartPixelsCorrelatorTask = cms.Task(*[getattr(process, m) for m in members])
+    if hasattr(process, "l1tPh2NanoTask"):
+        process.l1tPh2NanoTask.add(process.smartPixelsCorrelatorTask)
+    else:
+        raise RuntimeError("stitchCorrelatorFromTracks: l1tPh2NanoTask not present.")
+    print(f"SmartPixels coopt correlator: re-ran Layer-1 correlator + emulated PV from "
+          f"'{trackSrc}' (barrelEM={doBarrelEM}); l1tLayer1:PuppiRegional + "
+          f"l1tVertexFinderEmulator now refit-driven (shadow the file products).")
+    return process
+
+
 def reemulateJetSideForPFTier(process,
                               regionalPuppi=("l1tLayer1", "PuppiRegional"),
                               doSC4=True, doSC8=True):
@@ -433,4 +533,184 @@ def useGenParticlesFromFile(process, genSrc="genParticles"):
                       "genJetAK8Table", "genJetAK8FlavourAssociation", "genJetAK8FlavourTable",
                       "genJetFlavourAssociation")
     process = dropAbsentMenuTables(process, _GENJET_TABLES)
+    return process
+
+
+# ---------------------------------------------------------------------------
+# GenJet flavour tier from GEN-SIM(-DIGI-RAW) content (fattest-nano principle):
+# jet-flavour labels for the tagger, WITHOUT MINIAOD.
+# ---------------------------------------------------------------------------
+# useGenParticlesFromFile() DROPS the whole AK4 genJet chain because the stock
+# nano wiring reads MINIAOD (genJetTable.src=slimmedGenJets,
+# genJetFlavourTable.jetFlavourInfos=slimmedGenJetsFlavourInfos,
+# patJetPartonsNano.particles=prunedGenParticles). On a GEN-SIM RelVal those are
+# absent BUT the file already persists reco::GenJet "ak4GenJets" and
+# reco::GenParticle "genParticles" -- so the AK4 genJet + parton/hadron flavour
+# tier is fully producible in-job by REPOINTING (not dropping): read the file's
+# ak4GenJets and run HadronAndPartonSelector + JetFlavourClustering on genParticles.
+# This is the (a) gap for the FAT withGen nano: GenJet_partonFlavour/hadronFlavour.
+def useGenJetsInJob(process, genJetSrc="ak4GenJets", genParticlesSrc="genParticles"):
+    """Populate the AK4 GenJet + partonFlavour/hadronFlavour tables from GEN-SIM
+    content (persisted reco::GenJet ak4GenJets + reco::GenParticle genParticles),
+    replacing the MINIAOD-coupled default sources. Call AFTER useGenParticlesFromFile
+    (which drops the MINIAOD genJet tables); this re-adds the producible ones.
+
+    Wires, from PhysicsTools.NanoAOD.jetMC_cff:
+      patJetPartonsNano (HadronAndPartonSelector) <- genParticlesSrc
+      genJetFlavourAssociation (JetFlavourClustering) <- ak4GenJets + partons
+      genJetFlavourTable (GenJetFlavourTableProducer) <- ak4GenJets + the assoc
+      genJetTable (simpleGenJetFlatTableProducer, "GenJet") <- ak4GenJets
+    The GenJet table then carries partonFlavour (int16) + hadronFlavour (uint8)
+    aligned per index to the P4 columns -- the tagger's jet-flavour labels.
+    """
+    import FWCore.ParameterSet.Config as cms
+    from PhysicsTools.NanoAOD.jetMC_cff import (
+        genJetTable as _genJetTable, patJetPartonsNano as _patJetPartonsNano,
+        genJetFlavourAssociation as _genJetFlavourAssociation,
+        genJetFlavourTable as _genJetFlavourTable)
+
+    # HadronAndPartonSelector reads genParticles (GEN-SIM) + the generator product.
+    process.patJetPartonsNano = _patJetPartonsNano.clone(
+        particles=cms.InputTag(genParticlesSrc))
+    # JetFlavourClustering ghost-associates b/c hadrons + partons to the AK4 genJets.
+    process.genJetFlavourAssociation = _genJetFlavourAssociation.clone(
+        jets=cms.InputTag(genJetSrc))
+    # GenJetFlavourTableProducer writes partonFlavour/hadronFlavour onto the GenJet
+    # table (matched by deltaR to the assoc), keyed to the SAME ak4GenJets src+cut.
+    process.genJetFlavourTable = _genJetFlavourTable.clone(
+        src=cms.InputTag(genJetSrc),
+        jetFlavourInfos=cms.InputTag("genJetFlavourAssociation"))
+    # The GenJet flat table itself, from the file's ak4GenJets (P4 + flavour join).
+    process.genJetTable = _genJetTable.clone(
+        src=cms.InputTag(genJetSrc),
+        doc=cms.string(f"AK4 GenJets ({genJetSrc}) from GEN-SIM visible genParticles"))
+
+    task = cms.Task(process.patJetPartonsNano, process.genJetFlavourAssociation,
+                    process.genJetFlavourTable, process.genJetTable)
+    process.smartPixelsGenJetTask = task
+    if hasattr(process, "l1tPh2NanoTask"):
+        process.l1tPh2NanoTask.add(task)
+    else:
+        raise RuntimeError("useGenJetsInJob: l1tPh2NanoTask not present; the withGen "
+                           "flavor did not schedule its base gen task.")
+    print(f"SmartPixels GenJet tier: AK4 GenJet + partonFlavour/hadronFlavour from "
+          f"'{genJetSrc}' + '{genParticlesSrc}' (in-job flavour clustering, no MINIAOD).")
+    return process
+
+
+# ---------------------------------------------------------------------------
+# NG jet-tagger tier (fattest-nano (b) gap): L1puppiJetSC4NG + L1SC4NGJetCands +
+# L1ExtPuppiCand + L1HGCCluster on a reduced-menu (posture-C) PU input.
+# ---------------------------------------------------------------------------
+# The stock production DROPS sc4NGJetTable / l1tSC4NGJetCandsTable via
+# dropAbsentMenuTables because the NG producer + its inputs are not scheduled.
+# They ARE producible in this build: L1TSC4NGJetProducer is an hls4mlEmulator
+# model (L1TSC4NGJetModel_v1_0_1.so, compiled for el9_aarch64_gcc13) loaded in the
+# producer constructor -- NOT the module-scope ONNX import in l1pfJetMet_cff that
+# bus-errors on native aarch64 (that is why we import the cfi STANDALONE here, as
+# reemulateJetSideForPFTier does for the deregionizer/SeededCone cfis, never the
+# full l1pfJetMet_cff). The NG producer reads corrected SeededCone l1t::PFJet jets
+# (which reemulateJetSideForPFTier already produces as l1tSC4PFL1PuppiCorrectedEmulator)
+# and emits per-jet b/c/uds/g/tau/e/mu tag scores. The link + cand + HGCcluster
+# tables all resolve from products the RelVal persists (l1tLayer1[Extended]:PuppiRegional,
+# l1tHGCalBackEndLayer2Producer 3D clusters) re-emulated in-job.
+def addNGJetTier(process,
+                 correctedJets=("l1tSC4PFL1PuppiCorrectedEmulator", ""),
+                 promptDeregPuppi=("l1tLayer2Deregionizer", "Puppi"),
+                 extRegionalPuppi=("l1tLayer1Extended", "PuppiRegional"),
+                 hgcClusters=("l1tHGCalBackEndLayer2Producer",
+                              "HGCalBackendLayer2Processor3DClustering"),
+                 coherent=True):
+    """Schedule the NG jet-tagger tier + un-prune its nano tables.
+
+    coherent=True (single-coherent-view default): the NG jets are clustered from
+    the SAME prompt corrected SeededCone jets that fill the base PF/Puppi/SC4 tier
+    (correctedJets, produced by reemulateJetSideForPFTier), and the NG jet<->cand
+    link table points its L1ExtPuppiCand candidate table at the PROMPT deregionizer
+    Puppi -- so the whole jet tier follows one coherent track->PF->Puppi view.
+    coherent=False reproduces the stock NG wiring (jets + cands from the EXTENDED
+    deregionizer, re-emulated from extRegionalPuppi).
+
+    Requires reemulateJetSideForPFTier() to have run (prompt deregionizer + SC4
+    corrected jets) and the base p2L1PFCandsTask family scheduled (as
+    stitchPFTierForPostureC does). Idempotent per producer/table label.
+    """
+    import FWCore.ParameterSet.Config as cms
+    from L1Trigger.Phase2L1ParticleFlow.l1tSC4NGJetProducer_cfi import l1tSC4NGJetProducer
+    from L1Trigger.Phase2L1ParticleFlow.l1tDeregionizerProducer_cfi import (
+        l1tDeregionizerProducerExtended)
+
+    seq = []
+    ngJetsInput = cms.InputTag(*correctedJets) if correctedJets[1] else cms.InputTag(correctedJets[0])
+    if not coherent:
+        # Extended-deregionizer path (stock NG training input): re-emulate the
+        # extended flat Puppi in-job from the file's extended regional Puppi.
+        if not hasattr(process, "l1tLayer2DeregionizerExtended"):
+            process.l1tLayer2DeregionizerExtended = l1tDeregionizerProducerExtended.clone(
+                RegionalPuppiCands=cms.InputTag(*extRegionalPuppi))
+            seq.append(process.l1tLayer2DeregionizerExtended)
+
+    # The NG jet producer: hls4ml model in its ctor; reads corrected l1t::PFJet.
+    if not hasattr(process, "l1tSC4NGJetProducer"):
+        process.l1tSC4NGJetProducer = l1tSC4NGJetProducer.clone(jets=ngJetsInput)
+        seq.append(process.l1tSC4NGJetProducer)
+
+    if seq:
+        task = cms.Task(*seq)
+        process.smartPixelsNGJetTask = task
+        if hasattr(process, "l1tPh2NanoTask"):
+            process.l1tPh2NanoTask.add(task)
+        else:
+            raise RuntimeError("addNGJetTier: l1tPh2NanoTask not present.")
+
+    # Un-prune the NG nano tables. They live in l1tPh2Nanotables_cff (jet-side
+    # tables) and l1tPh2PFCandsNanotables_cff (cand/link/hgccluster). Import and
+    # attach any not already present, repointing to the coherent products.
+    from DPGAnalysis.Phase2L1TNanoAOD.l1tPh2Nanotables_cff import sc4NGJetTable as _sc4NG
+    from DPGAnalysis.Phase2L1TNanoAOD.l1tPh2PFCandsNanotables_cff import (
+        l1tSC4NGJetCandsTable as _ngCands, l1tExtPuppiCandsTable as _extPuppi,
+        l1tHGCClusterTable as _hgc)
+
+    addTables = []
+    if not hasattr(process, "sc4NGJetTable"):
+        _t = _sc4NG.clone()
+        # The stock sc4NGJetTable inherits pfJetTable.externalVariables (btagScore/
+        # llpTagScore from l1tBJetProducer*/l1tTOoLLiP* -- separate NN producers NOT
+        # scheduled here). The multi-class NG scores come from `variables`
+        # (getTagScore); drop the unresolvable external NN scores so it does not
+        # ProductNotFound at output.
+        if hasattr(_t, "externalVariables"):
+            del _t.externalVariables
+        process.sc4NGJetTable = _t
+        addTables.append("sc4NGJetTable")
+
+    if not hasattr(process, "l1tExtPuppiCandsTable"):
+        # The L1ExtPuppiCand candidate table (constituents referenced by the NG
+        # link table). In coherent mode point it at the PROMPT deregionizer Puppi
+        # so the NG cands share the base-tier view; else the extended deregionizer.
+        _e = _extPuppi.clone(
+            src=cms.InputTag(*promptDeregPuppi) if coherent else _extPuppi.src)
+        process.l1tExtPuppiCandsTable = _e
+        addTables.append("l1tExtPuppiCandsTable")
+
+    if not hasattr(process, "l1tSC4NGJetCandsTable"):
+        _c = _ngCands.clone()
+        if coherent:
+            _c.cands = cms.InputTag(*promptDeregPuppi)
+            _c.tracks = cms.InputTag("l1tTTTracksFromTrackletEmulation", "Level1TTTracks")
+            _c.trackTableName = cms.string("L1TTrack")
+        process.l1tSC4NGJetCandsTable = _c
+        addTables.append("l1tSC4NGJetCandsTable")
+
+    if not hasattr(process, "l1tHGCClusterTable"):
+        process.l1tHGCClusterTable = _hgc.clone(src=cms.InputTag(*hgcClusters))
+        addTables.append("l1tHGCClusterTable")
+
+    if addTables:
+        ngTablesTask = cms.Task(*[getattr(process, t) for t in addTables])
+        process.smartPixelsNGTablesTask = ngTablesTask
+        process.l1tPh2NanoTask.add(ngTablesTask)
+    print("SmartPixels NG jet tier: L1puppiJetSC4NG + L1SC4NGJetCands + L1ExtPuppiCand"
+          " + L1HGCCluster scheduled (coherent=%s); NG jets from %s."
+          % (coherent, ngJetsInput))
     return process
