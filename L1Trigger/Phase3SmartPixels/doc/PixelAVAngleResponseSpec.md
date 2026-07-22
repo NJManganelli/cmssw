@@ -81,8 +81,15 @@ Until then the producer loads no Stack A payload; if `smarthitTrueSet` is set it
   ngtagger-train eval_spixel_angles/extract_pixelav_angle_payload.py,
   `SWAP_ALPHA_BETA`). Payload JSONs themselves are ALWAYS in spec convention;
   consumers are unaffected. Verified consistently across the Mlp_Slim-2bit,
-  Conv2D_Max-2bit, and Conv1D_Full-2bit variants. The Lorentz bias SIGN is not
-  measurable without a two-sign bLocalY scan (absent from current sources).
+  Conv2D_Max-2bit, and Conv1D_Full-2bit variants. UPDATE (2026-07-22 adversarial
+  convention audit, ngtagger-train eval_spixel_angles/convention_audit/): the Lorentz
+  ORIENTATION is now settled empirically without a two-sign bLocalY scan — the CMSSW
+  cluster x-extent minimum sits at cotAlpha ~ −0.14..−0.19, the same SIGNED location as
+  the PixelAV bending-response peak (−0.15) under the pure-swap mapping, excluding the
+  mirrored (swap+sign-flip) alternative. Known coverage limitation from the same audit:
+  ~44% of real TBPX crossings exceed the source beta coverage (|cotBeta| > 1.07) and
+  land on clamped edge sigmas (beta pull widths grow to ~5 at high |eta|); the remedy is
+  extended PixelAV simulation coverage at high |cotBeta|, not a mapping change.
 
 ## 3. Payload format
 
