@@ -58,7 +58,16 @@ Until then the producer loads no Stack A payload; if `smarthitTrueSet` is set it
   Signed components in Tesla.
 - Charge sign is NOT an input: its effect enters through the signed cotAlpha and signed
   bLocalY (Lorentz drift direction).
-- **SOURCE-CONVENTION WARNING (verified 2026-07-19, do not re-derive)**: the PixelAV
+- **SOURCE-CONVENTION WARNING (verified 2026-07-19; analytically CONFIRMED 2026-07-22 by
+  the PixelAV author's coordinate transformation)**: PixelAV uses test-beam coordinates;
+  the CMSSW frame relates to them by `x_cms = -y_pix, y_cms = -x_pix, z_cms = -z_pix`
+  (proper rotation, det = +1). Since momenta transform like coordinates,
+  `cotAlpha_cms = (-p_y_pix)/(-p_z_pix) = +cotBeta_pix` and
+  `cotBeta_cms = +cotAlpha_pix`: for the COT angles this is a PURE SWAP with NO sign
+  flip (the z negation cancels in both ratios). Non-ratio quantities do NOT enjoy the
+  cancellation: local positions/residuals swap AND negate (`dx_cms = -dy_pix`), as do
+  local-B components (`B_y_cms = -B_x_pix`) — relevant if position residuals or a real
+  bLocalY axis are ever sourced from PixelAV-side dumps. The PixelAV
   simulation files and the SmartPixels regression-NN eval dumps label the angles
   OPPOSITE to this spec. In those files the fine 50 um pitch runs along PixelAV
   local-y (`y-midplane` span 50 um vs `x-midplane` 200 um), so their
