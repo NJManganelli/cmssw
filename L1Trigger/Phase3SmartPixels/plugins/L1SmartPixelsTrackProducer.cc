@@ -31,12 +31,17 @@
 #include "FWCore/ParameterSet/interface/ParameterSet.h"
 #include "FWCore/ServiceRegistry/interface/Service.h"
 #include "FWCore/Utilities/interface/Exception.h"
-// digiRefit: local per-event random engine + shared projector + pixel digi/simlink formats.
-// The RandomNumberGeneratorService stream engine is deliberately NOT used: a local
-// engine seeded from hash(label,run,lumi,event) makes outputs event-order-independent
-// and split-job invariant (see doc/Phase2Acceptance.md §1, doc/RefitSidecarSpec.md).
+// digiRefit: shared projector + pixel digi/simlink formats. The angle-synthesis
+// throw is FACTORIZED OUT of compiled code into the payload (HashPRNG fused shift
+// compounds, doc/PixelAVAngleResponseSpec.md §3): synthesized angles are pure
+// correctionlib evaluates, deterministic per input tuple, no engine involved.
+// A local CLHEP engine remains ONLY for the optional Stack-B noise-angle
+// inverse-CDF draws (smarthitFakeSet quantile inputs) -- that payload's schema is
+// out of scope here; the engine is seeded from hash(label,run,lumi,event) so it
+// stays event-order-independent and split-job invariant, but its draw sequence is
+// code-path-ordered (see doc/Phase2Acceptance.md §1, doc/RefitSidecarSpec.md).
+// The RandomNumberGeneratorService stream engine is deliberately NOT used.
 #include "CLHEP/Random/MixMaxRng.h"
-#include "CLHEP/Random/RandGaussQ.h"
 #include "CLHEP/Random/RandFlat.h"
 #include "L1Trigger/Phase3SmartPixels/interface/SmartPixelsHelixProjector.h"
 #include "L1Trigger/Phase3SmartPixels/interface/SmartPixelsParentMap.h"
@@ -405,8 +410,13 @@ private:
   std::unique_ptr<conifer::BDT<float, float>> digiRefitBdt_;
 
   // Correctionlib refs for the PixelAV angle response (loaded iff digiRefit).
-  correction::Correction::Ref corrAlphaSigma_, corrAlphaBias_;
-  correction::Correction::Ref corrBetaSigma_, corrBetaBias_, corrValidProb_;
+  // The synthesis throw lives in the payload (spec §3 fused shift compounds):
+  //   cotX_meas = cotX_true + spx_angle_X_shift(layer,cotA,cotB,bLocalY, 1.0)
+  //   accept iff spx_angle_valid_flat(in) < spx_angle_valid_prob(in)
+  // -> bias + sigma*N(0,1) via HashPRNG, deterministic per input tuple, NO RNG here.
+  correction::Correction::Ref corrAlphaSigma_, corrBetaSigma_;
+  correction::Correction::Ref corrValidProb_, corrValidFlat_;
+  correction::CompoundCorrection::Ref corrAlphaShift_, corrBetaShift_;
   // Stack B inclusive noise-angle distribution (used for no-link digis).
   correction::Correction::Ref corrNoiseCotAlpha_, corrNoiseCotBeta_;
 
@@ -645,10 +655,13 @@ L1SmartPixelsTrackProducer::L1SmartPixelsTrackProducer(edm::ParameterSet const& 
       digiRefitBdt_ = std::make_unique<conifer::BDT<float, float>>(digiRefitBdtModel_);
     }
 
-    // Reproducible randomness comes from a LOCAL engine seeded per produce() call
-    // from hash(module label, run, lumi, event) -- see digiRefitSeed() and
-    // doc/Phase2Acceptance.md §1. The RandomNumberGeneratorService is deliberately
-    // NOT used (its per-stream engine makes outputs order-dependent).
+    // Angle-synthesis randomness is PAYLOAD-SIDE (HashPRNG fused shift compounds,
+    // spec §3): deterministic per input tuple, replay-identical, no engine. A local
+    // engine (seeded per produce() from hash(module label, run, lumi, event), see
+    // digiRefitSeed()) is created ONLY when the optional smarthitFakeSet noise-angle
+    // model is configured -- its inverse-CDF quantile draws still need a uniform
+    // stream. The RandomNumberGeneratorService is deliberately NOT used
+    // (its per-stream engine makes outputs order-dependent).
 
     pixelDigiToken_ =
         consumes<edm::DetSetVector<PixelDigi>>(iConfig.getParameter<edm::InputTag>("pixelDigiInputTag"));
@@ -657,16 +670,26 @@ L1SmartPixelsTrackProducer::L1SmartPixelsTrackProducer(edm::ParameterSet const& 
     simTrackToken_ = consumes<edm::SimTrackContainer>(iConfig.getParameter<edm::InputTag>("simTrackInputTag"));
 
     // PixelAV angle-response payload (required, non-empty). See
-    // doc/PixelAVAngleResponseSpec.md — the five load-bearing correction names.
+    // doc/PixelAVAngleResponseSpec.md — the load-bearing correction/compound names.
     if (digiRefitPixelavAngleSet_.empty())
       throw cms::Exception("Configuration")
           << "digiRefit requires a non-empty pixelavAngleSet (PixelAV angle-response payload).";
     auto aset = correction::CorrectionSet::from_file(digiRefitPixelavAngleSet_);
     corrAlphaSigma_ = aset->at("spx_angle_alpha_sigma");
-    corrAlphaBias_ = aset->at("spx_angle_alpha_bias");
     corrBetaSigma_ = aset->at("spx_angle_beta_sigma");
-    corrBetaBias_ = aset->at("spx_angle_beta_bias");
     corrValidProb_ = aset->at("spx_angle_valid_prob");
+    try {
+      corrValidFlat_ = aset->at("spx_angle_valid_flat");
+      corrAlphaShift_ = aset->compound().at("spx_angle_alpha_shift");
+      corrBetaShift_ = aset->compound().at("spx_angle_beta_shift");
+    } catch (const std::out_of_range&) {
+      throw cms::Exception("Configuration")
+          << "pixelavAngleSet '" << digiRefitPixelavAngleSet_
+          << "' predates the HashPRNG synthesis-throw factorization (missing "
+          << "spx_angle_valid_flat / spx_angle_{alpha,beta}_shift). Regenerate it with "
+          << "ngtagger-train/eval_spixel_angles/extract_pixelav_angle_payload.py "
+          << "(additions are purely additive; plain corrections stay bit-identical).";
+    }
 
     // Optional Stack B inclusive noise-angle distribution. When absent, no-link
     // (noise) digis contribute position only (angles disabled for that hit).
@@ -834,16 +857,20 @@ void L1SmartPixelsTrackProducer::produce(edm::Event& iEvent, const edm::EventSet
           << "digiRefit requires at least one active layer (smartPixelsActiveLayers='"
           << smartPixelsActiveLayers_ << "').";
     projector_.build(*theTrackerGeom, *tTopo, 4);
-    // Local engine seeded deterministically from (module label, run, lumi, event):
-    // event-order-independent and split-job invariant (see digiRefitSeed()). The
-    // EDM module label (distinct for prompt vs extended) decorrelates the two
-    // producers' draw streams.
-    const long drSeed = digiRefitSeed(moduleDescription().moduleLabel(),
-                                      iEvent.id().run(),
-                                      iEvent.id().luminosityBlock(),
-                                      static_cast<unsigned long long>(iEvent.id().event()));
-    drEngineOwned = std::make_unique<CLHEP::MixMaxRng>(drSeed);
-    drEngine = drEngineOwned.get();
+    // Angle synthesis is engine-free (payload-side HashPRNG, spec §3). A local
+    // engine is needed ONLY for the optional Stack-B noise-angle model's
+    // inverse-CDF quantile draws; seeded deterministically from (module label,
+    // run, lumi, event): event-order-independent and split-job invariant (see
+    // digiRefitSeed()). The EDM module label (distinct for prompt vs extended)
+    // decorrelates the two producers' draw streams.
+    if (corrNoiseCotAlpha_ && corrNoiseCotBeta_) {
+      const long drSeed = digiRefitSeed(moduleDescription().moduleLabel(),
+                                        iEvent.id().run(),
+                                        iEvent.id().luminosityBlock(),
+                                        static_cast<unsigned long long>(iEvent.id().event()));
+      drEngineOwned = std::make_unique<CLHEP::MixMaxRng>(drSeed);
+      drEngine = drEngineOwned.get();
+    }
   }
 
   // ----------------------------------------------------------------------------------------------
@@ -1710,15 +1737,18 @@ void L1SmartPixelsTrackProducer::produce(edm::Event& iEvent, const edm::EventSet
                 const double trueCotB = plv.y() / ppz;
                 cand.parCotA = trueCotA;
                 cand.parCotB = trueCotB;
+                // Synthesis contract (spec §3, fused): validity gate + one shift
+                // evaluate per angle. Everything stochastic is payload-side HashPRNG
+                // -- deterministic per (layer, cotA, cotB, bLocalY) input tuple.
                 const std::vector<std::variant<int, double, std::string>> pin = {
                     layer, trueCotA, trueCotB, static_cast<double>(cx.bLocalY)};
-                if (CLHEP::RandFlat::shoot(drEngine) < corrValidProb_->evaluate(pin)) {
+                if (corrValidFlat_->evaluate(pin) < corrValidProb_->evaluate(pin)) {
                   cand.sigA = corrAlphaSigma_->evaluate(pin);
                   cand.sigB = corrBetaSigma_->evaluate(pin);
-                  cand.cotA = trueCotA + corrAlphaBias_->evaluate(pin) +
-                              cand.sigA * CLHEP::RandGaussQ::shoot(drEngine);
-                  cand.cotB = trueCotB + corrBetaBias_->evaluate(pin) +
-                              cand.sigB * CLHEP::RandGaussQ::shoot(drEngine);
+                  const std::vector<std::variant<int, double, std::string>> pinAcc = {
+                      layer, trueCotA, trueCotB, static_cast<double>(cx.bLocalY), 1.0};
+                  cand.cotA = trueCotA + corrAlphaShift_->evaluate(pinAcc);
+                  cand.cotB = trueCotB + corrBetaShift_->evaluate(pinAcc);
                   cand.hasA = (cand.sigA > 0.);
                   cand.hasB = (cand.sigB > 0.);
                 }
