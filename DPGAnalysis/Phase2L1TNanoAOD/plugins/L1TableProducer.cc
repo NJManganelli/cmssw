@@ -18,6 +18,10 @@ typedef SimpleFlatTableProducer<l1t::TkJetWord> SimpleL1TkJetWordCandidateFlatTa
 #include "DataFormats/L1Trigger/interface/TkTripletWord.h"
 typedef SimpleFlatTableProducer<l1t::TkTripletWord> SimpleTkTripletWordCandidateFlatTableProducer;
 
+#include "DataFormats/L1TrackTrigger/interface/TTTrack.h"
+#include "DataFormats/L1TrackTrigger/interface/TTTypes.h"
+typedef SimpleFlatTableProducer<TTTrack<Ref_Phase2TrackerDigi_>> SimpleL1TTTrackCandidateFlatTableProducer;
+
 #include "DataFormats/L1Trigger/interface/L1Candidate.h"
 typedef SimpleFlatTableProducer<l1t::L1Candidate> SimpleTriggerL1CandidateFlatTableProducer;
 
@@ -45,6 +49,12 @@ typedef SimpleFlatTableProducer<l1t::HPSPFTau> SimpleTriggerL1HPSPFTauFlatTableP
 #include "DataFormats/L1TParticleFlow/interface/PFJet.h"
 typedef SimpleFlatTableProducer<l1t::PFJet> SimpleTriggerL1PFJetFlatTableProducer;
 
+#include "DataFormats/L1TParticleFlow/interface/PFCandidate.h"
+typedef SimpleFlatTableProducer<l1t::PFCandidate> SimpleTriggerL1PFCandidateFlatTableProducer;
+
+#include "DataFormats/L1THGCal/interface/HGCalMulticluster.h"
+typedef SimpleFlatTableProducer<l1t::HGCalMulticluster> SimpleTriggerL1HGCalMulticlusterFlatTableProducer;
+
 #include "FWCore/Framework/interface/MakerMacros.h"
 DEFINE_FWK_MODULE(SimpleL1VtxWordCandidateFlatTableProducer);
 DEFINE_FWK_MODULE(SimpleL1DisplacedVtxCandidateFlatTableProducer);
@@ -52,6 +62,7 @@ DEFINE_FWK_MODULE(P2GTAlgoBlockFlatTableProducer);
 DEFINE_FWK_MODULE(SimpleP2GTCandidateFlatTableProducer);
 DEFINE_FWK_MODULE(SimpleL1TkJetWordCandidateFlatTableProducer);
 DEFINE_FWK_MODULE(SimpleTkTripletWordCandidateFlatTableProducer);
+DEFINE_FWK_MODULE(SimpleL1TTTrackCandidateFlatTableProducer);
 DEFINE_FWK_MODULE(SimpleTriggerL1CandidateFlatTableProducer);
 DEFINE_FWK_MODULE(SimpleTriggerL1TkEmFlatTableProducer);
 DEFINE_FWK_MODULE(SimpleTriggerL1TkElectronFlatTableProducer);
@@ -61,3 +72,5 @@ DEFINE_FWK_MODULE(SimpleTriggerL1CaloJetFlatTableProducer);
 DEFINE_FWK_MODULE(SimpleTriggerL1PFTauFlatTableProducer);
 DEFINE_FWK_MODULE(SimpleTriggerL1HPSPFTauFlatTableProducer);
 DEFINE_FWK_MODULE(SimpleTriggerL1PFJetFlatTableProducer);
+DEFINE_FWK_MODULE(SimpleTriggerL1PFCandidateFlatTableProducer);
+DEFINE_FWK_MODULE(SimpleTriggerL1HGCalMulticlusterFlatTableProducer);

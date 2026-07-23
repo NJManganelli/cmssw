@@ -22,6 +22,67 @@ def addPh2L1Objects(process):
 
     return process
 
+### L1T track tables ("L1TrkNano" additions on top of the Phase-2 L1Nano)
+from DPGAnalysis.Phase2L1TNanoAOD.l1tPh2TrkNanotables_cff import *
+def addPh2L1Tracks(process):
+    process.l1tPh2NanoTask.add(p2L1TracksTask)
+    return process
+
+def _ensureTrackTruthAssociators(process):
+    """Schedule the TTCluster/TTStub/TTTrack truth associators in the nano
+    task if the upstream workflow did not run them, pointing the track
+    associators at the tracklet emulation collections. Requires MC inputs
+    with Phase-2 tracker digi sim links (GEN-SIM-DIGI-RAW)."""
+    if not hasattr(process, "TTTrackAssociatorFromPixelDigis"):
+        process.load("SimTracker.TrackTriggerAssociation.TrackTriggerAssociator_cff")
+        process.TTTrackAssociatorFromPixelDigis.TTTracks = cms.VInputTag(
+            cms.InputTag("l1tTTTracksFromTrackletEmulation", "Level1TTTracks")
+        )
+    if not hasattr(process, "TTTrackAssociatorFromPixelDigisExtended"):
+        process.TTTrackAssociatorFromPixelDigisExtended = process.TTTrackAssociatorFromPixelDigis.clone(
+            TTTracks = [cms.InputTag("l1tTTTracksFromExtendedTrackletEmulation", "Level1TTTracks")]
+        )
+    process.l1tPh2NanoTask.add(
+        process.TTClusterAssociatorFromPixelDigis,
+        process.TTStubAssociatorFromPixelDigis,
+        process.TTTrackAssociatorFromPixelDigis,
+        process.TTTrackAssociatorFromPixelDigisExtended,
+    )
+    return process
+
+def addPh2L1TrackTruth(process):
+    """nStubs + TTTrackAssociationMap truth columns on the track tables;
+    inputs for track-quality GBDT training. Inserts the truth associators
+    into the process when the workflow did not run them."""
+    _ensureTrackTruthAssociators(process)
+    process.l1tPh2NanoTask.add(p2L1TrackTruthTask)
+    return process
+
+def addPh2L1PFCandTrackTruth(process):
+    """Track genuine/fake truth propagated onto the Puppi candidate tables
+    (for candidate-only tiers without the track tables)."""
+    _ensureTrackTruthAssociators(process)
+    process.l1tPh2NanoTask.add(p2L1PFCandTrackTruthTask)
+    return process
+
+def addPh2L1DisplacedVertices(process):
+    """GTT displaced-vertex table (stock GBDT score + isReal truth label).
+    Schedules the DisplacedVertexProducer if the workflow did not run it;
+    its truth label needs the extended-track associator (ensured here)."""
+    _ensureTrackTruthAssociators(process)
+    if not hasattr(process, "DisplacedVertexProducer"):
+        process.load("L1Trigger.L1TTrackMatch.DisplacedVertexProducer_cfi")
+    process.l1tPh2NanoTask.add(process.DisplacedVertexProducer)
+    process.l1tPh2NanoTask.add(p2L1DisplacedVertexTask)
+    return process
+
+
+### L1 PF / Puppi candidate tables (superset of the jet-tagger training inputs)
+from DPGAnalysis.Phase2L1TNanoAOD.l1tPh2PFCandsNanotables_cff import *
+def addPh2L1PFCandidates(process):
+    process.l1tPh2NanoTask.add(p2L1PFCandsTask)
+    return process
+
 #### GENERATOR INFO
 ## based on https://github.com/cms-sw/cmssw/blob/master/PhysicsTools/NanoAOD/python/nanogen_cff.py#L2-L36
 from PhysicsTools.NanoAOD.genparticles_cff import * ## for GenParts
@@ -29,6 +90,7 @@ from PhysicsTools.NanoAOD.jetMC_cff import * ## for GenJets
 from PhysicsTools.NanoAOD.met_cff import metMCTable ## for GenMET
 from PhysicsTools.NanoAOD.globals_cff import puTable ## for PU
 from PhysicsTools.NanoAOD.taus_cff import * ## for Gen taus
+from PhysicsTools.NanoAOD.genVertex_cff import * ## for generator vertex
 def addGenObjects(process):
 
     process.genNanoTask = cms.Task()
@@ -63,7 +125,7 @@ def addGenObjects(process):
     process.genNanoTask.add(
                 puTable, metMCTable,
                 genParticleTask, genParticleTablesTask,
-                genTauTask,
+                genTauTask, genVertexTablesTask,
     )
     
     # add all GenJets: AK4 and AK8
