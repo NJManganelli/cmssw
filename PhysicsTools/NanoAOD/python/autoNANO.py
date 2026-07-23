@@ -66,6 +66,33 @@ autoNANO = {
                          ])},
     'Phase2L1DPGwithGen' : {'sequence': '@Phase2L1DPG',
                             'customize': '@Phase2L1DPG+DPGAnalysis/Phase2L1TNanoAOD/l1tPh2Nano_cff.addGenObjects',},
+    # Phase-2 L1 DPG extended tiers:
+    #  L1TrkNano   = L1Nano + L1T track tables
+    #  L1PFNano    = L1Nano + L1 PF/Puppi candidate tables (incl. jet-constituent links)
+    #  L1PFTrkNano = L1Nano + both
+    'L1TrkNano' : {'sequence': '@Phase2L1DPG',
+                   'customize': '@Phase2L1DPG+DPGAnalysis/Phase2L1TNanoAOD/l1tPh2Nano_cff.addPh2L1Tracks',},
+    'L1TrkNanowithGen' : {'sequence': '@Phase2L1DPG',
+                          'customize': '+'.join(['@L1TrkNano',
+                                                 'DPGAnalysis/Phase2L1TNanoAOD/l1tPh2Nano_cff.addPh2L1TrackTruth',
+                                                 'DPGAnalysis/Phase2L1TNanoAOD/l1tPh2Nano_cff.addPh2L1DisplacedVertices',
+                                                 'DPGAnalysis/Phase2L1TNanoAOD/l1tPh2Nano_cff.addGenObjects']),},
+    'L1PFNano' : {'sequence': '@Phase2L1DPG',
+                  'customize': '@Phase2L1DPG+DPGAnalysis/Phase2L1TNanoAOD/l1tPh2Nano_cff.addPh2L1PFCandidates',},
+    'L1PFNanowithGen' : {'sequence': '@Phase2L1DPG',
+                         'customize': '+'.join(['@L1PFNano',
+                                                'DPGAnalysis/Phase2L1TNanoAOD/l1tPh2Nano_cff.addPh2L1PFCandTrackTruth',
+                                                'DPGAnalysis/Phase2L1TNanoAOD/l1tPh2Nano_cff.addGenObjects']),},
+    'L1PFTrkNano' : {'sequence': '@Phase2L1DPG',
+                     'customize': '@L1TrkNano+DPGAnalysis/Phase2L1TNanoAOD/l1tPh2Nano_cff.addPh2L1PFCandidates',},
+    # note: candidate-level track truth (addPh2L1PFCandTrackTruth) is only in the
+    # candidate-only tier; with the track tables present the truth is reached via
+    # the l1TrackIdx indirection (analysis-side schema handles both uniformly)
+    'L1PFTrkNanowithGen' : {'sequence': '@Phase2L1DPG',
+                            'customize': '+'.join(['@L1PFTrkNano',
+                                                   'DPGAnalysis/Phase2L1TNanoAOD/l1tPh2Nano_cff.addPh2L1TrackTruth',
+                                                   'DPGAnalysis/Phase2L1TNanoAOD/l1tPh2Nano_cff.addPh2L1DisplacedVertices',
+                                                   'DPGAnalysis/Phase2L1TNanoAOD/l1tPh2Nano_cff.addGenObjects']),},
     # Muon POG flavours : add tables through customize, supposed to be combined with PHYS
     'MUPOG': {'sequence': '@PHYS',
               'customize': '@PHYS+PhysicsTools/NanoAOD/custom_muon_cff.PrepMuonCustomNanoAOD'},
