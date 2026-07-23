@@ -7,6 +7,13 @@
 <use name="DataFormats/L1TCorrelator"/>
 <use name="DataFormats/L1TMuonPhase2"/>
 <use name="DataFormats/L1TParticleFlow"/>
+<use name="DataFormats/L1TrackTrigger"/>
+<use name="DataFormats/L1THGCal"/>
+<use name="DataFormats/GeometryVector"/>
+<use name="DataFormats/Math"/>
+<use name="MagneticField/Engine"/>
+<use name="MagneticField/Records"/>
+<use name="SimDataFormats/Associations"/>
 <use name="DataFormats/NanoAOD"/>
 <use name="DataFormats/PatCandidates"/>
 <use name="DataFormats/ProtonReco"/>
