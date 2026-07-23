@@ -85,8 +85,8 @@
 // #include "Geometry/TrackerGeometryBuilder/interface/TrackerGeometry.h"
 // #include "Geometry/Records/interface/TrackerDigiGeometryRecord.h"
 // #include "Geometry/TrackerGeometryBuilder/interface/RectangularPixelTopology.h"
-// #include "Geometry/CommonDetUnit/interface/GeomDetType.h"
-// #include "Geometry/CommonDetUnit/interface/GeomDet.h"
+// #include "Geometry/CommonTopologies/interface/GeomDetType.h"
+// #include "Geometry/CommonTopologies/interface/GeomDet.h"
 
 // #include "Geometry/CommonTopologies/interface/PixelGeomDetUnit.h"
 // #include "Geometry/CommonTopologies/interface/PixelGeomDetType.h"
@@ -96,10 +96,10 @@
 ////////////////
 // PHYSICS TOOLS
 #include "L1Trigger/TrackFindingTracklet/interface/HitPatternHelper.h"
-// CMSSW_17 backport (Branch B): hph::Setup is keyed on hph::SetupRcd (declared in
-// HitPatternHelperRcd.h), NOT trackerDTC::SetupRcd. The trackerDTC::SetupRcd binding
-// is the post-#51503 (CMSSW_20) layout; here the record lives with the HPH producer.
-#include "L1Trigger/TrackFindingTracklet/interface/HitPatternHelperRcd.h"
+// Branch C (covMatrix omnibus): hph::Setup is keyed on trackerDTC::SetupRcd
+// (EVENTSETUP_DATA_DEFAULT_RECORD in HitPatternHelper.h). No HitPatternHelperRcd.h
+// in the #51503/L1TK-dev-15_1 track layer.
+#include "L1Trigger/TrackerDTC/interface/SetupRcd.h"
 // #include "CommonTools/UtilAlgos/interface/TFileService.h"
 #include "CLHEP/Units/PhysicalConstants.h"
 #include "L1Trigger/TrackTrigger/interface/StubPtConsistency.h"
@@ -397,8 +397,8 @@ private:
   int digiRefitSeedNPar_ = 5;           // 4 (prompt) | 5 (extended + covariance seed)
   // CMSSW_17 backport (Branch B): TTTrack carries NO helix covariance (Ian's
   // covMatrix PR cms-sw/cmssw#51503 is Branch C, not applied here). Default is
-  // "parametrized"; "trackCov" is guarded to throw in the constructor.
-  std::string digiRefitSeedCovMode_ = "parametrized";  // "trackCov" requires the #51503 covMatrix backport (Branch C)
+  // Branch C: "trackCov" (seed from TTTrack::helixCovMat(), default) | "parametrized".
+  std::string digiRefitSeedCovMode_ = "trackCov";  // covMatrix present (cms-sw#51503 omnibus)
   std::vector<double> digiRefitParamSigmas_;       // parametrized-mode seed sigmas: (rInv[cm^-1], phi0, tanL, z0[cm], d0[cm])
   std::string digiRefitPixelavAngleSet_ = "";  // PixelAV angle sigma/bias/valid payload path
   std::string digiRefitSmarthitTrueSet_ = "";  // Stack A (RESERVED): NOT consumed by Tier-2; warns if set
@@ -467,7 +467,7 @@ private:
   edm::ESGetToken<TrackerGeometry, TrackerDigiGeometryRecord> getTokenTrackerGeom_;
   edm::ESGetToken<TrackerTopology, TrackerTopologyRcd> getTokenTrackerTopo_;
   edm::ESGetToken<MagneticField, IdealMagneticFieldRecord> getTokenBField_;
-  edm::ESGetToken<hph::Setup, hph::SetupRcd> getTokenHPHSetup_;  // CMSSW_17: hph::SetupRcd (not trackerDTC::SetupRcd)
+  edm::ESGetToken<hph::Setup, trackerDTC::SetupRcd> getTokenHPHSetup_;  // Branch C: trackerDTC::SetupRcd
 
   // correction::Correction::Ref cMap_pt, cMap_phi, cMap_d0;
   correction::CompoundCorrection::Ref cMap_pt, cMap_eta, cMap_phi, cMap_z0, cMap_d0;
@@ -550,7 +550,7 @@ L1SmartPixelsTrackProducer::L1SmartPixelsTrackProducer(edm::ParameterSet const& 
   getTokenTrackerGeom_ = esConsumes<TrackerGeometry, TrackerDigiGeometryRecord>();
   getTokenTrackerTopo_ = esConsumes<TrackerTopology, TrackerTopologyRcd>();
   getTokenBField_ = esConsumes<MagneticField, IdealMagneticFieldRecord>();
-  getTokenHPHSetup_ = esConsumes<hph::Setup, hph::SetupRcd>();  // CMSSW_17: hph::SetupRcd
+  getTokenHPHSetup_ = esConsumes<hph::Setup, trackerDTC::SetupRcd>();  // Branch C
 
   // -----------------------------------------------------------------------------------------------
   // digiRefit (Tier 2) configuration + payload loading. Kept entirely off the
@@ -613,13 +613,6 @@ L1SmartPixelsTrackProducer::L1SmartPixelsTrackProducer(edm::ParameterSet const& 
       throw cms::Exception("Configuration")
           << "digiRefit seedCovMode='" << digiRefitSeedCovMode_
           << "' invalid; use 'parametrized' (default) or 'trackCov'.";
-    if (digiRefitSeedCovMode_ == "trackCov")
-      throw cms::Exception("SmartPixelsCovMatrixBackportMissing")
-          << "digiRefit seedCovMode='trackCov' seeds the Kalman refit from TTTrack::helixCovMat(), "
-             "which does NOT exist in this release. The TTTrack helix covariance was added by "
-             "cms-sw/cmssw PR #51503 (the SmartPixels 'Branch C' backport), which is NOT applied "
-             "here. Use seedCovMode='parametrized' (the default in CMSSW_17), or apply the #51503 "
-             "covMatrix backport to enable trackCov.";
     if (digiRefitSeedCovMode_ == "parametrized" && digiRefitParamSigmas_.size() != 5)
       throw cms::Exception("Configuration")
           << "digiRefitParamSigmas must have exactly 5 entries (rInv, phi0, tanL, z0, d0), got "
@@ -1621,15 +1614,25 @@ void L1SmartPixelsTrackProducer::produce(edm::Event& iEvent, const edm::EventSet
       ROOT::Math::SMatrix<double, 5, 5, ROOT::Math::MatRepSym<double, 5>> C;
       bool seedCovOK = true;
       if (digiRefitSeedCovMode_ == "trackCov") {
-        // CMSSW_17 backport (Branch B): TTTrack has no helixCovMat() member, so
-        // the trackCov seed path cannot be compiled against this release. The
-        // constructor already rejects seedCovMode=='trackCov' with a clear
-        // SmartPixelsCovMatrixBackportMissing exception, so this branch is
-        // unreachable; keep a defensive throw here in lieu of the covMatrix read.
-        throw cms::Exception("SmartPixelsCovMatrixBackportMissing")
-            << "digiRefit seedCovMode='trackCov' requires TTTrack::helixCovMat(), added by "
-               "cms-sw/cmssw PR #51503 (Branch C), which is absent in this release. "
-               "Use seedCovMode='parametrized'.";
+        // Branch C: seed the KF from the TTTrack helix covariance (added by
+        // cms-sw#51503 / L1TK-dev-15_1 omnibus). Re-emulated tracklet tracks
+        // carry a real 5x5 helixCovMat (filled in L1FPGATrackProducer via the
+        // 18-arg TTTrack ctor). Order matches enum Hpar{INVR,PHI0,TANL,Z0,D0}.
+        const auto& tc = iterL1Track->helixCovMat();
+        double diagSum = 0.;
+        for (int i = 0; i < 5; ++i) {
+          for (int j = 0; j <= i; ++j)
+            C(i, j) = tc(i, j);
+          diagSum += std::abs(tc(i, i));
+        }
+        if (!(diagSum > 0.)) {
+          // Schema-evolved old-layout file tracks carry a default (all-zero)
+          // covariance; refitting from a singular seed would be garbage. Fall
+          // back to passthrough for this track and count it -- endStream throws
+          // if EVERY track looked like this (wrong input posture).
+          seedCovOK = false;
+          ++digiRefitZeroCovTracks_;
+        }
       } else {  // "parametrized" fallback/ablation seed
         for (int i = 0; i < 5; ++i)
           C(i, i) = digiRefitParamSigmas_[i] * digiRefitParamSigmas_[i];
@@ -1982,12 +1985,11 @@ void L1SmartPixelsTrackProducer::produce(edm::Event& iEvent, const edm::EventSet
         sidecar->trackInfo.push_back(pt);
         sidecar->hitInfo.emplace_back();  // empty per spec
       } else {
-        // CMSSW_17 backport (Branch B): no TTTrack helix covariance out. The
-        // refit still updates the helix params (INVR/PHI0/TANL/Z0/D0) and packs
-        // them into the track word below; only the covariance-out is unavailable
-        // (it needs cms-sw#51503, Branch C). The updated covariance C is still
-        // computed and used for the KF above; it is simply not persisted on the
-        // output track here.
+        // CMSSW_17 covMatrix variant (Branch C): the refit updates the helix
+        // params (INVR/PHI0/TANL/Z0/D0), packs them into the track word below, AND
+        // persists the KF-updated 5x5 covariance on the output TTTrack via the
+        // 18-arg ctor (enabled by the covMatrix omnibus, cms-sw#51503). The seed
+        // covariance is read from the input track's helixCovMat() in trackCov mode.
 
         // Refit-quality BDT score (spec §6a). When a model is loaded, assemble
         // REFIT_BDT_FEATURES v0 (17 ordered features, all in-flight/full-fidelity)
@@ -2032,12 +2034,17 @@ void L1SmartPixelsTrackProducer::produce(edm::Event& iEvent, const edm::EventSet
           refitTrkMVA1 = digiRefitBdt_->decision_function(feats).at(0);
         }
 
-        // nFitPars kept from the input; the refit d0/covariance live in the
-        // float members either way (trackword packs d0 only for nPar=5).
-        // CMSSW_17 backport: 13-arg (split-chi2) TTTrack ctor - no covMat arg
-        // (that ctor variant exists only after cms-sw#51503, Branch C). The
-        // phiSector/etaSector/chi2BendRed/trackSeedType, carried as ctor args in
-        // the covMatrix-era overload, are restored here via their setters.
+        // Branch C: persist the KF-updated 5x5 helix covariance as the 18th
+        // TTTrack ctor arg (cms-sw#51503 covMat overload). C is the running KF
+        // covariance after all accepted scalar updates. Order = enum Hpar
+        // {INVR,PHI0,TANL,Z0,D0}; float copy into L1Track::CovMat (ErrorF<5>).
+        L1Track::CovMat outCov;
+        for (int i = 0; i < 5; ++i)
+          for (int j = 0; j <= i; ++j)
+            outCov(i, j) = static_cast<float>(C(i, j));
+        // 18-arg covMat ctor: phiSector/etaSector/chi2BendRed/trackSeedType are
+        // ctor args here (no post-hoc setters needed for those). refitTrkMVA1 is
+        // the refit-BDT score (Branch-B feature) in the trkMVA1 slot.
         L1Track track = L1Track(a[0],
                                 a[1],
                                 a[2],
@@ -2050,11 +2057,12 @@ void L1SmartPixelsTrackProducer::produce(edm::Event& iEvent, const edm::EventSet
                                 iterL1Track->trkMVA3(),
                                 iterL1Track->hitPattern(),
                                 iterL1Track->nFitPars(),
-                                b_field);
-        track.setPhiSector(iterL1Track->phiSector());
-        track.setEtaSector(iterL1Track->etaSector());
-        track.setChi2BendRed(iterL1Track->chi2BendRed());
-        track.setTrackSeedType(iterL1Track->trackSeedType());
+                                b_field,
+                                iterL1Track->phiSector(),
+                                iterL1Track->etaSector(),
+                                iterL1Track->chi2BendRed(),
+                                iterL1Track->trackSeedType(),
+                                outCov);
         track.setStubRefs(iterL1Track->getStubRefs());
         track.setTrackWordBits();
         outputTracks->push_back(track);
@@ -2231,8 +2239,8 @@ void L1SmartPixelsTrackProducer::fillDescriptions(edm::ConfigurationDescriptions
                    "above this bound invalidates the crossing at the projector (no window, no sidecar record). "
                    "Rejects the ~18 non-physical predicted crossings (up to |cotAlpha| 51.8); NOT the gate driver.");
   desc.add<int>("digiRefitSeedNPar", 5)->setComment("seed-track parametrization for the KF: 4 | 5");
-  desc.add<std::string>("digiRefitSeedCovMode", "parametrized")
-      ->setComment("seed covariance: parametrized (default in CMSSW_17 - no TTTrack covMatrix) | trackCov (requires cms-sw#51503 backport, Branch C)");
+  desc.add<std::string>("digiRefitSeedCovMode", "trackCov")
+      ->setComment("seed covariance: trackCov (TTTrack helixCovMat, default; needs cms-sw#51503 covMatrix omnibus) | parametrized");
   desc.add<std::vector<double>>("digiRefitParamSigmas", std::vector<double>{1e-4, 1e-3, 2e-3, 0.06, 0.05})
       ->setComment("parametrized-mode seed sigmas (rInv[cm^-1], phi0, tanL, z0[cm], d0[cm])");
   desc.add<std::string>("digiRefitPixelavAngleSet", "")->setComment("PixelAV angle-response correctionlib payload path (REQUIRED for digiRefit)");

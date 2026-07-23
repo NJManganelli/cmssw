@@ -96,10 +96,10 @@ DIGIREFIT_DEFAULTS = {
     "predAngleMaxAbs": 12.0,  # |predicted crossing cot| above this invalidates the crossing
     # --- Kalman seed (user decision 2026-07-18: config-switchable) ---
     # CMSSW_17 backport (Branch B): TTTrack has NO helix covariance (Ian's covMatrix
-    # PR cms-sw/cmssw#51503 is Branch C, not applied here), so the default seed
-    # covariance is "parametrized". "trackCov" raises loudly (see _applyDigiRefitConfig).
+    # Branch C: TTTrack carries the helix covariance (cms-sw#51503 omnibus applied),
+    # so the default seed covariance is "trackCov" (seed the KF from helixCovMat()).
     "seedNPar": 5,            # 4 | 5: seed-track parametrization entering the KF
-    "seedCovMode": "parametrized",  # "parametrized" (default here) | "trackCov" (needs #51503 backport, Branch C)
+    "seedCovMode": "trackCov",  # "trackCov" (default; TTTrack helixCovMat) | "parametrized"
     "paramSigmas": (1e-4, 1e-3, 2e-3, 0.06, 0.05),  # parametrized-mode sigmas (rInv[cm^-1],phi0,tanL,z0[cm],d0[cm])
     # --- correctionlib payload paths (empty defaults acceptable for Phase 0) ---
     # RESERVED: Stack A "smarthit_true" payload. Tier-2 does NOT consume it (position
@@ -147,16 +147,6 @@ def _resolveDigiRefitConfig(digiRefitConfig=None):
     raise ValueError(
         f"digiRefitConfig['seedCovMode']={resolved['seedCovMode']!r} invalid; "
         f"must be one of {DIGIREFIT_SEEDCOVMODE_CHOICES}")
-  # CMSSW_17 backport (Branch B): TTTrack carries no helix covariance in this
-  # release, so seedCovMode='trackCov' (which seeds the KF from helixCovMat())
-  # cannot run. It is gated here at config time AND in the C++ constructor.
-  if resolved["seedCovMode"] == "trackCov":
-    raise ValueError(
-        "digiRefitConfig['seedCovMode']='trackCov' seeds the refit from "
-        "TTTrack::helixCovMat(), which does not exist in this release. The TTTrack "
-        "helix covariance was added by cms-sw/cmssw PR #51503 (the SmartPixels "
-        "'Branch C' backport), which is NOT applied here. Use seedCovMode='parametrized' "
-        "(the default in CMSSW_17), or apply the #51503 covMatrix backport to enable trackCov.")
   if resolved["seedNPar"] not in (4, 5):
     raise ValueError(
         f"digiRefitConfig['seedNPar']={resolved['seedNPar']!r} invalid; must be 4 or 5")
