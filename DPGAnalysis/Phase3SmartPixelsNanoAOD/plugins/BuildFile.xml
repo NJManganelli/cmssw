@@ -1,0 +1,14 @@
+<use name="DataFormats/L1TrackTrigger"/>
+<use name="DataFormats/NanoAOD"/>
+<use name="DataFormats/TrackerCommon"/>
+<use name="DataFormats/SiStripDetId"/>
+<use name="Geometry/TrackerGeometryBuilder"/>
+<use name="Geometry/CommonTopologies"/>
+<use name="Geometry/Records"/>
+<use name="L1Trigger/Phase3SmartPixels"/>
+<use name="FWCore/Framework"/>
+<use name="FWCore/ParameterSet"/>
+<use name="FWCore/Utilities"/>
+<library file="*.cc" name="DPGAnalysisPhase3SmartPixelsNanoAOD_plugins">
+  <flags EDM_PLUGIN="1"/>
+</library>
