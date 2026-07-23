@@ -110,8 +110,8 @@ _dr_prompt = "l1tSmartPixelsTrackProducerWdigiRefitAAII"
 check(hasattr(p_dr, _dr_prompt), "digiRefit prompt producer variant exists")
 _m = getattr(p_dr, _dr_prompt)
 check(_m.smartPixelsEmulatorMode.value() == "digiRefit", "mode set to digiRefit")
-check(_m.digiRefitSeedCovMode.value() == "parametrized",
-      "seedCovMode default is parametrized (CMSSW_17: no TTTrack covMatrix, Branch C not applied)")
+check(_m.digiRefitSeedCovMode.value() == "trackCov",
+      "seedCovMode default is trackCov (Branch C: TTTrack covMatrix omnibus / cms-sw#51503 applied)")
 check(_m.digiRefitSeedNPar.value() == 5, "seedNPar default is 5")
 check(_m.digiRefitUseAngles.value() == "alpha", "useAngles default is alpha")
 check(_m.digiRefitPixelavAngleSet.value() == _DR_CFG["pixelavAngleSet"],
@@ -309,9 +309,9 @@ def _build_fromfilestubs(extendedTracks, seedCovMode="parametrized"):
     """Full coexist build with truthSource=fromFileStubs on a process carrying a
     dummy Path (so the posture-C Task has somewhere to associate).
 
-    CMSSW_17 backport (Branch B): TTTrack has no helix covariance, so even the
-    posture-C (fromFileStubs, in-job tracking) build uses seedCovMode=parametrized;
-    'trackCov' throws (see the dedicated Branch-C guard test below)."""
+    Branch C: TTTrack carries helix covariance (cms-sw#51503 omnibus), so
+    'trackCov' is accepted; 'parametrized' remains selectable (default helper arg
+    here) and is exercised as the regression path."""
     p = cms.Process("TEST")
     p.pdummy = cms.Path()  # somewhere for the posture-C Task to associate
     return smartPixelsCoexist(
@@ -405,9 +405,9 @@ def _build_ffs_hnpar(promptHnpar):
 
 
 # promptHnpar=5 -> PRIME target: prompt tracklet producer set to Hnpar=5, extended
-# stays 5, and the prompt digiRefit variant seeds seedNPar=5. In CMSSW_17 (Branch B)
-# there is no TTTrack covariance, so the seed covariance is parametrized (trackCov
-# is the prime target only once the #51503 covMatrix backport / Branch C lands).
+# stays 5, and the prompt digiRefit variant seeds seedNPar=5. In Branch C the
+# TTTrack covMatrix omnibus (#51503) is applied, so the prime-target seed covariance
+# is trackCov (read from the re-emulated track's helixCovMat()).
 p_h5 = _build_ffs_hnpar(5)
 check(p_h5.l1tTTTracksFromTrackletEmulation.Hnpar.value() == 5,
       "promptHnpar=5 sets prompt l1tTTTracksFromTrackletEmulation.Hnpar = 5")
@@ -416,14 +416,20 @@ check(p_h5.l1tTTTracksFromTrackletEmulation.Extended.value() is False,
 check(p_h5.l1tTTTracksFromExtendedTrackletEmulation.Hnpar.value() == 5,
       "extended chain stays Hnpar = 5")
 _dr5 = getattr(p_h5, "l1tSmartPixelsTrackProducerWdigiRefitAAII")
-check(_dr5.digiRefitSeedNPar.value() == 5 and _dr5.digiRefitSeedCovMode.value() == "parametrized",
-      "prompt digiRefit variant seeds seedNPar=5 + seedCovMode=parametrized (CMSSW_17: no covMatrix, Branch C not applied)")
+check(_dr5.digiRefitSeedNPar.value() == 5 and _dr5.digiRefitSeedCovMode.value() == "trackCov",
+      "prompt digiRefit variant seeds seedNPar=5 + seedCovMode=trackCov (Branch C: covMatrix applied)")
 
-# Branch-B covMatrix guard: seedCovMode='trackCov' must raise loudly at config
-# time (TTTrack has no helixCovMat() in CMSSW_17; needs cms-sw#51503 / Branch C).
-expect_raises(ValueError, lambda: _build_fromfilestubs(extendedTracks=True, seedCovMode="trackCov"),
-              "seedCovMode='trackCov' raises ValueError (needs #51503 covMatrix backport, Branch C)",
-              contains="#51503")
+# Branch C: seedCovMode='trackCov' is now ACCEPTED (TTTrack has helixCovMat() via the
+# cms-sw#51503 covMatrix omnibus); the build succeeds and sets the producer to trackCov.
+_p_tc = _build_fromfilestubs(extendedTracks=True, seedCovMode="trackCov")
+_m_tc = getattr(_p_tc, "l1tSmartPixelsTrackProducerWdigiRefitAAII")
+check(_m_tc.digiRefitSeedCovMode.value() == "trackCov",
+      "seedCovMode='trackCov' is accepted and set on the producer (Branch C: covMatrix backport applied)")
+# 'parametrized' remains selectable (regression path).
+_p_par = _build_fromfilestubs(extendedTracks=True, seedCovMode="parametrized")
+_m_par = getattr(_p_par, "l1tSmartPixelsTrackProducerWdigiRefitAAII")
+check(_m_par.digiRefitSeedCovMode.value() == "parametrized",
+      "seedCovMode='parametrized' still selectable (Branch C regression path)")
 
 # promptHnpar=4 (ablation only, still selectable) -> prompt Hnpar=4, d0 pinned.
 p_h4 = _build_ffs_hnpar(4)
