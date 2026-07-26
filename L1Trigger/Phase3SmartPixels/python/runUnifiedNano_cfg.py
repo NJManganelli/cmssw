@@ -63,6 +63,11 @@ options.register('seedCovMode', 'trackCov', VarParsing.multiplicity.singleton,
 options.register('pixelavAngleSet', 'spx_angle_response.json',
                  VarParsing.multiplicity.singleton, VarParsing.varType.string,
                  "PixelAV angle-response payload (see resolution below)")
+options.register('hasMiniAOD', False, VarParsing.multiplicity.singleton,
+                 VarParsing.varType.bool,
+                 "input carries MINIAOD (pat::/slimmed*) content. False for the "
+                 "D121 RelVals (DIGI-RAW + HLT only), which makes the gen chain's "
+                 "puTable unrunnable -- see the omninano TODO above")
 options.setDefault('maxEvents', -1)
 options.setDefault('outputFile', 'file:spx_unifiednano.root')
 options.setDefault('inputFiles',
@@ -289,6 +294,30 @@ process = smartPixelsCoexist(
 for _m in ["TTClusterAssociatorFromPixelDigis"]:
   if hasattr(process, _m):
     getattr(process, _m).digiSimLinks = cms.InputTag("simSiPixelDigis", "Tracker")
+
+# ---------------------------------------------------------------------------
+# Tables whose source products a DIGI-RAW+HLT input does not carry. Without this
+# the job dies with ProductNotFound in NANOAODoutput_step:
+#   puTable     -> offlineSlimmedPrimaryVertices (MINIAOD-only)
+#   metMCTable  -> slimmedMETs, pat::MET        (MINIAOD-only)
+#   hpsTauTable -> l1t::HPSPFTau                (absent from the RelVal L1 menu)
+# The flavor-driven stage-2 configs handle this with pruneAbsentSimpleTables(),
+# which needs a per-file label list; an explicit list keeps this production pset
+# free of runtime-artifact dependencies. Revisit when omninano lands (TODO above):
+# with a MINIAOD-carrying input, pass hasMiniAOD=1 and these tables come back.
+# ---------------------------------------------------------------------------
+#
+# The gen chain needs the same treatment: finalGenParticles prunes MINIAOD's
+# prunedGenParticles, which a GEN-SIM-DIGI-RAW input does not have -- it has plain
+# genParticles. useGenParticlesFromFile() repoints it and drops the gen tables that
+# still depend on packedGenParticles.
+from DPGAnalysis.Phase3SmartPixelsNanoAOD.l1tPh3SmartPixelsNano_cff import (
+    dropAbsentMenuTables, useGenParticlesFromFile)
+
+_ABSENT_ON_DIGIRAW_INPUT = ("puTable", "metMCTable", "hpsTauTable")
+if not options.hasMiniAOD:
+  process = dropAbsentMenuTables(process, _ABSENT_ON_DIGIRAW_INPUT)
+  process = useGenParticlesFromFile(process)
 
 # Add early deletion of temporary data products to reduce peak memory need
 from Configuration.StandardSequences.earlyDeleteSettings_cff import customiseEarlyDelete
