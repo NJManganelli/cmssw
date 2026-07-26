@@ -19,6 +19,17 @@ empty default dataset because no post-break dataset path is recorded yet.
 
 Both land in the SAME NanoAOD Events tree.
 
+BIG TODO -- "omninano" (fullnano + reconano): this pset emits L1 objects + Gen
+ONLY. It carries no standard PhysicsTools/NanoAOD reco tables (no Muon/Electron/
+Jet/Tau/PuppiMET/PV), because the D121 RelVals we validate against contain only
+the HLT and SIM processes -- no RECO, no pat::/slimmed* collections, so reco nano
+is not merely unscheduled here, it is unsupported by the input. The CMSSW_14-era
+Phase2Spring24 GEN-SIM-DIGI-RAW-MINIAOD sample DOES carry RECO + MINIAOD, but it
+is pre-cms-sw/cmssw#51503 and therefore unusable on this branch. AS SOON AS a
+post-CMSSW_20 MC campaign with a MINIAOD-carrying tier exists, extend this pset to
+schedule nanoSequenceMC alongside l1tPh2NanoSequence into the one output, and add
+L1<->reco crossrefs. Until then the two halves cannot meet in one job.
+
 This pset is driven by CRAB (a generator script emits crab configs pointing at
 it). CRAB (pluginName='Analysis') OVERRIDES process.source.fileNames from the
 dataset, so the PoolSource below is a valid placeholder taken from
