@@ -133,18 +133,10 @@ void GTTFileReader::produce(edm::Event& iEvent, const edm::EventSetup& iSetup) {
       for (auto& trackword : iTracks) {
         if (!trackword.getValidWord())
           continue;
-        L1Track track = L1Track(trackword.getValidWord(),
-                                trackword.getRinvWord(),
-                                trackword.getPhiWord(),
-                                trackword.getTanlWord(),
-                                trackword.getZ0Word(),
-                                trackword.getD0Word(),
-                                trackword.getChi2RPhiWord(),
-                                trackword.getChi2RZWord(),
-                                trackword.getBendChi2Word(),
-                                trackword.getHitPatternWord(),
-                                trackword.getMVAQualityWord(),
-                                trackword.getMVAOtherWord());
+        // LOCAL WORKAROUND for cms-sw/cmssw#51503: the word-based TTTrack ctor was
+        // removed upstream without updating this demonstrator reader; the track word
+        // is copied wholesale below, so a default-constructed track is equivalent here.
+        L1Track track;
         //retrieve the eta (first) and phi (second) sectors for GTT, encoded in an std::pair
         auto sectors = (l1t::demo::codecs::sectorsEtaPhiFromGTTLinkID(i));
         track.setEtaSector(sectors.first);
