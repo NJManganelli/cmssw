@@ -65,10 +65,17 @@ def addPh2L1PFCandTrackTruth(process):
     process.l1tPh2NanoTask.add(p2L1PFCandTrackTruthTask)
     return process
 
-def addPh2L1DisplacedVertices(process):
-    """GTT displaced-vertex table (stock GBDT score + isReal truth label).
-    Schedules the DisplacedVertexProducer if the workflow did not run it;
-    its truth label needs the extended-track associator (ensured here)."""
+def extendPh2L1DisplacedVertices(process):
+    """Extend the upstream L1DispVertex table with the extended-track columns.
+
+    The MAIN table is upstream's dispVtxTable (base p2L1TablesTask, added by
+    addPh2L1Objects) and already carries the vertex kinematics, the GBDT score and the
+    isReal truth label. This adds only firstIndexTrk/secondIndexTrk (indices into the
+    L1TExtTrack table) and inTraj, as a nano extension table -- so addPh2L1Objects must
+    have run, otherwise the output rejects an extension with no main table.
+
+    Schedules the DisplacedVertexProducer if the workflow did not run it; the truth
+    label needs the extended-track associator (ensured here)."""
     _ensureTrackTruthAssociators(process)
     if not hasattr(process, "DisplacedVertexProducer"):
         process.load("L1Trigger.L1TTrackMatch.DisplacedVertexProducer_cfi")

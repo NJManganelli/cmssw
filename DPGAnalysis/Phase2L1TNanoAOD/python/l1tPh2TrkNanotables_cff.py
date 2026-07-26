@@ -1,5 +1,6 @@
 import FWCore.ParameterSet.Config as cms
 from PhysicsTools.NanoAOD.common_cff import Var
+from DPGAnalysis.Phase2L1TNanoAOD.l1tPh2Nanotables_cff import dispVtxTable
 
 #### L1T tracks from the tracklet emulation, with float and hardware (track word) values
 l1tTracksTable = cms.EDProducer(
@@ -90,31 +91,18 @@ p2L1TrackTruthTask = cms.Task(
     l1tExtTracksTruthTable,
 )
 
-#### GTT displaced vertices (track pairs from extended tracks), with the
-#### stock conifer GBDT score and the in-producer truth label (isReal);
-#### firstIndexTrk/secondIndexTrk index the L1TExtTrack table
-l1tDisplacedVertexTable = cms.EDProducer(
-    "SimpleL1DisplacedVtxCandidateFlatTableProducer",
-    src = cms.InputTag("DisplacedVertexProducer", "dispVertices"),
-    name = cms.string("L1DispVertex"),
-    doc = cms.string("GTT displaced vertices from extended track pairs"),
-    cut = cms.string(""),
-    singleton = cms.bool(False), # the number of entries is variable
+#### GTT displaced vertices: EXTENSION of the upstream dispVtxTable
+#### (l1tPh2Nanotables_cff, part of the base p2L1TablesTask). The upstream table already
+#### provides score, isReal, d_T, R_T, cos_T, del_Z, x, y, z, openingAngle and parentPt
+#### from the same DisplacedVertexProducer:dispVertices product, so only the columns
+#### unique to the extended-track pairing are added here. Both tables must be scheduled:
+#### an extension without its main table is rejected by the NanoAOD output.
+l1tDisplacedVertexTable = dispVtxTable.clone(
+    extension = cms.bool(True),
     variables = cms.PSet(
-        score = Var("score()", float, doc="displaced-vertex tagger GBDT score"),
-        d_T = Var("d_T()", float, doc="transverse distance to the beamline"),
-        R_T = Var("R_T()", float, doc="transverse radius of the vertex"),
-        cos_T = Var("cos_T()", float, doc="cosine of the transverse opening"),
-        del_Z = Var("del_Z()", float, doc="delta z between the two tracks"),
-        x = Var("x()", float, doc="vertex x"),
-        y = Var("y()", float, doc="vertex y"),
-        z = Var("z()", float, doc="vertex z"),
-        openingAngle = Var("openingAngle()", float, doc="opening angle"),
-        parentPt = Var("parentPt()", float, doc="parent transverse momentum"),
         firstIndexTrk = Var("firstIndexTrk()", "int", doc="index of the higher-pt track in the L1TExtTrack table"),
         secondIndexTrk = Var("secondIndexTrk()", "int", doc="index of the lower-pt track in the L1TExtTrack table"),
         inTraj = Var("inTraj()", "int", doc="trajectory consistency code"),
-        isReal = Var("isReal()", bool, doc="MC truth: both tracks from a common true displaced vertex"),
     )
 )
 

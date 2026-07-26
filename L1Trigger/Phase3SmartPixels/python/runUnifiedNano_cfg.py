@@ -254,14 +254,14 @@ associatePatAlgosToolsTask(process)
 # ---------------------------------------------------------------------------
 from DPGAnalysis.Phase2L1TNanoAOD.l1tPh2Nano_cff import (
     addPh2L1Objects, addPh2GTObjects, addPh2L1Tracks, addPh2L1PFCandidates,
-    addPh2L1TrackTruth, addPh2L1DisplacedVertices, addGenObjects)
+    addPh2L1TrackTruth, extendPh2L1DisplacedVertices, addGenObjects)
 
 process = addPh2L1Objects(process)
 process = addPh2GTObjects(process)
 process = addPh2L1Tracks(process)
 process = addPh2L1PFCandidates(process)
 process = addPh2L1TrackTruth(process)
-process = addPh2L1DisplacedVertices(process)
+process = extendPh2L1DisplacedVertices(process)
 process = addGenObjects(process)
 
 # ---------------------------------------------------------------------------
