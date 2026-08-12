@@ -76,7 +76,7 @@ Sites (all guarded, cf. the tolerance-family fix):
   - candidate extension `l1TrackIdx` (`L1PuppiCand` -> `L1TTrack`): `-2` for all
     candidates if the PFTrack (or TTTrack) product is unavailable — detected by probing
     `pfTrack().isAvailable()`, since a dropped-but-referenced PFTrack collection dangles;
-    else `-1` for a candidate with no resolvable track ref. On posture-C PU RelVals (the
+    else `-1` for a candidate with no resolvable track ref. On rebuildTracksFromStubs PU RelVals (the
     file's PFTrack collection is dropped) this reads `-2` for all candidates.
 - `L1PFCandTrackTruthTableProducer` (`DPGAnalysis/Phase2L1TNanoAOD`): the truth-status
   column `trkTruthStatus` is `0` when the candidate's underlying track resolved (the
@@ -85,7 +85,7 @@ Sites (all guarded, cf. the tolerance-family fix):
   ref, and `-2` when the PFTrack / TTTrack / `TTTrackAssociationMap` product is
   unavailable (the truth columns stay at their unknown defaults). This producer now
   self-guards the PFCandidate->PFTrack->TTTrack deref, so the table is scheduled again
-  under posture C (previously it was dropped because it hard-dereffed unstored refs).
+  under rebuildTracksFromStubs (previously it was dropped because it hard-dereffed unstored refs).
 
 Not a linking sentinel: the per-hit refit `trackIdx` in `L1SmartPixelsRefitTableProducer`
 is a within-event index into the same-producer, length-checked, 1:1-row-synced refit

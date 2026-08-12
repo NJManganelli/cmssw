@@ -135,7 +135,7 @@ def addPh3L1SmartPixelsRefitTables(process,
 # the reference tables are the untouched anchor that trackIdx and the L1TrackTruth
 # table both resolve against. Emitting once against the reference collections (rather
 # than once per variant) is therefore both correct AND avoids redundant identical
-# copies. Under posture C (fromFileStubs) these reference labels are re-run in-job
+# copies. Under trackInputMode=rebuildTracksFromStubs these reference labels are re-run in-job
 # from the file's stubs, so the stub geometry is the fresh new-layout one.
 l1tPh3SmartPixelsStubTable = cms.EDProducer(
     "L1SmartPixelsStubPosTableProducer",
@@ -190,7 +190,7 @@ def addPh3L1SmartPixelsStubTables(process,
 
 
 # ---------------------------------------------------------------------------
-# PF/Puppi/jet re-emulation for the reduced-menu PU RelVals (posture-C spirit)
+# PF/Puppi/jet re-emulation for the reduced-menu PU RelVals (rebuildTracksFromStubs runs)
 # ---------------------------------------------------------------------------
 # The 200PU RelVals persist l1tLayer1:PuppiRegional (the per-region Puppi PF
 # candidates) but NOT the flat l1tLayer2Deregionizer:Puppi collection, and their
@@ -198,22 +198,22 @@ def addPh3L1SmartPixelsStubTables(process,
 # deregionizer product -- so consuming the file jets yields candIdx == -1 in the
 # L1JetCandLinkTableProducer. We therefore RE-EMULATE the flat Puppi candidates
 # and the SeededCone jets in-job from the persisted regional Puppi, exactly as
-# posture C rebuilds tracks from the file's stubs:
+# trackInputMode=rebuildTracksFromStubs rebuilds tracks from the file's stubs:
 #
 #   l1tLayer1:PuppiRegional (FILE) -> DeregionizerProducer (l1tLayer2Deregionizer)
 #                                  -> L1SeedConePFJetProducer SC4 / SC8 (corrected)
 #
 # The in-job jets' constituents Ptr into the fresh in-job deregionizer product, so
 # the L1PuppiCand candIdx crossref resolves. Same-label shadowing hides any file
-# HLT branch for downstream default-configured consumers, like posture C's tracks.
+# HLT branch for downstream default-configured consumers, like the rebuilt tracks.
 # Only the PROMPT (non-extended) Puppi is re-run; L1PuppiCand.l1TrackIdx points at
-# the posture-C re-run l1tTTTracksFromTrackletEmulation. This is the hook the
+# the re-run l1tTTTracksFromTrackletEmulation. This is the hook the
 # PF-carrying SmartPix flavor wiring calls (see customize TODO in the report).
 # ---------------------------------------------------------------------------
 # COOPT single-coherent-view: re-run the WHOLE Layer-1 correlator + emulated PV
 # FROM one config's (refit) tracks, so vertex->PF->PUPPI->jets follow that view.
 # ---------------------------------------------------------------------------
-# The posture-C PU RelVal persists l1tLayer1:PuppiRegional + l1tVertexFinderEmulator
+# The rebuildTracksFromStubs PU RelVal persists l1tLayer1:PuppiRegional + l1tVertexFinderEmulator
 # built from the FILE'S ORIGINAL tracklet tracks. reemulateJetSideForPFTier() reads
 # that file Puppi -> the jets are the FILE-track PF view, IDENTICAL whether or not a
 # refit variant was injected (empirically byte-identical coexist vs coopt). To make
@@ -226,7 +226,7 @@ def addPh3L1SmartPixelsStubTables(process,
 # We repoint those two to `trackSrc` (the injected refit collection). The re-run
 # correlator emits l1tLayer1:PuppiRegional + l1tVertexFinderEmulator:L1VerticesEmulation
 # with the SAME labels -> they shadow the file products, so reemulateJetSideForPFTier /
-# stitchPFTierForPostureC / addNGJetTier consume the refit-driven Puppi/vertex with no
+# stitchPFTierForStubRebuild / addNGJetTier consume the refit-driven Puppi/vertex with no
 # further change. l1ctLayer1_cff imports clean on native aarch64 (no module-scope ONNX).
 # Every non-track correlator input is persisted in the RelVal EXCEPT the barrel EM
 # clusters (l1tPhase2GCTBarrelToCorrelatorLayer1Emulator:GCTEmDigiClusters); doBarrelEM
@@ -239,7 +239,7 @@ def stitchCorrelatorFromTracks(process,
                                doBarrelEM=False, doExtended=True):
     """Re-run Layer-1 correlator + emulated primary vertex from `trackSrc` so the
     whole PF/Puppi/jet chain is coherent with that (refit) track view. Must run
-    BEFORE reemulateJetSideForPFTier/stitchPFTierForPostureC/addNGJetTier (it
+    BEFORE reemulateJetSideForPFTier/stitchPFTierForStubRebuild/addNGJetTier (it
     produces the l1tLayer1:PuppiRegional + emulated vertex those consume). Returns
     process. Intended for the coopt (WF2) single-coherent-view productions."""
     import FWCore.ParameterSet.Config as cms
@@ -314,7 +314,7 @@ def reemulateJetSideForPFTier(process,
                               doSC4=True, doSC8=True):
     """Schedule the deregionizer + SC4/SC8 SeededCone jet producers in-job so the
     L1PuppiCand / L1SC4JetCands / L1SC8JetCands / L1puppiJetSC{4,8} nano tables are
-    filled on a reduced-menu (posture-C) PU input. Idempotent: skips a producer if
+    filled on a reduced-menu (rebuildTracksFromStubs) PU input. Idempotent: skips a producer if
     its default label already exists (e.g. a full-menu input already ran it)."""
     # Build from the BASE cfi modules, NOT l1pfJetMet_cff: that cff imports the
     # ONNX-backed NG-jet producer at module scope, which bus-errors under native
@@ -359,7 +359,7 @@ def reemulateJetSideForPFTier(process,
 
 
 # Nano table modules whose source objects are absent from some RelVal L1 menus
-# (posture-A fromFile productions read the file's HLT-process objects, and older
+# (trackInputMode=useStoredTracks productions read the file's HLT-process objects, and older
 # RelVals predate the NGJet producer / HPS PF taus). Removing the corresponding
 # tables avoids a ProductNotFound at output time. hpsTauTable is already dropped
 # by the nano_l1_hlt modifier; sc4NGJetTable + its cand link table are not.
@@ -369,8 +369,8 @@ def reemulateJetSideForPFTier(process,
 _ABSENT_MENU_TABLES_DEFAULT = ("sc4NGJetTable", "l1tSC4NGJetCandsTable", "hpsTauTable")
 
 
-def stitchPFTierForPostureC(process, doSC8=True):
-    """Wire the PF/Puppi/jet nano tables for a posture-C (fromFileStubs) PU run of
+def stitchPFTierForStubRebuild(process, doSC8=True):
+    """Wire the PF/Puppi/jet nano tables for a rebuildTracksFromStubs PU run of
     a PF-carrying SmartPix flavor (L1PFNano* / L1PFTrkNano*).
 
     The 200PU RelVals persist l1tLayer1:PuppiRegional but not the flat
@@ -385,7 +385,7 @@ def stitchPFTierForPostureC(process, doSC8=True):
          l1tPuppiCandTrackTruthTable is now scheduled (no longer dropped): its
          producer isAvailable()-guards the PFTrack deref and self-reports the
          product-level failure via trkTruthStatus == -2 rather than throwing;
-      3. drops the members that depend on products still absent under posture C
+      3. drops the members that depend on products still absent in a rebuildTracksFromStubs run
          (extended deregionizer, layer-1 PF, NG-tagged jets, HGCal clusters):
          l1tExtPuppiCandsTable, l1tPFCandsTable, l1tSC4NGJetCandsTable,
          l1tHGCClusterTable, l1tPuppiCandHGCClusterLink,
@@ -393,7 +393,7 @@ def stitchPFTierForPostureC(process, doSC8=True):
       4. leaves exactly ONE plain link table writing the L1PuppiCand extension
          (l1tSC4JetCandsTable: writeCandExtension=True; l1tSC8JetCandsTable:
          writeCandExtension=False) so the jetIdx/l1TrackIdx extension columns are
-         written once. On posture-C PU the file's PFTrack refs dangle, so the
+         written once. On rebuildTracksFromStubs PU input the file's PFTrack refs dangle, so the
          candidate-extension deref is isAvailable()-guarded and l1TrackIdx == -2
          (product-level failure) for all candidates; -1 marks an element-level
          no-match when the product is present.
@@ -402,25 +402,25 @@ def stitchPFTierForPostureC(process, doSC8=True):
 
     from DPGAnalysis.Phase2L1TNanoAOD.l1tPh2PFCandsNanotables_cff import p2L1PFCandsTask
     if not hasattr(process, "l1tPh2NanoTask"):
-        raise RuntimeError("stitchPFTierForPostureC: l1tPh2NanoTask not present; "
+        raise RuntimeError("stitchPFTierForStubRebuild: l1tPh2NanoTask not present; "
                            "the PF-carrying nano flavor did not schedule its base task.")
-    # Schedule the whole PF-cand task, then drop the posture-C-unavailable members.
+    # Schedule the whole PF-cand task, then drop the members unavailable in this mode.
     process.l1tPh2NanoTask.add(p2L1PFCandsTask)
     # l1tPuppiCandTrackTruthTable (L1PFCandTrackTruthTableProducer) is NO LONGER dropped:
     # the producer now isAvailable()-guards the PFCandidate->PFTrack->TTTrack deref (the
-    # tolerance-family fix, cf. the SC4 link-table candidate extension). On posture-C PU
+    # tolerance-family fix, cf. the SC4 link-table candidate extension). On rebuildTracksFromStubs PU input
     # RelVals the file's PFTrack collection is not stored, so the producer detects the
     # product-level failure and writes trkTruthStatus == -2 (with the truth columns at
     # their unknown defaults) instead of throwing ProductNotFound. It is scheduled again.
     # l1tExtPuppiCandTrackTruthTable stays dropped: it targets the extended deregionizer
-    # product, which is genuinely absent under posture C (not merely dangling).
+    # product, which is genuinely absent in a rebuildTracksFromStubs run (not merely dangling).
     _drop = ["l1tExtPuppiCandsTable", "l1tPFCandsTable", "l1tSC4NGJetCandsTable",
              "l1tHGCClusterTable", "l1tPuppiCandHGCClusterLink",
              "l1tExtPuppiCandHGCClusterLink", "l1tExtPuppiCandTrackTruthTable"]
     if not doSC8:
         _drop.append("l1tSC8JetCandsTable")
     process = dropAbsentMenuTables(process, _drop)
-    print("SmartPixels posture-C PF tier: re-emulated deregionizer+SC4"
+    print("SmartPixels rebuildTracksFromStubs PF tier: re-emulated deregionizer+SC4"
           + ("+SC8" if doSC8 else "")
           + "; kept L1PuppiCand + SC4"
           + ("/SC8" if doSC8 else "")
@@ -433,7 +433,7 @@ def dropAbsentMenuTables(process, moduleLabels=_ABSENT_MENU_TABLES_DEFAULT):
 
     Removes each module from every task/sequence/path/endpath then deletes the
     attribute, so the NanoAOD output module no longer consumes its product.
-    Silent no-op for labels not present. Intended for posture-A SmartPixels
+    Silent no-op for labels not present. Intended for useStoredTracks SmartPixels
     productions on RelVals with a reduced L1 menu (see the l1nano workflow memory).
     """
     for label in moduleLabels:
@@ -447,7 +447,7 @@ def dropAbsentMenuTables(process, moduleLabels=_ABSENT_MENU_TABLES_DEFAULT):
             except Exception:
                 pass
         delattr(process, label)
-        print(f"SmartPixels posture-A: removed nano table '{label}' (source object absent from this input menu)")
+        print(f"SmartPixels useStoredTracks: removed nano table '{label}' (source object absent from this input menu)")
     return process
 
 
@@ -474,7 +474,7 @@ _SIMPLE_TABLE_SRC_PARAM = {
 
 def pruneAbsentSimpleTables(process, availableLabels, protectLabels=()):
     """Auto-drop simple L1 FlatTable producers whose single src collection is not
-    available (posture-A on a reduced-menu RelVal).
+    available (useStoredTracks on a reduced-menu RelVal).
 
     availableLabels: iterable of module labels the input FILE provides (from its
     provenance) -- a producer's src label is considered resolvable if it is a
@@ -506,7 +506,7 @@ def pruneAbsentSimpleTables(process, availableLabels, protectLabels=()):
 
 def useGenParticlesFromFile(process, genSrc="genParticles"):
     """Adapt the withGen gen chain to a GEN-SIM(-DIGI-RAW) input that has
-    `genParticles` but NOT the MINIAOD `prunedGenParticles` (posture-A RelVals).
+    `genParticles` but NOT the MINIAOD `prunedGenParticles` (useStoredTracks RelVals).
 
     Repoints the finalGenParticles pruner at `genSrc` so genParticleTable and the
     gen-iso/tau tables resolve, then auto-prunes any remaining gen/PAT-derived
@@ -516,14 +516,14 @@ def useGenParticlesFromFile(process, genSrc="genParticles"):
     import FWCore.ParameterSet.Config as cms
     if hasattr(process, "finalGenParticles"):
         process.finalGenParticles.src = cms.InputTag(genSrc)
-        print(f"SmartPixels posture-A: repointed finalGenParticles.src -> '{genSrc}' (no MINIAOD prunedGenParticles)")
+        print(f"SmartPixels useStoredTracks: repointed finalGenParticles.src -> '{genSrc}' (no MINIAOD prunedGenParticles)")
     # genIso (GenPartIsoProducer) needs MINIAOD packedGenParticles; drop it and
     # the genParticleTable.iso external variable that consumes it. Core GenPart
     # columns (kinematics, pdgId, status, mother, statusFlags) are unaffected.
     if hasattr(process, "genParticleTable") and hasattr(process.genParticleTable, "externalVariables"):
         if hasattr(process.genParticleTable.externalVariables, "iso"):
             del process.genParticleTable.externalVariables.iso
-            print("SmartPixels posture-A: dropped genParticleTable.externalVariables.iso (no packedGenParticles)")
+            print("SmartPixels useStoredTracks: dropped genParticleTable.externalVariables.iso (no packedGenParticles)")
     process = dropAbsentMenuTables(process, ("genIso",))
     # The gen-jet / gen-jet-flavour chain is MINIAOD-coupled (slimmedGenJets et
     # al.); it is not needed for SmartPixels track truth-matching (genParticles +
@@ -548,7 +548,7 @@ def useGenParticlesFromFile(process, genSrc="genParticles"):
 # reco::GenParticle "genParticles" -- so the AK4 genJet + parton/hadron flavour
 # tier is fully producible in-job by REPOINTING (not dropping): read the file's
 # ak4GenJets and run HadronAndPartonSelector + JetFlavourClustering on genParticles.
-# This is the (a) gap for the FAT withGen nano: GenJet_partonFlavour/hadronFlavour.
+# Adds the GenJet_partonFlavour/hadronFlavour columns missing from the FAT withGen nano.
 def useGenJetsInJob(process, genJetSrc="ak4GenJets", genParticlesSrc="genParticles"):
     """Populate the AK4 GenJet + partonFlavour/hadronFlavour tables from GEN-SIM
     content (persisted reco::GenJet ak4GenJets + reco::GenParticle genParticles),
@@ -599,8 +599,8 @@ def useGenJetsInJob(process, genJetSrc="ak4GenJets", genParticlesSrc="genParticl
 
 
 # ---------------------------------------------------------------------------
-# NG jet-tagger tier (fattest-nano (b) gap): L1puppiJetSC4NG + L1SC4NGJetCands +
-# L1ExtPuppiCand + L1HGCCluster on a reduced-menu (posture-C) PU input.
+# NG jet-tagger tier (not in the FAT nano by default): L1puppiJetSC4NG + L1SC4NGJetCands +
+# L1ExtPuppiCand + L1HGCCluster on a reduced-menu (rebuildTracksFromStubs) PU input.
 # ---------------------------------------------------------------------------
 # The stock production DROPS sc4NGJetTable / l1tSC4NGJetCandsTable via
 # dropAbsentMenuTables because the NG producer + its inputs are not scheduled.
@@ -633,7 +633,7 @@ def addNGJetTier(process,
 
     Requires reemulateJetSideForPFTier() to have run (prompt deregionizer + SC4
     corrected jets) and the base p2L1PFCandsTask family scheduled (as
-    stitchPFTierForPostureC does). Idempotent per producer/table label.
+    stitchPFTierForStubRebuild does). Idempotent per producer/table label.
     """
     import FWCore.ParameterSet.Config as cms
     from L1Trigger.Phase2L1ParticleFlow.l1tSC4NGJetProducer_cfi import l1tSC4NGJetProducer
@@ -714,3 +714,7 @@ def addNGJetTier(process,
           " + L1HGCCluster scheduled (coherent=%s); NG jets from %s."
           % (coherent, ngJetsInput))
     return process
+
+
+# Deprecated pre-rename alias; remove once all drivers use the new name.
+stitchPFTierForPostureC = stitchPFTierForStubRebuild
