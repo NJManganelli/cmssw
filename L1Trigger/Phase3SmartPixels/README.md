@@ -55,12 +55,15 @@ the regression/refit producers unmodified (study-breaking). Both
 `fromFile` / `fromFileStubs` and the `truthSource=` keyword are accepted with a
 warning for one transition cycle):
 
-- **`redigitizePVignorePU`** (default) — run the TT associators in-job
-  (unscheduled). Valid only when the job also runs DIGI
-  (`DIGI:pdigi_valid,L1TrackTrigger,...`) or the input retained `mix:Tracker`
-  `PixelDigiSimLink`s. Fresh new-layout tracks with real covariance, but PU is
-  destroyed by re-digitizing signal-only `g4SimHits`.
-  Use for: no-PU RelVals, or any sample where re-digitization is acceptable.
+- **`reemulateL1TrackFinding`** (default) — re-run the full L1TrackTrigger
+  chain from the input's STORED digi tier, with all truth associators in-job
+  against the stored simlinks. Fresh new-layout tracks with real covariance;
+  **pileup is retained** (the stored digis carry it). Requires the
+  digi+simlink tier in the input. A job that ALSO schedules a DIGI step is
+  refused (signal-only re-digitization would destroy pileup) unless
+  `allowSignalOnlyRedigitization=True`.
+  Use for: fullnano production on any digi-carrying sample
+  (Phase2Spring24 DIGIRECOMiniAOD, D121 RelVals).
 - **`useStoredTracks`** — remove all in-process associators; read STEP1-style maps
   straight from the file. Real PU everywhere, but the file's tracks are the old
   (pre-PR#51503) layout so `helixCovMat` is all-zero. Use for: PU studies against
@@ -78,7 +81,7 @@ warning for one transition cycle):
 
 | trackInputMode | tracks | `trackCov` valid? |
 |---|---|---|
-| `redigitizePVignorePU` | fresh, new layout | **yes** (no PU) |
+| `reemulateL1TrackFinding` | fresh, new layout | **yes** (PU retained) |
 | `useStoredTracks` | file, old layout | **no** — zero cov; runtime guard `SmartPixelsSeedCovMissing` fires. Use `parametrized`. |
 | `rebuildTracksFromStubs` | fresh, new layout | **yes** (with PU) |
 
@@ -98,7 +101,7 @@ SmartPixels chain exists:
   `PixelDigiSimLink`), **synthesizing only the angle information** (PixelAV response). It is
   an *active-layer* mode (reuses the activeSP `AAII` encoding to pick the refit layer set,
   e.g. `"1100"`) and is *truth-required* (needs pixel digis + `PixelDigiSimLink` +
-  TrackingParticles; `redigitizePVignorePU` or file-present IT products). The producer is
+  TrackingParticles; `reemulateL1TrackFinding` or file-present IT products). The producer is
   implemented (Phase 2); the config surface is `DIGIREFIT_DEFAULTS` + the `digiRefitConfig=`
   kwarg on `smartPixelsCoexist`/`smartPixelsCoopt`, and a `digiRefit` variant additionally
   emits the refit sidecar product described below.

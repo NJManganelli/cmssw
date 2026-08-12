@@ -300,7 +300,7 @@ expect_raises(ValueError, lambda: smartPixelsVariantSuffix("totallyBogusMode"),
 print("[f] trackInputMode='rebuildTracksFromStubs' wiring")
 check("rebuildTracksFromStubs" in TRACKINPUTMODE_CHOICES,
       "rebuildTracksFromStubs is in the trackInputMode vocabulary")
-check(set(TRACKINPUTMODE_CHOICES) == {"redigitizePVignorePU", "useStoredTracks",
+check(set(TRACKINPUTMODE_CHOICES) == {"reemulateL1TrackFinding", "useStoredTracks",
                                       "rebuildTracksFromStubs"},
       "trackInputMode vocabulary is exactly the three renamed modes")
 
@@ -379,12 +379,24 @@ expect_raises(ValueError, _bad_trackinputmode,
 
 # deprecated pre-rename spellings resolve (one transition cycle)
 from L1Trigger.Phase3SmartPixels.customizeSmartPixels_cff import _resolveTrackInputMode
-for _old, _new in (("inJob", "redigitizePVignorePU"), ("fromFile", "useStoredTracks"),
+for _old, _new in (("inJob", "reemulateL1TrackFinding"),
+                   ("redigitizePVignorePU", "reemulateL1TrackFinding"),
+                   ("fromFile", "useStoredTracks"),
                    ("fromFileStubs", "rebuildTracksFromStubs")):
     check(_resolveTrackInputMode(_old) == _new,
           f"deprecated trackInputMode spelling {_old!r} resolves to {_new!r}")
-check(_resolveTrackInputMode("redigitizePVignorePU", truthSource="fromFile") == "useStoredTracks",
+check(_resolveTrackInputMode("reemulateL1TrackFinding", truthSource="fromFile") == "useStoredTracks",
       "deprecated truthSource= keyword overrides and resolves")
+
+# PU-safety guard: reemulateL1TrackFinding + a scheduled digitisation step is
+# refused (signal-only re-digitization would destroy pileup and its truth).
+def _reemulate_with_digi_step():
+    p = cms.Process("TEST")
+    p.digitisation_step = cms.Path()
+    _applyTrackInputMode(p, "reemulateL1TrackFinding", [("passthrough", None)])
+expect_raises(RuntimeError, _reemulate_with_digi_step,
+              "reemulateL1TrackFinding + digitisation step raises (PU guard)",
+              contains="DESTROYS pileup")
 
 # attachFromFileStubsChain returns the chain module list (prompt-only when off)
 p_direct = cms.Process("TEST")
@@ -501,7 +513,7 @@ p_cox = cms.Process("TEST")
 p_cox.pdummy = cms.Path()
 p_cox.l1tPh2NanoTask = cms.Task()
 smartPixelsCoexist(p_cox, variants=[("passthrough", None)], addNanoTables=True,
-                   trackInputMode="redigitizePVignorePU")
+                   trackInputMode="reemulateL1TrackFinding")
 check(hasattr(p_cox, "l1tPh3SmartPixelsStubTable"),
       "smartPixelsCoexist(addNanoTables=True) emits the reference stub table")
 

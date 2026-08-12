@@ -4,9 +4,9 @@ Produces, in ONE cmsRun job on a GEN-SIM-DIGI-RAW-MINIAOD input:
   (1) the L1 nano tier @L1PFTrkNanowithGen (fullest autoNANO flavor:
       L1TTrack + truth, L1PuppiCand/PFCand crossrefs, SC4/SC8 + NG jet tier,
       HGCCluster, GenJet parton/hadron flavour, ...), re-emulating
-      L1TrackTrigger + SimL1Emulator (redigitizePVignorePU) from the input, AND
+      L1TrackTrigger + SimL1Emulator (reemulateL1TrackFinding) from the input, AND
   (2) the SmartPixels digiRefit track + refit-hit + stub tables for the chosen
-      activeSP, layered via smartPixelsCoexist (trackInputMode='redigitizePVignorePU' -- the
+      activeSP, layered via smartPixelsCoexist (trackInputMode='reemulateL1TrackFinding' -- the
       re-emulated tracklet tracks carry a real helixCovMat, so seedCovMode
       'trackCov' is valid here; the covariance is native to this branch via
       the cms-L1TK merge, no covMatrix backport needed).
@@ -271,7 +271,7 @@ process = addGenObjects(process)
 
 # ---------------------------------------------------------------------------
 # Layer the SmartPixels digiRefit tables (WF1 coexist) into the SAME nano output.
-# trackInputMode='redigitizePVignorePU': this job re-emulates L1TrackTrigger +
+# trackInputMode='reemulateL1TrackFinding': this job re-runs L1TrackTrigger +
 # SimL1Emulator, so the in-process TT truth associators run and the re-emulated
 # tracklet tracks carry a real helixCovMat -> seedCovMode='trackCov' is valid on
 # the covMatrix build.
@@ -281,7 +281,7 @@ from L1Trigger.Phase3SmartPixels.customizeSmartPixels_cff import smartPixelsCoex
 process = smartPixelsCoexist(
     process,
     variants=[("digiRefit", options.activeSP)],
-    trackInputMode="redigitizePVignorePU",
+    trackInputMode="reemulateL1TrackFinding",
     addNanoTables=True,
     digiRefitConfig={
         "pixelavAngleSet": _pixelavAngleSet,
@@ -289,7 +289,7 @@ process = smartPixelsCoexist(
     },
 )
 
-# coexist(trackInputMode='redigitizePVignorePU') relies on the in-process
+# coexist(trackInputMode='reemulateL1TrackFinding') relies on the in-process
 # cluster associator; repoint it at the file's simSiPixelDigis:Tracker simlinks in
 # case the sequence (re)created the module after the first pass above.
 for _m in ["TTClusterAssociatorFromPixelDigis"]:

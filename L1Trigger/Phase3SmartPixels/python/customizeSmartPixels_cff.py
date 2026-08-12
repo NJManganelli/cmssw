@@ -30,7 +30,7 @@ ACTIVE_LAYER_MODES = ["correctionlibRegression", "correctionlibTPToySmear", "dig
 # producer silently passes tracks through unmodified (per-track fallback),
 # which invalidates any study. Truth availability must be guaranteed.
 # digiRefit additionally needs the pixel digis + PixelDigiSimLinks
-# (redigitizePVignorePU, or file-present IT products),
+# (reemulateL1TrackFinding, or file-present IT products),
 # not just the TTTrack association maps; the requirement is flagged the same way.
 TRUTH_REQUIRED_MODES = ["trackingParticleTruth", "correctionlibRegression",
                         "correctionlibTPToySmear", "digiRefit"]
@@ -353,21 +353,33 @@ def useTruthAssociationFromFile(process, associatorLabels=TRUTH_ASSOCIATOR_LABEL
 # specific collections; mixing modes yields a stale map + remade tracks =
 # SILENT passthrough (study-breaking), so the vocabulary is closed and
 # validated loudly.
-#  - redigitizePVignorePU: re-digitize the signal-only input and run the TT
-#    truth associators in-job. Fresh new-layout tracks with real covariance;
-#    pileup is lost to the re-digitization.
+# The mode names describe what happens to the TRACKS; the truth wiring is
+# derived from that (consistency forces it), and every mode yields PV+PU
+# truth when its input requirements are met:
+#  - reemulateL1TrackFinding: re-run the full L1TrackTrigger chain
+#    (cluster/stub builders -> DTC -> tracklet) from the input's STORED digi
+#    tier, with all truth associators in-job against the stored simlinks.
+#    Fresh new-layout tracks with real covariance; PILEUP IS RETAINED (the
+#    stored digis carry it). Requires the digi+simlink tier in the input.
+#    PU is destroyed ONLY if the job also schedules a DIGI step (signal-only
+#    re-digitization) -- guarded against in _applyTrackInputMode.
 #  - useStoredTracks: use the input file's tracks and stored association
 #    maps (all in-process associators removed). Pileup kept, but the stored
 #    tracks may predate the current layout (helixCovMat can be all-zero, in
 #    which case digiRefit must run seedCovMode='parametrized').
 #  - rebuildTracksFromStubs: rebuild new-layout tracks from the file's
-#    persisted stubs (DTC -> tracklet chain) and re-run the track
-#    associator. Pileup AND a real per-track covariance.
-TRACKINPUTMODE_CHOICES = ("redigitizePVignorePU", "useStoredTracks", "rebuildTracksFromStubs")
+#    persisted stubs (DTC -> tracklet chain), read the cluster/stub maps
+#    from the file, and re-run only the track associator. Pileup AND a real
+#    per-track covariance; for inputs without a usable digi tier or jobs
+#    that must not schedule the full L1TrackTrigger step.
+TRACKINPUTMODE_CHOICES = ("reemulateL1TrackFinding", "useStoredTracks", "rebuildTracksFromStubs")
 # Pre-rename spellings, accepted with a deprecation warning for one
 # transition cycle; remove once all drivers use the new names.
+# (redigitizePVignorePU was this mode's short-lived intermediate name; it
+# described the DIGI-step accident, not the mode's actual behavior.)
 _TRACKINPUTMODE_DEPRECATED = {
-    "inJob": "redigitizePVignorePU",
+    "inJob": "reemulateL1TrackFinding",
+    "redigitizePVignorePU": "reemulateL1TrackFinding",
     "fromFile": "useStoredTracks",
     "fromFileStubs": "rebuildTracksFromStubs",
 }
@@ -432,7 +444,7 @@ def attachFromFileStubsChain(process, extendedTracks=True, promptHnpar=5):
   mixing, no cluster/stub remaking -> so seedCovMode="trackCov" becomes VALID on
   PU files. Same-label in-process production shadows the file's HLT branches for
   every downstream consumer configured without a process name (identical to the
-  redigitizePVignorePU labeling model), so the digiRefit producer defaults need no changes.
+  reemulateL1TrackFinding labeling model), so the digiRefit producer defaults need no changes.
 
   Process-name handling of the file maps: the re-run associators consume
   TTClusterAssociatorFromPixelDigis:ClusterAccepted and
@@ -507,8 +519,25 @@ def attachFromFileStubsChain(process, extendedTracks=True, promptHnpar=5):
   return process, chainModules
 
 
-def _applyTrackInputMode(process, trackInputMode, variants, extendedTracks=True, promptHnpar=5):
+def _applyTrackInputMode(process, trackInputMode, variants, extendedTracks=True, promptHnpar=5,
+                         allowSignalOnlyRedigitization=False):
   trackInputMode = _resolveTrackInputMode(trackInputMode)
+  if trackInputMode == "reemulateL1TrackFinding":
+    # PU-safety guard: this mode re-runs L1TrackTrigger from the INPUT's digi
+    # tier, so pileup is retained. If the process ALSO schedules a
+    # digitisation step, the digis are remade from signal-only g4SimHits and
+    # pileup (and its truth) is silently destroyed -- refuse unless the
+    # caller explicitly acknowledges a signal-only sample is intended.
+    if hasattr(process, "digitisation_step") and not allowSignalOnlyRedigitization:
+      raise RuntimeError(
+          "trackInputMode='reemulateL1TrackFinding' with a scheduled digitisation "
+          "step: re-digitization from signal-only g4SimHits DESTROYS pileup and its "
+          "truth. Drop the DIGI step (the input's stored digis are used directly), "
+          "or pass allowSignalOnlyRedigitization=True if a signal-only sample is "
+          "really intended.")
+    print("SmartPixels reemulateL1TrackFinding: L1TrackTrigger re-runs on the "
+          "input's STORED digis (pileup retained); the input must carry the "
+          "tracker digi+simlink tier (e.g. simSiPixelDigis Pixel/Tracker).")
   # Truth is load-bearing for these modes (silent per-track passthrough otherwise):
   # make the requirement visible in the log either way.
   truthModes = [mode for mode, _ in variants if mode in TRUTH_REQUIRED_MODES]
@@ -532,7 +561,7 @@ def _applyTrackInputMode(process, trackInputMode, variants, extendedTracks=True,
                                                  promptHnpar=promptHnpar)
     removed = ["TTClusterAssociatorFromPixelDigis", "TTStubAssociatorFromPixelDigis"]
   # Load-bearing summary line (mode, chains attached, what was removed).
-  if trackInputMode == "redigitizePVignorePU":
+  if trackInputMode == "reemulateL1TrackFinding":
     chainDesc = "none (in-process associators run unscheduled)"
   else:
     chainDesc = attached or "none"
@@ -625,21 +654,26 @@ def injectSmartPixelsTrackProducer(process,
 # WF1: coexist — standard tracks AND SmartPixels variant tables in one L1Nano
 # ---------------------------------------------------------------------------
 def smartPixelsCoexist(process, variants=None, correctionSet=DEFAULT_CORRECTION_SET, addNanoTables=True,
-                       trackInputMode="redigitizePVignorePU", digiRefitConfig=None,
-                       extendedTracks=True, promptHnpar=5, truthSource=None):
+                       trackInputMode="reemulateL1TrackFinding", digiRefitConfig=None,
+                       extendedTracks=True, promptHnpar=5, truthSource=None,
+                       allowSignalOnlyRedigitization=False):
   """Add SmartPixels track collections (default: one passthrough variant)
   alongside the standard tracks, plus one pair of L1Nano track tables per
   variant. Nothing downstream is rewired: all other L1 objects still reflect
   the standard tracks, enabling in-file track-to-track comparisons.
 
-  trackInputMode (see TRACKINPUTMODE_CHOICES for the mode semantics):
-   - 'redigitizePVignorePU' (default): valid when the job also runs DIGI or
-     the input retained mix:Tracker simlinks.
+  trackInputMode (see TRACKINPUTMODE_CHOICES for full semantics):
+   - 'reemulateL1TrackFinding' (default): re-run L1TrackTrigger from the
+     input's STORED digis with all associators in-job -- pileup retained,
+     fresh covariance. Requires the digi+simlink tier in the input; a
+     scheduled DIGI step is refused (signal-only re-digitization would
+     destroy pileup) unless allowSignalOnlyRedigitization=True.
    - 'useStoredTracks': stored tracks may carry an all-zero helixCovMat, in
      which case digiRefit must use seedCovMode='parametrized' (the trackCov
      guard throws loudly otherwise).
    - 'rebuildTracksFromStubs': rebuilt tracks carry a real covariance, so
-     seedCovMode='trackCov' (the digiRefit default) is valid on PU files.
+     seedCovMode='trackCov' (the digiRefit default) is valid on PU files
+     without a usable digi tier.
   Truth is REQUIRED for the regression/TP/digiRefit modes (silent per-track
   passthrough otherwise). The truthSource= keyword is the deprecated name of
   this option and is honored with a warning.
@@ -676,7 +710,8 @@ def smartPixelsCoexist(process, variants=None, correctionSet=DEFAULT_CORRECTION_
                                                          digiRefitConfig=digiRefitConfig)
   process = _scheduleVariantModules(process, modules, "l1tSmartPixelsCoexistTask")
   process = _applyTrackInputMode(process, trackInputMode, variants, extendedTracks=extendedTracks,
-                                 promptHnpar=promptHnpar)
+                                 promptHnpar=promptHnpar,
+                                 allowSignalOnlyRedigitization=allowSignalOnlyRedigitization)
 
   if addNanoTables:
     from DPGAnalysis.Phase3SmartPixelsNanoAOD.l1tPh3SmartPixelsNano_cff import (
@@ -705,8 +740,9 @@ def smartPixelsCoexist(process, variants=None, correctionSet=DEFAULT_CORRECTION_
 def smartPixelsCoopt(process, mode="passthrough", activeSP=None,
                      correctionSet=DEFAULT_CORRECTION_SET,
                      addPh3Table=False, skipModuleTypes=None,
-                     trackInputMode="redigitizePVignorePU", digiRefitConfig=None,
-                     extendedTracks=True, promptHnpar=5, truthSource=None):
+                     trackInputMode="reemulateL1TrackFinding", digiRefitConfig=None,
+                     extendedTracks=True, promptHnpar=5, truthSource=None,
+                     allowSignalOnlyRedigitization=False):
   """Produce ONE SmartPixels variant in-job and inject it into every downstream
   consumer of the standard tracklet tracks. Any nano flavor run in this job then
   reflects that single track interpretation; comparisons are file-to-file
@@ -718,10 +754,11 @@ def smartPixelsCoopt(process, mode="passthrough", activeSP=None,
   extra reference.
 
   trackInputMode: see smartPixelsCoexist and TRACKINPUTMODE_CHOICES —
-  'redigitizePVignorePU' (default), 'useStoredTracks', or
-  'rebuildTracksFromStubs' (rebuild new-layout tracks from file stubs, real
-  PU + real covariance, seedCovMode='trackCov' valid). Truth is REQUIRED for
-  the regression/TP/digiRefit modes. truthSource= is the deprecated name.
+  'reemulateL1TrackFinding' (default; re-run L1TrackTrigger from stored
+  digis, pileup retained), 'useStoredTracks', or 'rebuildTracksFromStubs'
+  (rebuild from file stubs, real PU + real covariance, seedCovMode='trackCov'
+  valid). Truth is REQUIRED for the regression/TP/digiRefit modes.
+  truthSource= is the deprecated name.
 
   extendedTracks (rebuildTracksFromStubs only): also rebuild the extended
   chain. Default True.
@@ -740,7 +777,8 @@ def smartPixelsCoopt(process, mode="passthrough", activeSP=None,
                                                          digiRefitConfig=digiRefitConfig)
   process = _scheduleVariantModules(process, modules, "l1tSmartPixelsCooptTask")
   process = _applyTrackInputMode(process, trackInputMode, [(mode, activeSP)], extendedTracks=extendedTracks,
-                                 promptHnpar=promptHnpar)
+                                 promptHnpar=promptHnpar,
+                                 allowSignalOnlyRedigitization=allowSignalOnlyRedigitization)
 
   prompt, extended = smartPixelsVariantLabels(mode, activeSP)
   process = injectSmartPixelsTrackProducer(process,
