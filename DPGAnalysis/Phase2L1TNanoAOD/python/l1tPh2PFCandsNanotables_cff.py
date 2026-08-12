@@ -134,7 +134,11 @@ l1tHGCClusterTable = cms.EDProducer(
 
 #### caloPtr -> HGCal multicluster crossref (endcap candidates only; barrel
 #### candidates point at GCT/PFCluster collections and get -1)
-l1tPuppiCandHGCClusterLink = cms.EDProducer(
+#### The module LABEL must end in "Table" or the NANOAOD output keep pattern
+#### (keep nanoaodFlatTable_*Table_*_*) silently drops the FlatTable and
+#### hgcClusterIdx never appears. The table NAME/column NAME (L1PuppiCand /
+#### hgcClusterIdx) are unchanged, so downstream schemas are intact.
+l1tPuppiCandHGCClusterLinkTable = cms.EDProducer(
     "L1PFCandClusterLinkTableProducer",
     cands = cms.InputTag("l1tLayer2Deregionizer", "Puppi"),
     clusters = cms.InputTag("l1tHGCalBackEndLayer2Producer", "HGCalBackendLayer2Processor3DClustering"),
@@ -143,7 +147,7 @@ l1tPuppiCandHGCClusterLink = cms.EDProducer(
     clusterTableName = cms.string("L1HGCCluster"),
 )
 
-l1tExtPuppiCandHGCClusterLink = l1tPuppiCandHGCClusterLink.clone(
+l1tExtPuppiCandHGCClusterLinkTable = l1tPuppiCandHGCClusterLinkTable.clone(
     cands = cms.InputTag("l1tLayer2DeregionizerExtended", "Puppi"),
     candTableName = cms.string("L1ExtPuppiCand"),
 )
@@ -179,6 +183,6 @@ p2L1PFCandsTask = cms.Task(
     l1tSC4JetCandsTable,
     l1tSC8JetCandsTable,
     l1tHGCClusterTable,
-    l1tPuppiCandHGCClusterLink,
-    l1tExtPuppiCandHGCClusterLink,
+    l1tPuppiCandHGCClusterLinkTable,
+    l1tExtPuppiCandHGCClusterLinkTable,
 )
