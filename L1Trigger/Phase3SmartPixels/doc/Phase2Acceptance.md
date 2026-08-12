@@ -112,7 +112,7 @@ expected direction without crashing:
 
 ## Sample & config for validation
 
-- Input: `/work/testfiles/RelValTTbar_D121_noPU.root`, `trackInputMode=redigitizePVignorePU` (
+- Input: `/work/testfiles/RelValTTbar_D121_noPU.root`, `trackInputMode=reemulateL1TrackFinding` (
   `DIGI:pdigi_valid,L1TrackTrigger,...`) so digis/simlinks/maps are self-consistent.
 - Angle payload: PixelAV stand-in from
   `python/validatePixelAVAngleSet.py --write-example` until the real fit arrives.

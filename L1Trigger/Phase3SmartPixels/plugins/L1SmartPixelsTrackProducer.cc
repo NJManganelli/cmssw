@@ -767,13 +767,13 @@ void L1SmartPixelsTrackProducer::endStream() {
           << "digiRefit processed " << digiRefitTracksSeen_
           << " tracks with ZERO truth (TP) matches. The TTTrackAssociationMap almost certainly "
              "does not correspond to the input track collection (stale map + remade tracks, or "
-             "wrong trackInputMode). Run redigitizePVignorePU (DIGI + L1TrackTrigger in-job) so tracks, "
+             "wrong trackInputMode). Run reemulateL1TrackFinding (L1TrackTrigger re-run on the input digis) so tracks, "
              "digis, simlinks and maps are self-consistent.";
     if (digiRefitSeedCovMode_ == "trackCov" && digiRefitZeroCovTracks_ == digiRefitTracksSeen_)
       throw cms::Exception("SmartPixelsSeedCovMissing")
           << "digiRefit seedCovMode='trackCov' but ALL " << digiRefitTracksSeen_
           << " seed tracks carried an all-zero helixCovMat. These look like schema-evolved "
-             "old-layout file tracks - run trackInputMode=redigitizePVignorePU so the in-job fit fills the covariance, "
+             "old-layout file tracks - run trackInputMode=reemulateL1TrackFinding so the in-job fit fills the covariance, "
              "or use seedCovMode='parametrized'.";
   }
 }
