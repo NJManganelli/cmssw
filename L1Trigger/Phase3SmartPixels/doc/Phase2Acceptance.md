@@ -1,6 +1,6 @@
 # digiRefit (Tier-2) Phase 2 acceptance criteria
 
-Authoritative plan: `mem:smartpixels-tier2-refit-plan`. These criteria are fixed
+These criteria are fixed
 BEFORE implementation so the validation is not fit to the result. "OT-only fit"
 means the input TTTrack as produced by the tracklet chain (== `passthrough`).
 
@@ -90,7 +90,7 @@ expected direction without crashing:
 
 - A `digiRefit` (or any truth-required mode) job fed a **broken truth config**
   (e.g. wrong `MCTruthTrackInputTag` label so the association map resolves to an
-  empty/mismatched product, or `truthSource=fromFile` with maps absent) must
+  empty/mismatched product, or `trackInputMode=useStoredTracks` with maps absent) must
   throw `cms::Exception` after a reasonable window of events with **zero** truth
   matches, rather than silently emitting unmodified passthrough tracks. The
   guard counts matched tracks across the stream and throws in `endStream()` (or
@@ -112,7 +112,7 @@ expected direction without crashing:
 
 ## Sample & config for validation
 
-- Input: `/work/testfiles/RelValTTbar_D121_noPU.root`, posture B (`truthSource=inJob`,
+- Input: `/work/testfiles/RelValTTbar_D121_noPU.root`, `trackInputMode=redigitizePVignorePU` (
   `DIGI:pdigi_valid,L1TrackTrigger,...`) so digis/simlinks/maps are self-consistent.
 - Angle payload: PixelAV stand-in from
   `python/validatePixelAVAngleSet.py --write-example` until the real fit arrives.

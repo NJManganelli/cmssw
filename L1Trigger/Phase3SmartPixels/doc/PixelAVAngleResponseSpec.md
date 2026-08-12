@@ -26,12 +26,12 @@ The payload encodes the PixelAV + NN **response**: resolution (sigma), bias, and
 probability of the NN angle estimate as functions of the true angles, layer, and local
 magnetic field.
 
-### 1a. Relationship to Stack A (`smarthit_true`) — CHARACTERIZES, does not DRIVE
+### 1a. Relationship to the `smarthit_true` payload family — CHARACTERIZES, does not DRIVE
 
-The angle response above is the one part of the broader Stack A "smarthit_true" family
+The angle response above is the one part of the broader "smarthit_true" payload family
 (true-hit efficiency, position residuals, angle sigma/bias — see
 `python/fitSmartHitPayloads.py`) that the Tier-2 refit actually consumes, and it is consumed
-via this dedicated `pixelavAngleSet` payload, NOT via a `smarthitTrueSet`. The rest of Stack A
+via this dedicated `pixelavAngleSet` payload, NOT via a `smarthitTrueSet`. The rest of the family
 **characterizes** true hits (it measures what a true hit looks like) but does **not drive**
 Tier-2 synthesis: position comes from the real CMSSW pixel digis (digi/cluster fidelity), and
 the angle comes from this PixelAV response applied to the truth-linked parent's true incidence
@@ -43,7 +43,7 @@ inefficiency model (`smarthit_true_eff`) — a hit-loss mechanism internal to th
 chip that the CMSSW digitizer cannot express, and that would gate/weight otherwise-present
 true hits. Wiring it in requires (a) a hardware-derived payload and (b) a collaboration-agreed
 semantics decision — hard gate (drop the hit) vs soft weight (down-weight in selection).
-Until then the producer loads no Stack A payload; if `smarthitTrueSet` is set it emits a loud
+Until then the producer loads no smarthit_true payload; if `smarthitTrueSet` is set it emits a loud
 `edm::LogWarning` (category `SmartPixelsStackAUnused`) and ignores it.
 
 ## 2. Conventions (MUST match exactly)

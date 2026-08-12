@@ -42,7 +42,7 @@ namespace smartpixels {
     float pullAlpha = -999.f, pullBeta = -999.f;
     float chi2IncRPhi = -999.f;                        // sum over this crossing's scalar updates of r^2/S, x + alpha terms
     float chi2IncRZ = -999.f;                          //                                              y + beta terms
-    float selChi2Margin = -999.f;                      // v0.3: runner-up minus best selection chi2 (>=0); how unambiguous
+    float selChi2Margin = -999.f;                      // runner-up minus best selection chi2 (>=0); how unambiguous
                                                        // the hit choice was. Sentinel -999.f when no hit accepted or the
                                                        // window held fewer than 2 candidates. Hardware-plausible.
 
