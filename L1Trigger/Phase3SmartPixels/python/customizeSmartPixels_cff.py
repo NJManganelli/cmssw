@@ -29,12 +29,12 @@ ACTIVE_LAYER_MODES = ["correctionlibRegression", "correctionlibTPToySmear", "dig
 # Modes for which the TP/truth association is LOAD-BEARING: without it the
 # producer silently passes tracks through unmodified (per-track fallback),
 # which invalidates any study. Truth availability must be guaranteed.
-# digiRefit additionally needs the pixel digis + PixelDigiSimLinks (posture B),
+# digiRefit additionally needs the pixel digis + PixelDigiSimLinks
+# (redigitizePVignorePU, or file-present IT products),
 # not just the TTTrack association maps; the requirement is flagged the same way.
 TRUTH_REQUIRED_MODES = ["trackingParticleTruth", "correctionlibRegression",
                         "correctionlibTPToySmear", "digiRefit"]
-# Refit "tier model" (see L1Trigger/Phase3SmartPixels/README.md and
-# mem:smartpixels-tier2-refit-plan):
+# Refit "tier model" (see L1Trigger/Phase3SmartPixels/README.md):
 #   digiRefit = Tier 2 interim refit (real pixel digis + synthesized angles).
 #               Active-layer + truth-required; implementation lands in Phase 2.
 #   refit     = Tier 3 true system (ingests a real SmartTracklet collection from
@@ -94,19 +94,19 @@ DIGIREFIT_DEFAULTS = {
     # crossing at the projector). Both default 12.0.
     "measAngleMaxAbs": 12.0,  # |synthesized measured cot| above this clears hasAlpha/hasBeta
     "predAngleMaxAbs": 12.0,  # |predicted crossing cot| above this invalidates the crossing
-    # --- Kalman seed (user decision 2026-07-18: config-switchable, trackCov default) ---
+    # --- Kalman seed (config-switchable; trackCov default) ---
     "seedNPar": 5,            # 4 | 5: seed-track parametrization entering the KF
     "seedCovMode": "trackCov",  # "trackCov" (TTTrack helixCovMat) | "parametrized" (ablation/fallback)
     "paramSigmas": (1e-4, 1e-3, 2e-3, 0.06, 0.05),  # parametrized-mode sigmas (rInv[cm^-1],phi0,tanL,z0[cm],d0[cm])
     # --- correctionlib payload paths (empty defaults acceptable for Phase 0) ---
-    # RESERVED: Stack A "smarthit_true" payload. Tier-2 does NOT consume it (position
-    # comes from the real digis, angle from the PixelAV response; Stack A only
+    # RESERVED: "smarthit_true" payload. Tier-2 does NOT consume it (position
+    # comes from the real digis, angle from the PixelAV response; smarthit_true only
     # CHARACTERIZES true hits). The key is kept (present + validated) for a future
     # SmartPixels ASIC on-chip readout-inefficiency model (smarthit_true_eff), so
     # wiring is drop-in. Shipped recipes pass no path; if set, the producer warns
     # (SmartPixelsStackAUnused) and loads nothing.
     "smarthitTrueSet": "",    # RESERVED (see note above) -- do not ship a real path
-    "smarthitFakeSet": "",    # Stack B "smarthit_fake" payload (window multiplicity / fakes)
+    "smarthitFakeSet": "",    # "smarthit_fake" payload (inclusive noise-angle model)
     "pixelavAngleSet": "",    # PixelAV angle sigma/bias response payload
     # --- optional refit-aware TkQuality BDT ---
     "bdtModel": "",           # optional path to the refit TkQuality BDT model (empty = none)
@@ -349,28 +349,59 @@ def useTruthAssociationFromFile(process, associatorLabels=TRUTH_ASSOCIATOR_LABEL
   return process
 
 
-# The three valid truth postures (see doc/PostureGapStudy.md and
-# mem:smartpixels-pu-posture-note). Association maps are Ref/Ptr-keyed to specific
-# collections; mixing postures yields a stale map + remade tracks = SILENT
-# passthrough (study-breaking), so the vocabulary is closed and validated loudly.
-TRUTHSOURCE_CHOICES = ("inJob", "fromFile", "fromFileStubs")
+# The three valid track-input modes. Association maps are Ref/Ptr-keyed to
+# specific collections; mixing modes yields a stale map + remade tracks =
+# SILENT passthrough (study-breaking), so the vocabulary is closed and
+# validated loudly.
+#  - redigitizePVignorePU: re-digitize the signal-only input and run the TT
+#    truth associators in-job. Fresh new-layout tracks with real covariance;
+#    pileup is lost to the re-digitization.
+#  - useStoredTracks: use the input file's tracks and stored association
+#    maps (all in-process associators removed). Pileup kept, but the stored
+#    tracks may predate the current layout (helixCovMat can be all-zero, in
+#    which case digiRefit must run seedCovMode='parametrized').
+#  - rebuildTracksFromStubs: rebuild new-layout tracks from the file's
+#    persisted stubs (DTC -> tracklet chain) and re-run the track
+#    associator. Pileup AND a real per-track covariance.
+TRACKINPUTMODE_CHOICES = ("redigitizePVignorePU", "useStoredTracks", "rebuildTracksFromStubs")
+# Pre-rename spellings, accepted with a deprecation warning for one
+# transition cycle; remove once all drivers use the new names.
+_TRACKINPUTMODE_DEPRECATED = {
+    "inJob": "redigitizePVignorePU",
+    "fromFile": "useStoredTracks",
+    "fromFileStubs": "rebuildTracksFromStubs",
+}
 
 
-# FRAMING (user directive 2026-07-20): the ONLY story is 5-par OT-only vs 5-par
-# OT+IT. promptHnpar=5 is the DEFAULT for all SmartPix productions henceforth so the
-# PROMPT reference (OT-only L1TTrack) carries a REAL fitted d0 + 5x5 covariance, the
-# right seed for b-tagging impact-parameter / vertexing resolution-vs-truth. 4-par
-# (d0 pinned to 0) remains SELECTABLE for ablation but is off the default path.
-#
-# The prompt tracklet producer's shipped default is Extended=False, Hnpar=4. Setting
-# Hnpar=5 (keeping Extended=False) makes the PROMPT collection 5-par. Static trace
-# (2026-07-20): no guard couples Hnpar to Extended; the prompt USEHYBRID path runs
-# TMTT KFParamsComb dimensioned purely by nHelixPar (KFbase.cc:81 pins d0 on
-# nHelixPar==4, NOT on extended; L1fittedTrack.h fills the full 5x5 for nHelixPar==5).
-# This is the PRIME-TARGET seed for the prompt digiRefit (seedCovMode=trackCov); at
-# scale it VALIDATED (mem:smartpixels-prime-target-production: 100% nonzero prompt d0,
-# spxSeedCovOK all-True across 4 variants x 3 PU files). The extended chain is always
-# Hnpar=5 regardless.
+def _resolveTrackInputMode(trackInputMode, truthSource=None):
+  """Validate trackInputMode; map deprecated spellings (including the old
+  truthSource keyword) onto the current names with a loud warning."""
+  if truthSource is not None:
+    print(f"SmartPixels: the truthSource= keyword is DEPRECATED; "
+          f"use trackInputMode= (got truthSource={truthSource!r})")
+    trackInputMode = truthSource
+  if trackInputMode in _TRACKINPUTMODE_DEPRECATED:
+    new = _TRACKINPUTMODE_DEPRECATED[trackInputMode]
+    print(f"SmartPixels: trackInputMode={trackInputMode!r} is a DEPRECATED "
+          f"spelling; use {new!r}")
+    trackInputMode = new
+  if trackInputMode not in TRACKINPUTMODE_CHOICES:
+    raise ValueError(
+        f"trackInputMode must be one of {TRACKINPUTMODE_CHOICES} "
+        f"(or a deprecated alias {tuple(_TRACKINPUTMODE_DEPRECATED)}), "
+        f"got '{trackInputMode}'")
+  return trackInputMode
+
+
+# promptHnpar=5 is the default so the PROMPT reference (OT-only L1TTrack)
+# carries a real fitted d0 + 5x5 covariance -- the right seed for b-tagging
+# impact-parameter / vertexing resolution studies and for the prompt digiRefit
+# (seedCovMode=trackCov). 4-par (d0 pinned to 0) remains selectable for
+# ablation. The prompt tracklet producer's shipped default is Extended=False,
+# Hnpar=4; no guard couples Hnpar to Extended (the prompt USEHYBRID path runs
+# TMTT KFParamsComb dimensioned purely by nHelixPar: KFbase.cc pins d0 only on
+# nHelixPar==4, and L1fittedTrack.h fills the full 5x5 for nHelixPar==5). The
+# extended chain is always Hnpar=5 regardless.
 PROMPT_HNPAR_CHOICES = (4, 5)
 
 
@@ -401,7 +432,7 @@ def attachFromFileStubsChain(process, extendedTracks=True, promptHnpar=5):
   mixing, no cluster/stub remaking -> so seedCovMode="trackCov" becomes VALID on
   PU files. Same-label in-process production shadows the file's HLT branches for
   every downstream consumer configured without a process name (identical to the
-  posture-B labeling model), so the digiRefit producer defaults need no changes.
+  redigitizePVignorePU labeling model), so the digiRefit producer defaults need no changes.
 
   Process-name handling of the file maps: the re-run associators consume
   TTClusterAssociatorFromPixelDigis:ClusterAccepted and
@@ -469,45 +500,44 @@ def attachFromFileStubsChain(process, extendedTracks=True, promptHnpar=5):
     path.associate(process.l1tSmartPixelsFromFileStubsTask)
   for _, epath in process.endpaths_().items():
     epath.associate(process.l1tSmartPixelsFromFileStubsTask)
-  print(f"SmartPixels posture-C: prompt tracklet Hnpar={promptHnpar} "
+  print(f"SmartPixels rebuildTracksFromStubs: prompt tracklet Hnpar={promptHnpar} "
         + ("(5-par PRIME seed: real d0 + 5x5 cov -> prompt digiRefit trackCov)"
            if promptHnpar == 5
            else "(4-par: d0 pinned 0 -> prompt digiRefit weak-d0-prior fallback)"))
   return process, chainModules
 
 
-def _applyTruthSource(process, truthSource, variants, extendedTracks=True, promptHnpar=5):
-  if truthSource not in TRUTHSOURCE_CHOICES:
-    raise ValueError(f"truthSource must be one of {TRUTHSOURCE_CHOICES}, got '{truthSource}'")
+def _applyTrackInputMode(process, trackInputMode, variants, extendedTracks=True, promptHnpar=5):
+  trackInputMode = _resolveTrackInputMode(trackInputMode)
   # Truth is load-bearing for these modes (silent per-track passthrough otherwise):
   # make the requirement visible in the log either way.
   truthModes = [mode for mode, _ in variants if mode in TRUTH_REQUIRED_MODES]
   if truthModes:
     print(f"SmartPixels: modes {truthModes} REQUIRE the TP/truth association "
-          f"(truthSource={truthSource}); without it tracks pass through unmodified.")
+          f"(trackInputMode={trackInputMode}); without it tracks pass through unmodified.")
   removed = []
   attached = []
-  if truthSource == "fromFile":
+  if trackInputMode == "useStoredTracks":
     process = useTruthAssociationFromFile(process)
     removed = list(TRUTH_ASSOCIATOR_LABELS)
-  elif truthSource == "fromFileStubs":
-    # Posture C: rebuild tracks + track-truth map(s) from the file's stubs;
-    # remove ONLY the cluster/stub associators (they need mix:Tracker simlinks) --
-    # the TRACK associator IS re-run (that is the difference from fromFile), and
-    # the DIGI-tier + cluster/stub producers are never scheduled here either.
+  elif trackInputMode == "rebuildTracksFromStubs":
+    # Rebuild tracks + track-truth map(s) from the file's stubs; remove ONLY
+    # the cluster/stub associators (they need mix:Tracker simlinks) -- the
+    # TRACK associator IS re-run (that is the difference from useStoredTracks),
+    # and the DIGI-tier + cluster/stub producers are never scheduled here either.
     process = useTruthAssociationFromFile(
         process, associatorLabels=("TTClusterAssociatorFromPixelDigis",
                                    "TTStubAssociatorFromPixelDigis"))
     process, attached = attachFromFileStubsChain(process, extendedTracks=extendedTracks,
                                                  promptHnpar=promptHnpar)
     removed = ["TTClusterAssociatorFromPixelDigis", "TTStubAssociatorFromPixelDigis"]
-  # Load-bearing summary line (posture, chains attached, what was removed).
-  if truthSource == "inJob":
+  # Load-bearing summary line (mode, chains attached, what was removed).
+  if trackInputMode == "redigitizePVignorePU":
     chainDesc = "none (in-process associators run unscheduled)"
   else:
     chainDesc = attached or "none"
-  ext = extendedTracks if truthSource == "fromFileStubs" else "n/a"
-  print(f"SmartPixels truthSource={truthSource}: chain attached={chainDesc}; "
+  ext = extendedTracks if trackInputMode == "rebuildTracksFromStubs" else "n/a"
+  print(f"SmartPixels trackInputMode={trackInputMode}: chain attached={chainDesc}; "
         f"removed in-process modules={removed or 'none'}; extendedTracks={ext}")
   return process
 
@@ -595,55 +625,49 @@ def injectSmartPixelsTrackProducer(process,
 # WF1: coexist — standard tracks AND SmartPixels variant tables in one L1Nano
 # ---------------------------------------------------------------------------
 def smartPixelsCoexist(process, variants=None, correctionSet=DEFAULT_CORRECTION_SET, addNanoTables=True,
-                       truthSource="inJob", digiRefitConfig=None, extendedTracks=True, promptHnpar=5):
+                       trackInputMode="redigitizePVignorePU", digiRefitConfig=None,
+                       extendedTracks=True, promptHnpar=5, truthSource=None):
   """Add SmartPixels track collections (default: one passthrough variant)
   alongside the standard tracks, plus one pair of L1Nano track tables per
   variant. Nothing downstream is rewired: all other L1 objects still reflect
   the standard tracks, enabling in-file track-to-track comparisons.
 
-  truthSource (three postures — see doc/PostureGapStudy.md):
-   - 'inJob' (default): run the TT truth associators in-job — valid when the job
-     also runs DIGI or the input retained mix:Tracker simlinks. Fresh new-layout
-     tracks with real covariance; PU is destroyed by re-digitization of
-     signal-only g4SimHits, so this is the no-PU / re-digitized posture.
-   - 'fromFile': remove ALL in-process associators so STEP1-style association
-     maps are read from the input file. Real PU, but the file's tracks are old
-     layout -> helixCovMat all-zero -> digiRefit must use
-     seedCovMode='parametrized' (the trackCov guard throws loudly otherwise).
-   - 'fromFileStubs' (POSTURE C, PU + real covariance): rebuild NEW-layout tracks
-     from the file's persisted stub tier (ProducerDTC -> tracklet emulator(s) ->
-     re-run TRACK associator vs the file's cluster/stub maps); remove only the
-     cluster/stub associators, never DIGI. Real PU AND real per-track covariance,
-     so seedCovMode='trackCov' (the digiRefit default) is VALID here.
+  trackInputMode (see TRACKINPUTMODE_CHOICES for the mode semantics):
+   - 'redigitizePVignorePU' (default): valid when the job also runs DIGI or
+     the input retained mix:Tracker simlinks.
+   - 'useStoredTracks': stored tracks may carry an all-zero helixCovMat, in
+     which case digiRefit must use seedCovMode='parametrized' (the trackCov
+     guard throws loudly otherwise).
+   - 'rebuildTracksFromStubs': rebuilt tracks carry a real covariance, so
+     seedCovMode='trackCov' (the digiRefit default) is valid on PU files.
   Truth is REQUIRED for the regression/TP/digiRefit modes (silent per-track
-  passthrough otherwise).
+  passthrough otherwise). The truthSource= keyword is the deprecated name of
+  this option and is honored with a warning.
 
-  extendedTracks (fromFileStubs only): also rebuild the extended (displaced)
-  chain so the extended digiRefit variant's inputs are fresh new-layout tracks
-  (trackCov valid for them too). Default True.
+  extendedTracks (rebuildTracksFromStubs only): also rebuild the extended
+  (displaced) chain so the extended digiRefit variant's inputs are fresh
+  new-layout tracks (trackCov valid for them too). Default True.
 
-  promptHnpar (fromFileStubs only; 4 | 5): helix-parameter count of the PROMPT
-  tracklet fit. DEFAULT 5 (the 5-par-only framing: 5-par OT-only vs 5-par OT+IT is
-  the whole story): the prompt collection carries a REAL fitted d0 + 5x5 covariance,
-  so the OT-only prompt reference has real d0 for b-tagging / resolution-vs-truth and
-  the prompt digiRefit variant seeds from a genuine 5-par covariance
-  (seedCovMode=trackCov, the digiRefit default). promptHnpar=4 (ablation only) keeps
-  d0 pinned to 0; the prompt digiRefit then uses the weak-d0-prior fallback (the
-  producer's nFitPars()==5 guard auto-selects it per-collection). The extended chain
-  is always Hnpar=5. Only fromFileStubs honors this knob (inJob/fromFile use the
-  shipped prompt cfi default of 4). The 5-par prompt path is VALIDATED at scale
-  (mem:smartpixels-prime-target-production: 100% nonzero prompt d0, spxSeedCovOK
-  all-True across 4 variants x 3 PU files).
+  promptHnpar (rebuildTracksFromStubs only; 4 | 5): helix-parameter count of
+  the PROMPT tracklet fit. Default 5: the prompt collection then carries a
+  real fitted d0 + 5x5 covariance, giving the OT-only reference a real d0
+  and the prompt digiRefit variant a genuine 5-par seed covariance.
+  promptHnpar=4 (ablation only) pins d0 to 0; the prompt digiRefit then uses
+  the weak-d0-prior fallback (auto-selected per-collection via nFitPars()).
+  The extended chain is always Hnpar=5. The other two modes use the shipped
+  prompt cfi default of 4.
 
   digiRefitConfig: dict merged over DIGIREFIT_DEFAULTS (validated loudly),
-  relevant only for a digiRefit variant. NOTE: combining truthSource='fromFile'
-  (old posture A) with seedCovMode='trackCov' is not special-cased at config
-  time -- it fails loudly at runtime via the SmartPixelsSeedCovMissing guard, by
-  design; use 'fromFileStubs' for trackCov on PU files.
+  relevant only for a digiRefit variant. Combining
+  trackInputMode='useStoredTracks' with seedCovMode='trackCov' is not
+  special-cased at config time -- it fails loudly at runtime via the
+  SmartPixelsSeedCovMissing guard, by design; use 'rebuildTracksFromStubs'
+  for trackCov on PU files.
 
   cmsDriver (defaults):  --customise L1Trigger/Phase3SmartPixels/customizeSmartPixels_cff.smartPixelsCoexist
   cmsDriver (explicit):  --customise_commands 'from L1Trigger.Phase3SmartPixels.customizeSmartPixels_cff import smartPixelsCoexist; process = smartPixelsCoexist(process, variants=[("correctionlibRegression", "1100")])'
   """
+  trackInputMode = _resolveTrackInputMode(trackInputMode, truthSource=truthSource)
   if variants is None:
     variants = [("passthrough", None)]
   variants = _normalizeVariants(variants)
@@ -651,8 +675,8 @@ def smartPixelsCoexist(process, variants=None, correctionSet=DEFAULT_CORRECTION_
   process, modules = addSmartPixelsTrackProducerVariants(process, variants, correctionSet,
                                                          digiRefitConfig=digiRefitConfig)
   process = _scheduleVariantModules(process, modules, "l1tSmartPixelsCoexistTask")
-  process = _applyTruthSource(process, truthSource, variants, extendedTracks=extendedTracks,
-                              promptHnpar=promptHnpar)
+  process = _applyTrackInputMode(process, trackInputMode, variants, extendedTracks=extendedTracks,
+                                 promptHnpar=promptHnpar)
 
   if addNanoTables:
     from DPGAnalysis.Phase3SmartPixelsNanoAOD.l1tPh3SmartPixelsNano_cff import (
@@ -681,7 +705,8 @@ def smartPixelsCoexist(process, variants=None, correctionSet=DEFAULT_CORRECTION_
 def smartPixelsCoopt(process, mode="passthrough", activeSP=None,
                      correctionSet=DEFAULT_CORRECTION_SET,
                      addPh3Table=False, skipModuleTypes=None,
-                     truthSource="inJob", digiRefitConfig=None, extendedTracks=True, promptHnpar=5):
+                     trackInputMode="redigitizePVignorePU", digiRefitConfig=None,
+                     extendedTracks=True, promptHnpar=5, truthSource=None):
   """Produce ONE SmartPixels variant in-job and inject it into every downstream
   consumer of the standard tracklet tracks. Any nano flavor run in this job then
   reflects that single track interpretation; comparisons are file-to-file
@@ -692,27 +717,30 @@ def smartPixelsCoopt(process, mode="passthrough", activeSP=None,
   the standard L1TTrack table (protected by the skip-list) remains the only
   extra reference.
 
-  truthSource: see smartPixelsCoexist — 'inJob' (default), 'fromFile', or
-  'fromFileStubs' (posture C: rebuild new-layout tracks from file stubs, real PU +
-  real covariance, seedCovMode='trackCov' valid). Truth is REQUIRED for the
-  regression/TP/digiRefit modes.
+  trackInputMode: see smartPixelsCoexist and TRACKINPUTMODE_CHOICES —
+  'redigitizePVignorePU' (default), 'useStoredTracks', or
+  'rebuildTracksFromStubs' (rebuild new-layout tracks from file stubs, real
+  PU + real covariance, seedCovMode='trackCov' valid). Truth is REQUIRED for
+  the regression/TP/digiRefit modes. truthSource= is the deprecated name.
 
-  extendedTracks (fromFileStubs only): also rebuild the extended chain. Default True.
+  extendedTracks (rebuildTracksFromStubs only): also rebuild the extended
+  chain. Default True.
 
   digiRefitConfig: dict merged over DIGIREFIT_DEFAULTS (validated loudly),
   relevant only when mode='digiRefit'. mode='refit' raises the RESERVED
-  NotImplementedError. Combining truthSource='fromFile' with
-  seedCovMode='trackCov' fails loudly at runtime (SmartPixelsSeedCovMissing), by
-  design; use 'fromFileStubs' for trackCov on PU files.
+  NotImplementedError. Combining trackInputMode='useStoredTracks' with
+  seedCovMode='trackCov' fails loudly at runtime (SmartPixelsSeedCovMissing),
+  by design; use 'rebuildTracksFromStubs' for trackCov on PU files.
 
   cmsDriver (defaults):  --customise L1Trigger/Phase3SmartPixels/customizeSmartPixels_cff.smartPixelsCoopt
   cmsDriver (explicit):  --customise_commands 'from L1Trigger.Phase3SmartPixels.customizeSmartPixels_cff import smartPixelsCoopt; process = smartPixelsCoopt(process, mode="correctionlibRegression", activeSP="1100")'
   """
+  trackInputMode = _resolveTrackInputMode(trackInputMode, truthSource=truthSource)
   process, modules = addSmartPixelsTrackProducerVariants(process, [(mode, activeSP)], correctionSet,
                                                          digiRefitConfig=digiRefitConfig)
   process = _scheduleVariantModules(process, modules, "l1tSmartPixelsCooptTask")
-  process = _applyTruthSource(process, truthSource, [(mode, activeSP)], extendedTracks=extendedTracks,
-                              promptHnpar=promptHnpar)
+  process = _applyTrackInputMode(process, trackInputMode, [(mode, activeSP)], extendedTracks=extendedTracks,
+                                 promptHnpar=promptHnpar)
 
   prompt, extended = smartPixelsVariantLabels(mode, activeSP)
   process = injectSmartPixelsTrackProducer(process,

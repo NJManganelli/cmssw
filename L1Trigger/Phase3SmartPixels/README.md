@@ -45,43 +45,47 @@ Two streamlined workflows are provided by
   reflects that single interpretation. Comparisons are file-to-file against a standard-tracks
   baseline job.
 
-## Truth postures (`truthSource`)
+## Track-input modes (`trackInputMode`)
 
 The TT truth-association maps are Ref/Ptr-keyed to specific track/cluster/stub
 collections; a stale map applied to remade tracks silently passes tracks through
 the regression/refit producers unmodified (study-breaking). Both
 `smartPixelsCoexist` and `smartPixelsCoopt` therefore take a closed
-`truthSource` vocabulary of three postures (see `doc/PostureGapStudy.md`):
+`trackInputMode` vocabulary of three modes (deprecated spellings `inJob` /
+`fromFile` / `fromFileStubs` and the `truthSource=` keyword are accepted with a
+warning for one transition cycle):
 
-- **`inJob`** (default) — run the TT associators in-job (unscheduled). Valid only
-  when the job also runs DIGI (`DIGI:pdigi_valid,L1TrackTrigger,...`) or the input
-  retained `mix:Tracker` `PixelDigiSimLink`s. Fresh new-layout tracks with real
-  covariance, but PU is destroyed by re-digitizing signal-only `g4SimHits`.
+- **`redigitizePVignorePU`** (default) — run the TT associators in-job
+  (unscheduled). Valid only when the job also runs DIGI
+  (`DIGI:pdigi_valid,L1TrackTrigger,...`) or the input retained `mix:Tracker`
+  `PixelDigiSimLink`s. Fresh new-layout tracks with real covariance, but PU is
+  destroyed by re-digitizing signal-only `g4SimHits`.
   Use for: no-PU RelVals, or any sample where re-digitization is acceptable.
-- **`fromFile`** — remove all in-process associators; read STEP1-style maps
+- **`useStoredTracks`** — remove all in-process associators; read STEP1-style maps
   straight from the file. Real PU everywhere, but the file's tracks are the old
   (pre-PR#51503) layout so `helixCovMat` is all-zero. Use for: PU studies against
   the file's *own* downstream objects (file L1 jets, etc.), and old-release track
   studies. `digiRefit` here **must** use `seedCovMode="parametrized"`.
-- **`fromFileStubs`** (posture C) — rebuild NEW-layout tracks from the file's
+- **`rebuildTracksFromStubs`** — rebuild NEW-layout tracks from the file's
   persisted stub tier (`ProducerDTC` → tracklet emulator(s) → re-run track
   associator vs the file's cluster/stub maps); remove only the cluster/stub
   associators, never DIGI. Real PU **and** real per-track covariance, at
   ~2-3 s/event with no pileup re-mixing. `extendedTracks=True` (default) also
-  rebuilds the displaced chain. Use for: the primary PU development posture and
+  rebuilds the displaced chain. Use for: the primary PU development mode and
   any trackCov-seeded refit production.
 
 `seedCovMode="trackCov"` validity (digiRefit default):
 
-| truthSource | tracks | `trackCov` valid? |
+| trackInputMode | tracks | `trackCov` valid? |
 |---|---|---|
-| `inJob` | fresh, new layout | **yes** (no PU) |
-| `fromFile` | file, old layout | **no** — zero cov; runtime guard `SmartPixelsSeedCovMissing` fires. Use `parametrized`. |
-| `fromFileStubs` | fresh, new layout | **yes** (with PU) |
+| `redigitizePVignorePU` | fresh, new layout | **yes** (no PU) |
+| `useStoredTracks` | file, old layout | **no** — zero cov; runtime guard `SmartPixelsSeedCovMissing` fires. Use `parametrized`. |
+| `rebuildTracksFromStubs` | fresh, new layout | **yes** (with PU) |
 
-The `fromFile` + `trackCov` combination is deliberately *not* special-cased at
-config time; it fails loudly at runtime via the `SmartPixelsSeedCovMissing`
-`endStream` guard, by design. Use `fromFileStubs` for trackCov on PU files.
+The `useStoredTracks` + `trackCov` combination is deliberately *not*
+special-cased at config time; it fails loudly at runtime via the
+`SmartPixelsSeedCovMissing` `endStream` guard, by design. Use
+`rebuildTracksFromStubs` for trackCov on PU files.
 
 ## Refit modes (tier model)
 
@@ -94,7 +98,7 @@ SmartPixels chain exists:
   `PixelDigiSimLink`), **synthesizing only the angle information** (PixelAV response). It is
   an *active-layer* mode (reuses the activeSP `AAII` encoding to pick the refit layer set,
   e.g. `"1100"`) and is *truth-required* (needs pixel digis + `PixelDigiSimLink` +
-  TrackingParticles; posture-B/`inJob` or file-present IT products). The producer is
+  TrackingParticles; `redigitizePVignorePU` or file-present IT products). The producer is
   implemented (Phase 2); the config surface is `DIGIREFIT_DEFAULTS` + the `digiRefitConfig=`
   kwarg on `smartPixelsCoexist`/`smartPixelsCoopt`, and a `digiRefit` variant additionally
   emits the refit sidecar product described below.

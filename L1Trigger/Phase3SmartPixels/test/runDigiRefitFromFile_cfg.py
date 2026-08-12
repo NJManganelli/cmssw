@@ -1,4 +1,4 @@
-"""Posture-A (fromFile) digiRefit job for PU RelVals.
+"""useStoredTracks digiRefit job for PU RelVals.
 
 Nothing is remade: the digiRefit producer consumes the file's TTTracks,
 simSiPixelDigis:Pixel digis+simlinks, association maps and TrackingParticles

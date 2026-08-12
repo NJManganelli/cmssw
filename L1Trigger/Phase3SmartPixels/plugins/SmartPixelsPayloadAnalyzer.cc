@@ -6,7 +6,7 @@
 /**\class SmartPixelsPayloadAnalyzer SmartPixelsPayloadAnalyzer.cc L1Trigger/Phase3SmartPixels/plugins/SmartPixelsPayloadAnalyzer.cc
 
  Description: Phase 1 of the Tier-2 (digiRefit) refit plan. Derives the raw
- inputs for the "smarthit_true" (Stack A) and "smarthit_fake" (Stack B)
+ inputs for the "smarthit_true" and "smarthit_fake"
  correctionlib payloads from a RelVal, by measuring — per L1Track crossing of an
  Inner-Tracker BARREL pixel layer — the in-window pixel-digi population and its
  per-digi truth class (via PixelDigiSimLink). Angle information is recorded in

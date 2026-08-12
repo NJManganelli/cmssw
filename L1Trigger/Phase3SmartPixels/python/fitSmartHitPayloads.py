@@ -1,18 +1,18 @@
-"""Offline fit: SmartPixelsPayloadAnalyzer ntuple -> Stack A/B correctionlib JSONs.
+"""Offline fit: SmartPixelsPayloadAnalyzer ntuple -> smarthit_true/_fake correctionlib JSONs.
 
 Reads the per-crossing ntuple written by SmartPixelsPayloadAnalyzer and derives,
-per (TBPX layer, |eta| bin), the v0 "smarthit_true" (Stack A) and
-"smarthit_fake" (Stack B) payloads used by the Tier-2 digiRefit producer
+per (TBPX layer, |eta| bin), the v0 "smarthit_true" and
+"smarthit_fake" payloads used by the Tier-2 digiRefit producer
 (Phase 2).
 
-Stack A "smarthit_true" (per layer, |eta|):
+"smarthit_true" (per layer, |eta|):
   - eff            : true-hit efficiency = P(>=1 class-0 digi in window | TP-matched crossing)
   - res_x_sigma    : robust position residual width in local x [cm] (class-0 digis)
   - res_y_sigma    : robust position residual width in local y [cm] (class-0 digis)
   - ang_alpha_sigma: robust width of (parent cotAlpha - track cotAlpha) [class-0]
   - ang_beta_sigma : robust width of (parent cotBeta  - track cotBeta ) [class-0]
 
-Stack B "smarthit_fake" (per layer, |eta|):
+"smarthit_fake" (per layer, |eta|):
   - mult_otherTP   : mean number of class-1 (other-TP) digis per window
   - mult_noise     : mean number of class-2 (noise) digis per window
   - ang_alpha_width: robust width of the inclusive class-1/2 cotAlpha distribution
@@ -199,7 +199,7 @@ def build_payloads(in_file, out_true, out_fake, tree="smartPixelsPayloadAnalyzer
                 trkA = arr["trk_cotAlpha"][i]
                 trkB = arr["trk_cotBeta"][i]
                 matched = arr["trk_tpMatched"][i] == 1
-                # Stack A: efficiency + true-hit residuals (class-0)
+                # smarthit_true: efficiency + true-hit residuals (class-0)
                 m0 = cls == 0
                 if matched:
                     n_matched += 1
@@ -212,7 +212,7 @@ def build_payloads(in_file, out_true, out_fake, tree="smartPixelsPayloadAnalyzer
                         good = pA > -900
                         ang_a_true.extend((pA[good] - trkA).tolist())
                         ang_b_true.extend((pB[good] - trkB).tolist())
-                # Stack B: window multiplicity + inclusive fake-angle spread
+                # smarthit_fake: window multiplicity + inclusive fake-angle spread
                 m1 = cls == 1
                 m2 = cls == 2
                 mult_o.append(int(np.count_nonzero(m1)))
@@ -241,7 +241,7 @@ def build_payloads(in_file, out_true, out_fake, tree="smartPixelsPayloadAnalyzer
                  round(eff, 3), round(A[l]["rx"][b], 5), round(B[l]["mo"][b], 2),
                  round(B[l]["mn"][b], 2)))
 
-    # ---- Stack A correctionlib set ----
+    # ---- smarthit_true correctionlib set ----
     def stackA_corr(key, desc, per_layer_key):
         return cs.Correction(
             name=key, version=version, description=_desc(desc),
@@ -253,7 +253,7 @@ def build_payloads(in_file, out_true, out_fake, tree="smartPixelsPayloadAnalyzer
 
     cset_true = cs.CorrectionSet(
         schema_version=2,
-        description=_desc("SmartPixels Tier-2 Stack A smarthit_true payload"),
+        description=_desc("SmartPixels Tier-2 smarthit_true payload"),
         corrections=[
             stackA_corr("smarthit_true_eff", "true-hit efficiency P(class-0 in window | TP-matched)", "eff"),
             stackA_corr("smarthit_true_res_x_sigma", "true-hit local-x residual robust sigma [cm]", "rx"),
@@ -321,7 +321,7 @@ def build_payloads(in_file, out_true, out_fake, tree="smartPixelsPayloadAnalyzer
 
     cset_fake = cs.CorrectionSet(
         schema_version=2,
-        description=_desc("SmartPixels Tier-2 Stack B smarthit_fake payload"),
+        description=_desc("SmartPixels Tier-2 smarthit_fake payload"),
         corrections=fake_corrs,
     )
 

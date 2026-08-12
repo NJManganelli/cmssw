@@ -31,9 +31,9 @@ from L1Trigger.Phase3SmartPixels.customizeSmartPixels_cff import (
     PASSTHROUGH_MODES,
     PROMPT_HNPAR_CHOICES,
     RESERVED_MODES,
-    TRUTHSOURCE_CHOICES,
+    TRACKINPUTMODE_CHOICES,
     TRUTH_REQUIRED_MODES,
-    _applyTruthSource,
+    _applyTrackInputMode,
     _normalizeVariants,
     _resolveDigiRefitConfig,
     addSmartPixelsTrackProducerVariants,
@@ -158,14 +158,14 @@ _m_bdt = getattr(
     _dr_prompt)
 check(_m_bdt.digiRefitBdtModel.value() == "L1Trigger/Phase3SmartPixels/data/refitq_model.json",
       "bdtModel override flows onto the module")
-# smarthitTrueSet is RESERVED (Stack A): NOT consumed by Tier-2 but kept as a
+# smarthitTrueSet is RESERVED: NOT consumed by Tier-2 but kept as a
 # validated key for a future ASIC-efficiency model. Shipped/default recipes must
 # pass NO real path (empty), and setting one must still validate + wire cleanly
 # (the producer will warn at construction -- cmsRun-gated, DEFERRED).
 check("smarthitTrueSet" in DIGIREFIT_DEFAULTS and DIGIREFIT_DEFAULTS["smarthitTrueSet"] == "",
       "smarthitTrueSet is a RESERVED key defaulting to empty (no shipped path)")
 check(_m.digiRefitSmarthitTrueSet.value() == "",
-      "default recipe passes an EMPTY smarthitTrueSet path (Stack A not consumed)")
+      "default recipe passes an EMPTY smarthitTrueSet path (smarthit_true not consumed)")
 _m_true = getattr(
     addSmartPixelsTrackProducerVariants(
         cms.Process("TEST"), variants=[("digiRefit", "1100")],
@@ -296,35 +296,36 @@ check(_normalizeVariants(["passthrough", ("correctionlibRegression", "1100")])
 expect_raises(ValueError, lambda: smartPixelsVariantSuffix("totallyBogusMode"),
               "unknown mode raises ValueError", contains="unknown SmartPixels mode")
 
-# --- (f) truthSource="fromFileStubs" (posture C) wiring ---------------------
-print("[f] truthSource='fromFileStubs' (posture C) wiring")
-check("fromFileStubs" in TRUTHSOURCE_CHOICES,
-      "fromFileStubs is in the truthSource vocabulary")
-check(set(TRUTHSOURCE_CHOICES) == {"inJob", "fromFile", "fromFileStubs"},
-      "truthSource vocabulary is exactly {inJob, fromFile, fromFileStubs}")
+# --- (f) trackInputMode="rebuildTracksFromStubs" wiring ---------------------
+print("[f] trackInputMode='rebuildTracksFromStubs' wiring")
+check("rebuildTracksFromStubs" in TRACKINPUTMODE_CHOICES,
+      "rebuildTracksFromStubs is in the trackInputMode vocabulary")
+check(set(TRACKINPUTMODE_CHOICES) == {"redigitizePVignorePU", "useStoredTracks",
+                                      "rebuildTracksFromStubs"},
+      "trackInputMode vocabulary is exactly the three renamed modes")
 
 
 def _build_fromfilestubs(extendedTracks, seedCovMode="trackCov"):
-    """Full coexist build with truthSource=fromFileStubs on a process carrying a
-    dummy Path (so the posture-C Task has somewhere to associate)."""
+    """Full coexist build with trackInputMode=rebuildTracksFromStubs on a process
+    carrying a dummy Path (so the stub-rebuild Task has somewhere to associate)."""
     p = cms.Process("TEST")
-    p.pdummy = cms.Path()  # somewhere for the posture-C Task to associate
+    p.pdummy = cms.Path()  # somewhere for the stub-rebuild Task to associate
     return smartPixelsCoexist(
         p, variants=[("digiRefit", "1100")], addNanoTables=False,
-        truthSource="fromFileStubs", extendedTracks=extendedTracks,
+        trackInputMode="rebuildTracksFromStubs", extendedTracks=extendedTracks,
         digiRefitConfig={"pixelavAngleSet": "dummy/x.json", "seedCovMode": seedCovMode})
 
 
-# extended ON (default): full prompt+extended posture-C chain present
+# extended ON (default): full prompt+extended stub-rebuild chain present
 p_ffs = _build_fromfilestubs(extendedTracks=True)
 _PROMPT_CHAIN = ["ProducerDTC", "l1tTTTracksFromTrackletEmulation",
                  "TTTrackAssociatorFromPixelDigis"]
 _EXT_CHAIN = ["l1tTTTracksFromExtendedTrackletEmulation",
               "TTTrackAssociatorFromPixelDigisExtended"]
 for m in _PROMPT_CHAIN:
-    check(hasattr(p_ffs, m), f"posture-C chain module '{m}' present (default labels)")
+    check(hasattr(p_ffs, m), f"stub-rebuild chain module '{m}' present (default labels)")
 for m in _EXT_CHAIN:
-    check(hasattr(p_ffs, m), f"posture-C extended chain module '{m}' present (extendedTracks=True)")
+    check(hasattr(p_ffs, m), f"stub-rebuild extended chain module '{m}' present (extendedTracks=True)")
 # the re-run track associator points at the NEW tracklet tracks (default label)
 check(list(p_ffs.TTTrackAssociatorFromPixelDigis.TTTracks)[0]
       == cms.InputTag("l1tTTTracksFromTrackletEmulation", "Level1TTTracks"),
@@ -341,18 +342,18 @@ check(p_ffs.TTTrackAssociatorFromPixelDigis.TTStubTruth.getProcessName() == "",
 for m in ("TTClusterAssociatorFromPixelDigis", "TTStubAssociatorFromPixelDigis",
           "simSiPixelDigis", "mix", "offlineBeamSpot"):
     check(not hasattr(p_ffs, m),
-          f"DIGI-tier/cluster-stub module '{m}' NOT scheduled in-process (posture C)")
-# the posture-C Task exists and contains exactly the chain modules
+          f"DIGI-tier/cluster-stub module '{m}' NOT scheduled in-process (rebuildTracksFromStubs)")
+# the stub-rebuild Task exists and contains exactly the chain modules
 check(hasattr(p_ffs, "l1tSmartPixelsFromFileStubsTask"),
-      "posture-C Task l1tSmartPixelsFromFileStubsTask exists")
+      "stub-rebuild Task l1tSmartPixelsFromFileStubsTask exists")
 _task_names = {mod.label_() for mod in p_ffs.l1tSmartPixelsFromFileStubsTask._collection}
 check(_task_names == set(_PROMPT_CHAIN + _EXT_CHAIN),
-      f"posture-C Task holds exactly prompt+extended chain (got {sorted(_task_names)})")
+      f"stub-rebuild Task holds exactly prompt+extended chain (got {sorted(_task_names)})")
 
 # extended OFF: prompt chain only. NOTE: the extended EMULATOR module
 # (l1tTTTracksFromExtendedTrackletEmulation) is still defined on the process --
 # the l1tTTTracksFromTrackletEmulation_cfi import brings both prompt and extended
-# emulator objects regardless -- but it is NOT on the posture-C Task and its
+# emulator objects regardless -- but it is NOT on the stub-rebuild Task and its
 # associator is not cloned. The knob's load-bearing effect is Task membership.
 p_ffs_p = _build_fromfilestubs(extendedTracks=False)
 for m in _PROMPT_CHAIN:
@@ -361,20 +362,29 @@ check(not hasattr(p_ffs_p, "TTTrackAssociatorFromPixelDigisExtended"),
       "extendedTracks=False -> extended track associator NOT cloned")
 _task_names_p = {mod.label_() for mod in p_ffs_p.l1tSmartPixelsFromFileStubsTask._collection}
 check(_task_names_p == set(_PROMPT_CHAIN),
-      f"prompt-only posture-C Task holds exactly the prompt chain (got {sorted(_task_names_p)})")
+      f"prompt-only stub-rebuild Task holds exactly the prompt chain (got {sorted(_task_names_p)})")
 check("l1tTTTracksFromExtendedTrackletEmulation" not in _task_names_p,
-      "extendedTracks=False -> extended emulator NOT on the posture-C Task")
+      "extendedTracks=False -> extended emulator NOT on the stub-rebuild Task")
 # extended ON vs OFF changes the scheduled module set (knob is live)
 _task_names_on = {mod.label_() for mod in p_ffs.l1tSmartPixelsFromFileStubsTask._collection}
 check(_task_names_on != _task_names_p and _EXT_CHAIN[0] in _task_names_on,
-      "extendedTracks on/off changes the scheduled posture-C module set")
+      "extendedTracks on/off changes the scheduled stub-rebuild module set")
 
-# unknown truthSource still raises loudly
-def _bad_truthsource():
+# unknown trackInputMode still raises loudly
+def _bad_trackinputmode():
     p = cms.Process("TEST")
-    _applyTruthSource(p, "bogusPosture", [("passthrough", None)])
-expect_raises(ValueError, _bad_truthsource,
-              "unknown truthSource raises ValueError", contains="truthSource must be one of")
+    _applyTrackInputMode(p, "bogusMode", [("passthrough", None)])
+expect_raises(ValueError, _bad_trackinputmode,
+              "unknown trackInputMode raises ValueError", contains="trackInputMode must be one of")
+
+# deprecated pre-rename spellings resolve (one transition cycle)
+from L1Trigger.Phase3SmartPixels.customizeSmartPixels_cff import _resolveTrackInputMode
+for _old, _new in (("inJob", "redigitizePVignorePU"), ("fromFile", "useStoredTracks"),
+                   ("fromFileStubs", "rebuildTracksFromStubs")):
+    check(_resolveTrackInputMode(_old) == _new,
+          f"deprecated trackInputMode spelling {_old!r} resolves to {_new!r}")
+check(_resolveTrackInputMode("redigitizePVignorePU", truthSource="fromFile") == "useStoredTracks",
+      "deprecated truthSource= keyword overrides and resolves")
 
 # attachFromFileStubsChain returns the chain module list (prompt-only when off)
 p_direct = cms.Process("TEST")
@@ -390,12 +400,12 @@ check(set(PROMPT_HNPAR_CHOICES) == {4, 5},
 
 
 def _build_ffs_hnpar(promptHnpar):
-    """coexist + fromFileStubs digiRefit build with a given promptHnpar."""
+    """coexist + rebuildTracksFromStubs digiRefit build with a given promptHnpar."""
     p = cms.Process("TEST")
     p.pdummy = cms.Path()
     return smartPixelsCoexist(
         p, variants=[("digiRefit", "1100")], addNanoTables=False,
-        truthSource="fromFileStubs", extendedTracks=True, promptHnpar=promptHnpar,
+        trackInputMode="rebuildTracksFromStubs", extendedTracks=True, promptHnpar=promptHnpar,
         digiRefitConfig={"pixelavAngleSet": "dummy/x.json"})
 
 
@@ -421,7 +431,7 @@ check(p_h4.l1tTTTracksFromExtendedTrackletEmulation.Hnpar.value() == 5,
 # 5-par-only framing: default coexist (no promptHnpar passed) == promptHnpar=5.
 p_hdef = smartPixelsCoexist(
     (lambda: (lambda pp: (setattr(pp, "pdummy", cms.Path()) or pp))(cms.Process("TEST")))(),
-    variants=[("digiRefit", "1100")], addNanoTables=False, truthSource="fromFileStubs",
+    variants=[("digiRefit", "1100")], addNanoTables=False, trackInputMode="rebuildTracksFromStubs",
     digiRefitConfig={"pixelavAngleSet": "dummy/x.json"})
 check(p_hdef.l1tTTTracksFromTrackletEmulation.Hnpar.value() == 5,
       "default promptHnpar (unspecified) == 5 (5-par-only framing: real prompt d0 + 5x5 cov)")
@@ -491,7 +501,7 @@ p_cox = cms.Process("TEST")
 p_cox.pdummy = cms.Path()
 p_cox.l1tPh2NanoTask = cms.Task()
 smartPixelsCoexist(p_cox, variants=[("passthrough", None)], addNanoTables=True,
-                   truthSource="inJob")
+                   trackInputMode="redigitizePVignorePU")
 check(hasattr(p_cox, "l1tPh3SmartPixelsStubTable"),
       "smartPixelsCoexist(addNanoTables=True) emits the reference stub table")
 

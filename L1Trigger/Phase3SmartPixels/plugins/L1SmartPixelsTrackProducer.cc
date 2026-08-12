@@ -367,7 +367,7 @@ private:
 
   // -----------------------------------------------------------------------------------------------
   // digiRefit (Tier 2) configuration + machinery. Only used when
-  // smartPixelsEmulatorMode_ == "digiRefit"; see mem:smartpixels-tier2-refit-plan
+  // smartPixelsEmulatorMode_ == "digiRefit"
   // and doc/PixelAVAngleResponseSpec.md / doc/Phase2Acceptance.md.
   // Per-layer search half-widths [cm] ([layer-1], TBPX L1-L4). The rphi spread
   // of the beamline-constrained extrapolation GROWS outward (MS-compensation
@@ -395,8 +395,8 @@ private:
   std::string digiRefitSeedCovMode_ = "trackCov";  // "trackCov" (TTTrack helixCovMat, default) | "parametrized"
   std::vector<double> digiRefitParamSigmas_;       // parametrized-mode seed sigmas: (rInv[cm^-1], phi0, tanL, z0[cm], d0[cm])
   std::string digiRefitPixelavAngleSet_ = "";  // PixelAV angle sigma/bias/valid payload path
-  std::string digiRefitSmarthitTrueSet_ = "";  // Stack A (RESERVED): NOT consumed by Tier-2; warns if set
-  std::string digiRefitSmarthitFakeSet_ = "";  // Stack B inclusive noise payload path
+  std::string digiRefitSmarthitTrueSet_ = "";  // smarthit_true payload (RESERVED): NOT consumed by Tier-2; warns if set
+  std::string digiRefitSmarthitFakeSet_ = "";  // inclusive noise-angle payload path
   std::string digiRefitBdtModel_ = "";  // refit-quality BDT (conifer JSON); empty = keep original trkMVA1
 
   // Refit-quality BDT (spec §6a). Loaded at construction iff digiRefitBdtModel_
@@ -417,7 +417,7 @@ private:
   correction::Correction::Ref corrAlphaSigma_, corrBetaSigma_;
   correction::Correction::Ref corrValidProb_, corrValidFlat_;
   correction::CompoundCorrection::Ref corrAlphaShift_, corrBetaShift_;
-  // Stack B inclusive noise-angle distribution (used for no-link digis).
+  // Inclusive noise-angle distribution payload (used for no-link digis).
   correction::Correction::Ref corrNoiseCotAlpha_, corrNoiseCotBeta_;
 
   // Shared helix propagation + TBPX module lookup (built lazily; one impl w/ analyzer).
@@ -576,9 +576,9 @@ L1SmartPixelsTrackProducer::L1SmartPixelsTrackProducer(edm::ParameterSet const& 
       const std::string fk = iConfig.getParameter<std::string>("digiRefitSmarthitFakeSet");
       digiRefitSmarthitFakeSet_ = fk.empty() ? std::string() : edm::FileInPath(fk).fullPath();
     }
-    // Stack A "smarthit_true" (RESERVED): validated but deliberately NOT consumed
+    // "smarthit_true" payload (RESERVED): validated but deliberately NOT consumed
     // by Tier-2. Tier-2 takes position from the real digis and angle from the
-    // PixelAV response; Stack A only CHARACTERIZES true hits. The key is kept for
+    // PixelAV response; smarthit_true only CHARACTERIZES true hits. The key is kept for
     // a future SmartPixels ASIC on-chip readout-inefficiency model (smarthit_true_eff),
     // which the digitizer cannot express. Resolve the path (so a bad path still fails
     // loudly), warn LOUDLY if set, and load nothing.
@@ -590,9 +590,9 @@ L1SmartPixelsTrackProducer::L1SmartPixelsTrackProducer(edm::ParameterSet const& 
             << "digiRefit: smarthitTrueSet was provided (" << digiRefitSmarthitTrueSet_
             << ") but is NOT consumed by Tier-2 and is being IGNORED. Tier-2 takes hit position "
                "from the real pixel digis and hit angle from the PixelAV angle-response payload; "
-               "Stack A ('smarthit_true') only characterizes true hits. This config key is RESERVED "
+               "the smarthit_true payload only characterizes true hits. This config key is RESERVED "
                "for a future SmartPixels ASIC on-chip readout-inefficiency model (smarthit_true_eff), "
-               "which is not yet wired. No Stack A payload will be loaded.";
+               "which is not yet wired. No smarthit_true payload will be loaded.";
     }
     {
       const std::string bm = iConfig.getParameter<std::string>("digiRefitBdtModel");
@@ -691,7 +691,7 @@ L1SmartPixelsTrackProducer::L1SmartPixelsTrackProducer(edm::ParameterSet const& 
           << "(additions are purely additive; plain corrections stay bit-identical).";
     }
 
-    // Optional Stack B inclusive noise-angle distribution. When absent, no-link
+    // Optional inclusive noise-angle distribution payload. When absent, no-link
     // (noise) digis contribute position only (angles disabled for that hit).
     if (!digiRefitSmarthitFakeSet_.empty()) {
       auto fset = correction::CorrectionSet::from_file(digiRefitSmarthitFakeSet_);
@@ -751,7 +751,7 @@ void L1SmartPixelsTrackProducer::beginStream(edm::StreamID) {
 }
 void L1SmartPixelsTrackProducer::endStream() {
   // Loud-failure guard: truth-required digiRefit must never silently degrade to
-  // per-track passthrough (stale/mismatched maps or wrong input posture would
+  // per-track passthrough (stale/mismatched maps or a wrong trackInputMode would
   // otherwise silently break every downstream study).
   if (smartPixelsEmulatorMode_ == "digiRefit" && digiRefitTracksSeen_ > 0) {
     // KF numerical-guard activation summary (spec §6b). These count the
@@ -767,13 +767,13 @@ void L1SmartPixelsTrackProducer::endStream() {
           << "digiRefit processed " << digiRefitTracksSeen_
           << " tracks with ZERO truth (TP) matches. The TTTrackAssociationMap almost certainly "
              "does not correspond to the input track collection (stale map + remade tracks, or "
-             "wrong truthSource posture). Run posture B (DIGI + L1TrackTrigger in-job) so tracks, "
+             "wrong trackInputMode). Run redigitizePVignorePU (DIGI + L1TrackTrigger in-job) so tracks, "
              "digis, simlinks and maps are self-consistent.";
     if (digiRefitSeedCovMode_ == "trackCov" && digiRefitZeroCovTracks_ == digiRefitTracksSeen_)
       throw cms::Exception("SmartPixelsSeedCovMissing")
           << "digiRefit seedCovMode='trackCov' but ALL " << digiRefitTracksSeen_
           << " seed tracks carried an all-zero helixCovMat. These look like schema-evolved "
-             "old-layout file tracks - run posture B so the in-job fit fills the covariance, "
+             "old-layout file tracks - run trackInputMode=redigitizePVignorePU so the in-job fit fills the covariance, "
              "or use seedCovMode='parametrized'.";
   }
 }
@@ -1619,7 +1619,7 @@ void L1SmartPixelsTrackProducer::produce(edm::Event& iEvent, const edm::EventSet
           // Schema-evolved old-layout file tracks carry a default (all-zero)
           // covariance; refitting from a singular seed would be garbage. Fall
           // back to passthrough for this track and count it — endStream throws
-          // if EVERY track looked like this (wrong input posture).
+          // if EVERY track looked like this (wrong trackInputMode).
           seedCovOK = false;
           ++digiRefitZeroCovTracks_;
         }
@@ -1776,9 +1776,9 @@ void L1SmartPixelsTrackProducer::produce(edm::Event& iEvent, const edm::EventSet
             // synthesized measured cotAlpha/cotBeta beyond the physical bound is a
             // near-grazing-parent synthesis breakdown (p_z at its 1e-9 floor ->
             // |cot| up to ~2274). Invalidate THAT ANGLE ONLY (clear hasA/hasB); the
-            // hit keeps its position measurement. This removes the entire chi2
-            // pathology at source (77/77 gated updates were measurement-driven);
-            // chi2UpdateGate remains as the numerical backstop.
+            // hit keeps its position measurement. This removes the measurement-
+            // driven chi2 pathology at source; chi2UpdateGate remains as the
+            // numerical backstop.
             if (cand.hasA && std::abs(cand.cotA) > digiRefitMeasAngleMaxAbs_) {
               cand.hasA = false;
               ++digiRefitClampedMeasAngles_;
@@ -2212,8 +2212,8 @@ void L1SmartPixelsTrackProducer::fillDescriptions(edm::ConfigurationDescriptions
   desc.add<double>("digiRefitMeasAngleMaxAbs", 12.0)
       ->setComment("LOAD-BEARING grazing clamp (spec v0.4 §6b): a synthesized measured |cotAlpha|/|cotBeta| "
                    "above this bound invalidates THAT ANGLE (hasAlpha/hasBeta cleared; the hit keeps its "
-                   "position). Removes the measurement-driven chi2 pathology at source (77/77 gated updates "
-                   "on the reference PU sample); default 12 preserves the O(1-6) wrong-hit signal.");
+                   "position). Removes the measurement-driven chi2 pathology at source; default 12 "
+                   "preserves the O(1-6) wrong-hit signal.");
   desc.add<double>("digiRefitPredAngleMaxAbs", 12.0)
       ->setComment("secondary hygiene grazing clamp (spec v0.4 §6b): a predicted crossing |cotAlpha|/|cotBeta| "
                    "above this bound invalidates the crossing at the projector (no window, no sidecar record). "
@@ -2223,10 +2223,10 @@ void L1SmartPixelsTrackProducer::fillDescriptions(edm::ConfigurationDescriptions
   desc.add<std::vector<double>>("digiRefitParamSigmas", std::vector<double>{1e-4, 1e-3, 2e-3, 0.06, 0.05})
       ->setComment("parametrized-mode seed sigmas (rInv[cm^-1], phi0, tanL, z0[cm], d0[cm])");
   desc.add<std::string>("digiRefitPixelavAngleSet", "")->setComment("PixelAV angle-response correctionlib payload path (REQUIRED for digiRefit)");
-  desc.add<std::string>("digiRefitSmarthitFakeSet", "")->setComment("optional Stack B smarthit_fake payload (inclusive noise-angle model)");
+  desc.add<std::string>("digiRefitSmarthitFakeSet", "")->setComment("optional smarthit_fake payload (inclusive noise-angle model)");
   desc.add<std::string>("digiRefitSmarthitTrueSet", "")
-      ->setComment("RESERVED: Stack A smarthit_true payload path. NOT consumed by Tier-2 (position from real "
-                   "digis, angle from PixelAV; Stack A only characterizes true hits). Kept for a future "
+      ->setComment("RESERVED: smarthit_true payload path. NOT consumed by Tier-2 (position from real "
+                   "digis, angle from PixelAV; smarthit_true only characterizes true hits). Kept for a future "
                    "SmartPixels ASIC on-chip readout-inefficiency model (smarthit_true_eff). If non-empty, "
                    "the producer emits a LogWarning (category SmartPixelsStackAUnused) and loads nothing.");
   desc.add<std::string>("digiRefitBdtModel", "")
