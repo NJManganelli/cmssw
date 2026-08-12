@@ -388,8 +388,8 @@ def stitchPFTierForStubRebuild(process, doSC8=True):
       3. drops the members that depend on products still absent in a rebuildTracksFromStubs run
          (extended deregionizer, layer-1 PF, NG-tagged jets, HGCal clusters):
          l1tExtPuppiCandsTable, l1tPFCandsTable, l1tSC4NGJetCandsTable,
-         l1tHGCClusterTable, l1tPuppiCandHGCClusterLink,
-         l1tExtPuppiCandHGCClusterLink, l1tExtPuppiCandTrackTruthTable;
+         l1tHGCClusterTable, l1tPuppiCandHGCClusterLinkTable,
+         l1tExtPuppiCandHGCClusterLinkTable, l1tExtPuppiCandTrackTruthTable;
       4. leaves exactly ONE plain link table writing the L1PuppiCand extension
          (l1tSC4JetCandsTable: writeCandExtension=True; l1tSC8JetCandsTable:
          writeCandExtension=False) so the jetIdx/l1TrackIdx extension columns are
@@ -415,8 +415,8 @@ def stitchPFTierForStubRebuild(process, doSC8=True):
     # l1tExtPuppiCandTrackTruthTable stays dropped: it targets the extended deregionizer
     # product, which is genuinely absent in a rebuildTracksFromStubs run (not merely dangling).
     _drop = ["l1tExtPuppiCandsTable", "l1tPFCandsTable", "l1tSC4NGJetCandsTable",
-             "l1tHGCClusterTable", "l1tPuppiCandHGCClusterLink",
-             "l1tExtPuppiCandHGCClusterLink", "l1tExtPuppiCandTrackTruthTable"]
+             "l1tHGCClusterTable", "l1tPuppiCandHGCClusterLinkTable",
+             "l1tExtPuppiCandHGCClusterLinkTable", "l1tExtPuppiCandTrackTruthTable"]
     if not doSC8:
         _drop.append("l1tSC8JetCandsTable")
     process = dropAbsentMenuTables(process, _drop)
