@@ -40,8 +40,11 @@ namespace smartpixels {
     float sigAlpha = -999.f, sigBeta = -999.f;         // per-hit angle sigmas from the PixelAV payload
     float pullX = -999.f, pullY = -999.f;              // KF pulls r_k/sqrt(S_k) from the scalar updates
     float pullAlpha = -999.f, pullBeta = -999.f;
-    float chi2IncRPhi = -999.f;                        // sum over this crossing's scalar updates of r^2/S, x + alpha terms
-    float chi2IncRZ = -999.f;                          //                                              y + beta terms
+    // Per-dimension scalar-update chi2 increments r^2/S. 0 when the hit was
+    // accepted but that update was not applied (angle absent or numerics-gated);
+    // -999.f when no hit was accepted.
+    float chi2IncX = -999.f, chi2IncY = -999.f;
+    float chi2IncAlpha = -999.f, chi2IncBeta = -999.f;
     float selChi2Margin = -999.f;                      // runner-up minus best selection chi2 (>=0); how unambiguous
                                                        // the hit choice was. Sentinel -999.f when no hit accepted or the
                                                        // window held fewer than 2 candidates. Hardware-plausible.
@@ -61,7 +64,9 @@ namespace smartpixels {
     uint8_t layerHitMask = 0;   // accepted-hit bitmask, bit0=L1 .. bit3=L4;
                                 // popcount(layerHitMask) == nAcceptedHits (exact)
     uint16_t maxWindowMult = 0; // max windowMult over this track's crossings
-    float chi2IncRPhiTot = -999.f, chi2IncRZTot = -999.f;  // sums over crossings
+    // Per-dimension chi2-increment sums over crossings.
+    float chi2IncXTot = -999.f, chi2IncYTot = -999.f;
+    float chi2IncAlphaTot = -999.f, chi2IncBetaTot = -999.f;
   };
 
   struct SmartPixelsRefitSidecar {

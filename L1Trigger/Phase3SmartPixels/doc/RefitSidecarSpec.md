@@ -1,4 +1,4 @@
-# SmartPixels Refit Sidecar — data-model and adapter contract (v2.5)
+# SmartPixels Refit Sidecar — data-model and adapter contract (v2.6)
 
 Versioning — READ THIS BEFORE ADDING A VERSION LABEL ANYWHERE. The only
 canonical version axis for this document is the SmartPixels **simulation**
@@ -18,10 +18,28 @@ loaded model's `n_features`) and the ROOT `ClassVersion`s in
 
 Changelog (the parenthesized version is the simulation version the change
 shipped in):
+- 2026-08-12 (v2.6): 4-WAY CHI2 SPLIT. The per-hit chi2IncRPhi/chi2IncRZ and
+  per-track chi2IncRPhiTot/chi2IncRZTot become per-measurement-dimension fields
+  chi2IncX/Y/Alpha/Beta (+ *Tot). The OT-seeded prediction of the local
+  incidence angle is O(0.1 deg) while the SmartPixels measured-angle resolution
+  is O(5 deg), so the angle terms carry no parameter-refinement weight and only
+  coarse hit-consistency information; summing them into the position chi2
+  dilutes any total-chi2 discriminant. The split keeps the terms separable for
+  the BDT and for analyses. The r-phi and r-z totals remain available as
+  X + Alpha and Y + Beta, and a non-applied update contributes exactly 0, so the
+  16-bit compact word LAYOUT (§3) and the REFIT_BDT_FEATURES contract (§6a,
+  features 9/10 = those combinations) are unchanged and deployed conifer models
+  stay valid. The recombined values are identical to the pre-split ones whenever
+  at most one term per combination is nonzero (i.e. whenever the angle update was
+  not applied) and otherwise differ only by float summation order — the sum is
+  now over two separately-rounded accumulators, ~1e-7 relative, far below the
+  4-bit log quantizer's resolution. ClassVersions: HitInfo 4->5, TrackInfo 4->5,
+  Sidecar 5->6 — v2.5 files are NOT schema-evolved onto the renamed members, so
+  analyze v2.5 productions with v2.5 software.
 - 2026-07-20 (v2.5, was "spec v0.4"): RELOCATES the grazing clamp. The preceding
-  root-cause attribution
-  (non-physical PREDICTED crossing angles) was falsified by the pre-implementation
-  investigation: all 77 gated updates on the reference PU sample have physical
+  root-cause attribution (non-physical PREDICTED crossing angles) was falsified
+  by the pre-implementation investigation: all 77 gated updates on the reference
+  PU sample have physical
   predicted angles (max |cotBeta| 5.66) and are driven by the MEASUREMENT term —
   the synthesized measured angle explodes (to |cot| ~2274) when a wrong/noise
   hit's parent momentum is near-grazing (local p_z -> the 1e-9 floor). The
@@ -112,8 +130,10 @@ struct SmartPixelsRefitHitInfo {   // one entry per LAYER CROSSING attempted (no
   float cotAlphaMeas, cotBetaMeas;   // synthesized measured angles
   float sigAlpha, sigBeta; // per-hit angle sigmas from the PixelAV payload
   float pullX, pullY, pullAlpha, pullBeta;  // KF pulls r_k/sqrt(S_k) from the scalar updates
-  float chi2IncRPhi;       // sum over this crossing's scalar updates of r^2/S, x + alpha terms
-  float chi2IncRZ;         //                                              y + beta  terms
+  float chi2IncX;          // this crossing's scalar-update chi2 increments r^2/S, per
+  float chi2IncY;          //   measurement dimension. 0 when the hit was accepted but
+  float chi2IncAlpha;      //   that update was not applied (angle absent or
+  float chi2IncBeta;       //   numerics-gated); -999.f when no hit was accepted.
   float selChi2Margin;     // runner-up minus best selection chi2 (>=0); how unambiguous
                            // the hit choice was. Sentinel -999.f when no hit accepted or the
                            // window held fewer than 2 candidates. Hardware-plausible (computed
@@ -133,7 +153,8 @@ struct SmartPixelsRefitTrackInfo { // one entry per track (refit or passthrough)
   uint8_t  layerHitMask;   // accepted-hit bitmask, bit0=L1 .. bit3=L4;
                            // popcount(layerHitMask) == nAcceptedHits (exact)
   uint16_t maxWindowMult;  // max windowMult over this track's crossings
-  float chi2IncRPhiTot, chi2IncRZTot;  // sums over crossings
+  float chi2IncXTot, chi2IncYTot;        // per-dimension sums over crossings; the r-phi
+  float chi2IncAlphaTot, chi2IncBetaTot; // and r-z totals are X+Alpha and Y+Beta
 };
 
 struct SmartPixelsRefitSidecar {
@@ -160,8 +181,8 @@ inference-side adapter MUST implement the `transmittedSubset` knob:
 - `"compact"` (TS1): a 16-bit summary word (provisional layout, pending a spare-bit
   audit of `TTTrack_TrackWord`):
   - bits 0-3   : per-layer accepted-hit bitmask (L1..L4); popcount == nAcceptedHits
-  - bits 4-7   : `q(chi2IncRPhiTot)`
-  - bits 8-11  : `q(chi2IncRZTot)`
+  - bits 4-7   : `q(chi2IncXTot + chi2IncAlphaTot)`  (the r-phi total)
+  - bits 8-11  : `q(chi2IncYTot + chi2IncBetaTot)`   (the r-z total)
   - bits 12-14 : `occ = clamp(floor(log2(1 + maxWindowMult)), 0, 7)`
   - bit  15    : reserved (0)
   with the shared quantizer `q(c) = clamp(round(2 * log2(1 + c)), 0, 15)`.
@@ -232,8 +253,8 @@ exact order; the model JSON's feature count is validated against it at load.
  6  sumPullY2
  7  sumPullAlpha2
  8  sumPullBeta2
- 9  chi2IncRPhiTot      (post-guard values, see 6b)
-10  chi2IncRZTot
+ 9  chi2IncXTot + chi2IncAlphaTot   (the r-phi total; post-guard values, see 6b)
+10  chi2IncYTot + chi2IncBetaTot    (the r-z total)
 11  dRinv               (refit minus seed, this track)
 12  dPhi
 13  dTanl

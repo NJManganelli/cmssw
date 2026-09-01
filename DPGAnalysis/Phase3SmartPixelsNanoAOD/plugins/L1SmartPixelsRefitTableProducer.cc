@@ -66,7 +66,7 @@ public:
     // ---- EXTENSION table on the variant track table (extension=true, same name/length) ----
     std::vector<uint8_t> status, nCrossings, nAcceptedHits, nKFUpdates, layerHitMask, maxWindowMult;
     std::vector<bool> refitPerformed, seedCovOK, parametrizedSeed, anyWindowTruncated;
-    std::vector<float> chi2IncRPhiTot, chi2IncRZTot;
+    std::vector<float> chi2IncXTot, chi2IncYTot, chi2IncAlphaTot, chi2IncBetaTot;
     std::vector<int32_t> compactWord;
     status.reserve(nTracks);
     nCrossings.reserve(nTracks);
@@ -78,8 +78,10 @@ public:
     seedCovOK.reserve(nTracks);
     parametrizedSeed.reserve(nTracks);
     anyWindowTruncated.reserve(nTracks);
-    chi2IncRPhiTot.reserve(nTracks);
-    chi2IncRZTot.reserve(nTracks);
+    chi2IncXTot.reserve(nTracks);
+    chi2IncYTot.reserve(nTracks);
+    chi2IncAlphaTot.reserve(nTracks);
+    chi2IncBetaTot.reserve(nTracks);
     compactWord.reserve(nTracks);
 
     // ---- per-hit LINK table (one row per crossing across all tracks) ----
@@ -90,7 +92,8 @@ public:
     std::vector<int32_t> hitFlags;
     std::vector<bool> hitAccepted, windowTruncated, hasAlpha, hasBeta;
     std::vector<float> resX, resY, cotAlphaMeas, cotBetaMeas, sigAlpha, sigBeta;
-    std::vector<float> pullX, pullY, pullAlpha, pullBeta, chi2IncRPhi, chi2IncRZ, selChi2Margin;
+    std::vector<float> pullX, pullY, pullAlpha, pullBeta, selChi2Margin;
+    std::vector<float> chi2IncX, chi2IncY, chi2IncAlpha, chi2IncBeta;
     std::vector<int32_t> selHitClass;
     std::vector<float> parCotAlpha, parCotBeta;
 
@@ -106,8 +109,10 @@ public:
       seedCovOK.push_back(ti.status & smartpixels::trackstatus::kSeedCovOK);
       parametrizedSeed.push_back(ti.status & smartpixels::trackstatus::kParametrizedSeed);
       anyWindowTruncated.push_back(ti.status & smartpixels::trackstatus::kAnyWindowTruncated);
-      chi2IncRPhiTot.push_back(ti.chi2IncRPhiTot);
-      chi2IncRZTot.push_back(ti.chi2IncRZTot);
+      chi2IncXTot.push_back(ti.chi2IncXTot);
+      chi2IncYTot.push_back(ti.chi2IncYTot);
+      chi2IncAlphaTot.push_back(ti.chi2IncAlphaTot);
+      chi2IncBetaTot.push_back(ti.chi2IncBetaTot);
       compactWord.push_back(static_cast<int32_t>(smartpixels::packCompactWord(ti)));
 
       for (const auto& hi : sidecar.hitInfo[it]) {
@@ -130,8 +135,10 @@ public:
         pullY.push_back(hi.pullY);
         pullAlpha.push_back(hi.pullAlpha);
         pullBeta.push_back(hi.pullBeta);
-        chi2IncRPhi.push_back(hi.chi2IncRPhi);
-        chi2IncRZ.push_back(hi.chi2IncRZ);
+        chi2IncX.push_back(hi.chi2IncX);
+        chi2IncY.push_back(hi.chi2IncY);
+        chi2IncAlpha.push_back(hi.chi2IncAlpha);
+        chi2IncBeta.push_back(hi.chi2IncBeta);
         selChi2Margin.push_back(hi.selChi2Margin);
         selHitClass.push_back(hi.selHitClass);
         parCotAlpha.push_back(hi.parCotAlpha);
@@ -163,8 +170,10 @@ public:
     hitTable->addColumn<float>("pullY", pullY, "KF pull y = r/sqrt(S) (-999 if none)");
     hitTable->addColumn<float>("pullAlpha", pullAlpha, "KF pull cotAlpha = r/sqrt(S) (-999 if none)");
     hitTable->addColumn<float>("pullBeta", pullBeta, "KF pull cotBeta = r/sqrt(S) (-999 if none)");
-    hitTable->addColumn<float>("chi2IncRPhi", chi2IncRPhi, "crossing chi2 increment, r-phi (x+alpha) terms (-999 if none)", /*mantissaBits=*/12);
-    hitTable->addColumn<float>("chi2IncRZ", chi2IncRZ, "crossing chi2 increment, r-z (y+beta) terms (-999 if none)", /*mantissaBits=*/12);
+    hitTable->addColumn<float>("chi2IncX", chi2IncX, "crossing chi2 increment, local-x position term (-999 if none; 0 if not applied)", /*mantissaBits=*/12);
+    hitTable->addColumn<float>("chi2IncY", chi2IncY, "crossing chi2 increment, local-y position term (-999 if none; 0 if not applied)", /*mantissaBits=*/12);
+    hitTable->addColumn<float>("chi2IncAlpha", chi2IncAlpha, "crossing chi2 increment, cotAlpha angle term (-999 if none; 0 if not applied)", /*mantissaBits=*/12);
+    hitTable->addColumn<float>("chi2IncBeta", chi2IncBeta, "crossing chi2 increment, cotBeta angle term (-999 if none; 0 if not applied)", /*mantissaBits=*/12);
     hitTable->addColumn<float>("selChi2Margin", selChi2Margin, "runner-up minus best selection chi2 (>=0; -999 if <2 candidates or no accepted hit)", /*mantissaBits=*/12);
     hitTable->addColumn<int32_t>("selHitClass", selHitClass, "TRUTH-ONLY simlink class of selected hit: 0 sameTP, 1 otherTP, 2 noise, -1 none");
     hitTable->addColumn<float>("parCotAlpha", parCotAlpha, "TRUTH-ONLY selected-hit parent local cotAlpha (-999 if none)", /*mantissaBits=*/12);
@@ -185,8 +194,10 @@ public:
     trkTable->addColumn<uint8_t>("spxNKFUpdates", nKFUpdates, "scalar-update groups applied (layers updated)");
     trkTable->addColumn<uint8_t>("spxLayerHitMask", layerHitMask, "accepted-hit bitmask bit0=L1..bit3=L4; popcount == nAcceptedHits");
     trkTable->addColumn<uint16_t>("spxMaxWindowMult", maxWindowMult, "max window multiplicity over this track's crossings");
-    trkTable->addColumn<float>("spxChi2IncRPhiTot", chi2IncRPhiTot, "sum of r-phi chi2 increments over crossings (-999 if passthrough)");
-    trkTable->addColumn<float>("spxChi2IncRZTot", chi2IncRZTot, "sum of r-z chi2 increments over crossings (-999 if passthrough)");
+    trkTable->addColumn<float>("spxChi2IncXTot", chi2IncXTot, "sum of local-x chi2 increments over crossings");
+    trkTable->addColumn<float>("spxChi2IncYTot", chi2IncYTot, "sum of local-y chi2 increments over crossings");
+    trkTable->addColumn<float>("spxChi2IncAlphaTot", chi2IncAlphaTot, "sum of cotAlpha chi2 increments over crossings (r-phi total = X + Alpha)");
+    trkTable->addColumn<float>("spxChi2IncBetaTot", chi2IncBetaTot, "sum of cotBeta chi2 increments over crossings (r-z total = Y + Beta)");
     trkTable->addColumn<int32_t>("spxCompactWord", compactWord, "16-bit transmitted-subset compact word (packCompactWord; see SmartPixelsTransmittedSubset.h)");
     iEvent.put(std::move(trkTable), "trk");
   }

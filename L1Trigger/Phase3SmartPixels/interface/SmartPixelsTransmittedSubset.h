@@ -12,10 +12,10 @@
 // trkquality two's-complement track-word decode). Header-only, constexpr where
 // possible, no CMSSW dependencies -- so it can be mirrored trivially.
 //
-// v0 compact-word bit layout (spec §3):
+// Provisional compact-word bit layout (spec §3):
 //   bits 0-3   : per-layer accepted-hit bitmask (L1..L4); popcount == nAcceptedHits
-//   bits 4-7   : q(chi2IncRPhiTot)
-//   bits 8-11  : q(chi2IncRZTot)
+//   bits 4-7   : q(chi2IncXTot + chi2IncAlphaTot)   [the r-phi combination]
+//   bits 8-11  : q(chi2IncYTot + chi2IncBetaTot)    [the r-z combination]
 //   bits 12-14 : occ = clamp(floor(log2(1 + maxWindowMult)), 0, 7)
 //   bit  15    : reserved (0)
 // with q(c) = clamp(round(2 * log2(1 + c)), 0, 15).
@@ -56,18 +56,18 @@ namespace smartpixels {
   }
 
   // Assemble the 16-bit compact word from an explicit L1..L4 accepted-hit
-  // bitmask (bit0=L1 .. bit3=L4), the two per-track chi2 totals, and the
+  // bitmask (bit0=L1 .. bit3=L4), the r-phi and r-z chi2 sums, and the
   // per-track maximum window multiplicity. This is the exact-fidelity form: the
   // caller (the producer, which owns per-crossing layer identity) supplies the
   // true bitmask so popcount(mask) == nAcceptedHits holds physically.
   inline uint16_t packCompactWord(uint8_t layerHitMask,
-                                  double chi2IncRPhiTot,
-                                  double chi2IncRZTot,
+                                  double chi2RPhi,
+                                  double chi2RZ,
                                   unsigned maxWindowMult) {
     uint16_t w = 0;
     w |= static_cast<uint16_t>(layerHitMask & 0xF);              // bits 0-3
-    w |= static_cast<uint16_t>(quantizeChi2(chi2IncRPhiTot)) << 4;  // bits 4-7
-    w |= static_cast<uint16_t>(quantizeChi2(chi2IncRZTot)) << 8;    // bits 8-11
+    w |= static_cast<uint16_t>(quantizeChi2(chi2RPhi)) << 4;  // bits 4-7
+    w |= static_cast<uint16_t>(quantizeChi2(chi2RZ)) << 8;    // bits 8-11
     w |= static_cast<uint16_t>(quantizeOccupancy(maxWindowMult) & 0x7) << 12;  // bits 12-14
     // bit 15 reserved (0)
     return w;
@@ -76,8 +76,14 @@ namespace smartpixels {
   // Canonical entry point (spec §3): assemble the compact word directly from a
   // SmartPixelsRefitTrackInfo, which carries the exact layerHitMask and
   // maxWindowMult. popcount(layerHitMask) == nAcceptedHits holds by construction.
+  // Bits 4-7 / 8-11 quantize the r-phi (X+Alpha) and r-z (Y+Beta) combinations;
+  // sentinel components drop out (quantizeChi2 clamps <=0 to 0 regardless).
   inline uint16_t packCompactWord(const SmartPixelsRefitTrackInfo& t) {
-    return packCompactWord(t.layerHitMask, t.chi2IncRPhiTot, t.chi2IncRZTot, t.maxWindowMult);
+    const double rphi = (t.chi2IncXTot > -900.f ? t.chi2IncXTot : 0.f) +
+                        (t.chi2IncAlphaTot > -900.f ? t.chi2IncAlphaTot : 0.f);
+    const double rz = (t.chi2IncYTot > -900.f ? t.chi2IncYTot : 0.f) +
+                      (t.chi2IncBetaTot > -900.f ? t.chi2IncBetaTot : 0.f);
+    return packCompactWord(t.layerHitMask, rphi, rz, t.maxWindowMult);
   }
 
 }  // namespace smartpixels

@@ -32,17 +32,20 @@ producer instance (prompt and extended cloned separately):
   the `L1SC4NGJetCands` link pattern), `layer`, `detId`, `windowMult`, `flags` +
   unpacked bools (`hitAccepted`, `windowTruncated`, `hasAlpha`, `hasBeta`), `resX`,
   `resY` (full float), `cotAlphaMeas`, `cotBetaMeas`, `sigAlpha`, `sigBeta` (float12),
-  `pullX`, `pullY`, `pullAlpha`, `pullBeta` (full float), `chi2IncRPhi`, `chi2IncRZ`
-  (float12), and TRUTH-ONLY `selHitClass`, `parCotAlpha`, `parCotBeta`.
+  `pullX`, `pullY`, `pullAlpha`, `pullBeta` (full float), `chi2IncX`, `chi2IncY`,
+  `chi2IncAlpha`, `chi2IncBeta` (float12), and TRUTH-ONLY `selHitClass`,
+  `parCotAlpha`, `parCotBeta`.
 - **track EXTENSION table** (`extension=True`, SAME name+length as the variant track
   table `L1TSmartPixelsTrack<Suffix>` / `L1TSmartPixelsExtTrack<Suffix>`): `spxStatus`
   + unpacked bools (`spxRefitPerformed`, `spxSeedCovOK`, `spxParametrizedSeed`,
   `spxAnyWindowTruncated`), `spxNCrossings`, `spxNAcceptedHits`, `spxNKFUpdates`,
-  `spxLayerHitMask`, `spxMaxWindowMult`, `spxChi2IncRPhiTot`, `spxChi2IncRZTot`, and
-  `spxCompactWord` (= `packCompactWord(trackInfo)`, the 16-bit transmitted-subset word).
+  `spxLayerHitMask`, `spxMaxWindowMult`, `spxChi2IncXTot`, `spxChi2IncYTot`,
+  `spxChi2IncAlphaTot`, `spxChi2IncBetaTot`, and `spxCompactWord`
+  (= `packCompactWord(trackInfo)`, the 16-bit transmitted-subset word). The r-phi and
+  r-z totals are `XTot + AlphaTot` and `YTot + BetaTot`.
 
 Sentinel floats pass through as `-999.f` (consumers test `> -900`); passthrough tracks
-have `spxRefitPerformed=false`, empty per-hit rows, and sentinel chi2 totals.
+have `spxRefitPerformed=false`, empty per-hit rows, and zeroed chi2 totals.
 
 ## Truth index-reuse (withGen tiers)
 
