@@ -1939,11 +1939,15 @@ void L1SmartPixelsTrackProducer::produce(edm::Event& iEvent, const edm::EventSet
         if (applied[1]) drSumPullY2 += pull[1] * pull[1];
         if (applied[2]) drSumPullAlpha2 += pull[2] * pull[2];
         if (applied[3]) drSumPullBeta2 += pull[3] * pull[3];
-        // rphi terms: x + alpha; rz terms: y + beta (spec §2).
-        const double incRPhi = (applied[0] ? chi2inc[0] : 0.) + (applied[2] ? chi2inc[2] : 0.);
-        const double incRZ = (applied[1] ? chi2inc[1] : 0.) + (applied[3] ? chi2inc[3] : 0.);
-        hi.chi2IncRPhi = static_cast<float>(incRPhi);
-        hi.chi2IncRZ = static_cast<float>(incRZ);
+        // Per-dimension chi2 increments (spec §2); a non-applied update contributes 0.
+        const double incX = applied[0] ? chi2inc[0] : 0.;
+        const double incY = applied[1] ? chi2inc[1] : 0.;
+        const double incAlpha = applied[2] ? chi2inc[2] : 0.;
+        const double incBeta = applied[3] ? chi2inc[3] : 0.;
+        hi.chi2IncX = static_cast<float>(incX);
+        hi.chi2IncY = static_cast<float>(incY);
+        hi.chi2IncAlpha = static_cast<float>(incAlpha);
+        hi.chi2IncBeta = static_cast<float>(incBeta);
         hi.selChi2Margin = (drSelChi2Margin > -900.) ? static_cast<float>(drSelChi2Margin) : -999.f;
         hi.selHitClass = best.cls;
         hi.parCotAlpha = static_cast<float>(best.parCotA);
@@ -1952,10 +1956,14 @@ void L1SmartPixelsTrackProducer::produce(edm::Event& iEvent, const edm::EventSet
 
         // Compact-word layer bitmask + per-track chi2 totals (spec §2/§3).
         drLayerHitMask |= static_cast<uint8_t>(1u << (layer - 1));
-        drTrackInfo.chi2IncRPhiTot =
-            (drTrackInfo.chi2IncRPhiTot < -900.f ? 0.f : drTrackInfo.chi2IncRPhiTot) + static_cast<float>(incRPhi);
-        drTrackInfo.chi2IncRZTot =
-            (drTrackInfo.chi2IncRZTot < -900.f ? 0.f : drTrackInfo.chi2IncRZTot) + static_cast<float>(incRZ);
+        drTrackInfo.chi2IncXTot =
+            (drTrackInfo.chi2IncXTot < -900.f ? 0.f : drTrackInfo.chi2IncXTot) + static_cast<float>(incX);
+        drTrackInfo.chi2IncYTot =
+            (drTrackInfo.chi2IncYTot < -900.f ? 0.f : drTrackInfo.chi2IncYTot) + static_cast<float>(incY);
+        drTrackInfo.chi2IncAlphaTot =
+            (drTrackInfo.chi2IncAlphaTot < -900.f ? 0.f : drTrackInfo.chi2IncAlphaTot) + static_cast<float>(incAlpha);
+        drTrackInfo.chi2IncBetaTot =
+            (drTrackInfo.chi2IncBetaTot < -900.f ? 0.f : drTrackInfo.chi2IncBetaTot) + static_cast<float>(incBeta);
 
         ++nAcceptedHits;
         ++nUpdates;
@@ -1970,8 +1978,10 @@ void L1SmartPixelsTrackProducer::produce(edm::Event& iEvent, const edm::EventSet
           pt.status |= smartpixels::trackstatus::kSeedCovOK;
         if (digiRefitSeedCovMode_ == "parametrized")
           pt.status |= smartpixels::trackstatus::kParametrizedSeed;
-        pt.chi2IncRPhiTot = 0.f;
-        pt.chi2IncRZTot = 0.f;
+        pt.chi2IncXTot = 0.f;
+        pt.chi2IncYTot = 0.f;
+        pt.chi2IncAlphaTot = 0.f;
+        pt.chi2IncBetaTot = 0.f;
         sidecar->trackInfo.push_back(pt);
         sidecar->hitInfo.emplace_back();  // empty per spec
       } else {
@@ -1987,8 +1997,10 @@ void L1SmartPixelsTrackProducer::produce(edm::Event& iEvent, const edm::EventSet
         // Passthrough tracks are never scored (handled in the fallback branch).
         double refitTrkMVA1 = iterL1Track->trkMVA1();
         if (digiRefitBdt_) {
-          const double chi2RPhiTot = (drTrackInfo.chi2IncRPhiTot < -900.f) ? 0. : drTrackInfo.chi2IncRPhiTot;
-          const double chi2RZTot = (drTrackInfo.chi2IncRZTot < -900.f) ? 0. : drTrackInfo.chi2IncRZTot;
+          // Features 9/10 are the r-phi (X+Alpha) and r-z (Y+Beta) combinations.
+          const auto posOr0 = [](float v) { return (v < -900.f) ? 0. : static_cast<double>(v); };
+          const double chi2RPhiTot = posOr0(drTrackInfo.chi2IncXTot) + posOr0(drTrackInfo.chi2IncAlphaTot);
+          const double chi2RZTot = posOr0(drTrackInfo.chi2IncYTot) + posOr0(drTrackInfo.chi2IncBetaTot);
           std::vector<float> feats = {
               static_cast<float>(drTrackInfo.nCrossings),               // 0
               static_cast<float>(nAcceptedHits),                        // 1
@@ -2058,10 +2070,12 @@ void L1SmartPixelsTrackProducer::produce(edm::Event& iEvent, const edm::EventSet
         drTrackInfo.nKFUpdates = static_cast<uint8_t>(nUpdates);
         drTrackInfo.layerHitMask = drLayerHitMask;  // popcount == nAcceptedHits (spec §2)
         drTrackInfo.maxWindowMult = static_cast<uint16_t>(drMaxWindowMult);
-        if (drTrackInfo.chi2IncRPhiTot < -900.f)
-          drTrackInfo.chi2IncRPhiTot = 0.f;
-        if (drTrackInfo.chi2IncRZTot < -900.f)
-          drTrackInfo.chi2IncRZTot = 0.f;
+        for (float* tot : {&drTrackInfo.chi2IncXTot,
+                           &drTrackInfo.chi2IncYTot,
+                           &drTrackInfo.chi2IncAlphaTot,
+                           &drTrackInfo.chi2IncBetaTot})
+          if (*tot < -900.f)
+            *tot = 0.f;
         sidecar->trackInfo.push_back(drTrackInfo);
         sidecar->hitInfo.push_back(std::move(drHitInfo));
       }
