@@ -28,7 +28,7 @@ means the input TTTrack as produced by the tracklet chain (== `passthrough`).
 
 ## 1b. Refit sidecar + 1:1 sync invariant (hard gate)
 
-Authoritative contract: `doc/RefitSidecarSpec.md` (spec v0).
+Authoritative contract: `doc/RefitSidecarSpec.md`.
 
 - In `digiRefit` mode the producer emits a `smartpixels::SmartPixelsRefitSidecar`
   alongside the refit track collection (same module, same instance label; prompt

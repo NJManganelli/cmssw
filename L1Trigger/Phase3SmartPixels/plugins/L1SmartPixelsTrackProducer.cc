@@ -385,7 +385,7 @@ private:
   // non-physical grazing-crossing tail and leave the physical bulk untouched.
   double digiRefitJacobianMaxAbs_ = 1.0e4;  // |H[k][j]| above this (or non-finite) zeroes the column
   double digiRefitChi2UpdateGate_ = 2.0e6;  // scalar update with r^2/S above this is skipped entirely
-  // Grazing-angle clamps (spec v0.4 §6b). measAngleMaxAbs is the LOAD-BEARING
+  // Grazing-angle clamps (spec §6b). measAngleMaxAbs is the LOAD-BEARING
   // clamp: a synthesized measured cotAlpha/cotBeta beyond it invalidates THAT
   // ANGLE (the hit keeps its position). predAngleMaxAbs is secondary hygiene,
   // passed to the projector to reject non-physical predicted crossings.
@@ -437,8 +437,8 @@ private:
   // KF numerical-guard activation counters (spec §6b), reported at endStream.
   mutable unsigned long long digiRefitGatedJacCols_ = 0;   // Jacobian columns zeroed by jacobianMaxAbs
   mutable unsigned long long digiRefitGatedUpdates_ = 0;   // scalar updates skipped by chi2UpdateGate
-  mutable unsigned long long digiRefitClampedMeasAngles_ = 0;  // synthesized measured angles cleared by measAngleMaxAbs (spec v0.4 §6b)
-  mutable unsigned long long digiRefitClampedPredCross_ = 0;   // predicted crossings rejected by predAngleMaxAbs (spec v0.4 §6b)
+  mutable unsigned long long digiRefitClampedMeasAngles_ = 0;  // synthesized measured angles cleared by measAngleMaxAbs (spec §6b)
+  mutable unsigned long long digiRefitClampedPredCross_ = 0;   // predicted crossings rejected by predAngleMaxAbs (spec §6b)
 
   edm::InputTag L1TrackInputTag;       // L1 track collection
   edm::InputTag MCTruthTrackInputTag;  // MC truth collection
@@ -1657,7 +1657,7 @@ void L1SmartPixelsTrackProducer::produce(edm::Event& iEvent, const edm::EventSet
         const smartpixels::Crossing cx =
             projector_.crossLayer(makeHelix(a), layer, drField, digiRefitPredAngleMaxAbs_);
         if (!cx.valid) {
-          // Predicted-angle clamp (spec v0.4 §6b hygiene) or genuine off-acceptance.
+          // Predicted-angle clamp (spec §6b hygiene) or genuine off-acceptance.
           // Count the clamp activations for the endStream report (attribute a
           // rejected crossing to the clamp when the unclamped projection WOULD have
           // been valid but exceeded the predicted-angle bound).
@@ -1772,7 +1772,7 @@ void L1SmartPixelsTrackProducer::produce(edm::Event& iEvent, const edm::EventSet
               cand.hasB = (cand.sigB > 0.);
             }
 
-            // Measured-angle grazing clamp (spec v0.4 §6b, LOAD-BEARING): a
+            // Measured-angle grazing clamp (spec §6b, LOAD-BEARING): a
             // synthesized measured cotAlpha/cotBeta beyond the physical bound is a
             // near-grazing-parent synthesis breakdown (p_z at its 1e-9 floor ->
             // |cot| up to ~2274). Invalidate THAT ANGLE ONLY (clear hasA/hasB); the
@@ -1818,7 +1818,7 @@ void L1SmartPixelsTrackProducer::produce(edm::Event& iEvent, const edm::EventSet
         const auto bestIt = std::min_element(
             cands.begin(), cands.end(), [](const HitCand& p, const HitCand& q) { return p.sel < q.sel; });
         const HitCand& best = *bestIt;
-        // selChi2Margin (spec v0.4 §2): runner-up minus best selection chi2 (>=0),
+        // selChi2Margin (spec §2): runner-up minus best selection chi2 (>=0),
         // a hardware-plausible measure of how unambiguous the hit choice was.
         // Sentinel -999.f when the window held fewer than 2 candidates (no runner-up).
         double drSelChi2Margin = -999.;
@@ -2056,7 +2056,7 @@ void L1SmartPixelsTrackProducer::produce(edm::Event& iEvent, const edm::EventSet
           drTrackInfo.status |= smartpixels::trackstatus::kAnyWindowTruncated;
         drTrackInfo.nAcceptedHits = static_cast<uint8_t>(nAcceptedHits);
         drTrackInfo.nKFUpdates = static_cast<uint8_t>(nUpdates);
-        drTrackInfo.layerHitMask = drLayerHitMask;  // popcount == nAcceptedHits (spec v0.1)
+        drTrackInfo.layerHitMask = drLayerHitMask;  // popcount == nAcceptedHits (spec §2)
         drTrackInfo.maxWindowMult = static_cast<uint16_t>(drMaxWindowMult);
         if (drTrackInfo.chi2IncRPhiTot < -900.f)
           drTrackInfo.chi2IncRPhiTot = 0.f;
@@ -2208,14 +2208,14 @@ void L1SmartPixelsTrackProducer::fillDescriptions(edm::ConfigurationDescriptions
                    "(no state/cov change, no chi2 contribution, pull sentinel; the hit still counts as accepted). "
                    "Numerical-pathology gate ONLY - the physical wrong-hit-contamination ceiling is ~1.9e6, so "
                    "2e6 removes only the non-physical tail (up to ~1e10) and does NOT gate genuine wrong hits. "
-                   "Backstop to the v0.4 grazing-angle clamps.");
+                   "Backstop to the grazing-angle clamps.");
   desc.add<double>("digiRefitMeasAngleMaxAbs", 12.0)
-      ->setComment("LOAD-BEARING grazing clamp (spec v0.4 §6b): a synthesized measured |cotAlpha|/|cotBeta| "
+      ->setComment("LOAD-BEARING grazing clamp (spec §6b): a synthesized measured |cotAlpha|/|cotBeta| "
                    "above this bound invalidates THAT ANGLE (hasAlpha/hasBeta cleared; the hit keeps its "
                    "position). Removes the measurement-driven chi2 pathology at source; default 12 "
                    "preserves the O(1-6) wrong-hit signal.");
   desc.add<double>("digiRefitPredAngleMaxAbs", 12.0)
-      ->setComment("secondary hygiene grazing clamp (spec v0.4 §6b): a predicted crossing |cotAlpha|/|cotBeta| "
+      ->setComment("secondary hygiene grazing clamp (spec §6b): a predicted crossing |cotAlpha|/|cotBeta| "
                    "above this bound invalidates the crossing at the projector (no window, no sidecar record). "
                    "Rejects the ~18 non-physical predicted crossings (up to |cotAlpha| 51.8); NOT the gate driver.");
   desc.add<int>("digiRefitSeedNPar", 5)->setComment("seed-track parametrization for the KF: 4 | 5");

@@ -10,7 +10,7 @@ NanoAOD tables and autoNANO flavours for the Phase-3 SmartPixels L1 tracks
   collection and be called once per variant.
 - `addPh3L1SmartPixelsRefitTables(process, ...)` (same module) + the
   `L1SmartPixelsRefitTableProducer` plugin: the digiRefit sidecar nano adapter (spec
-  `L1Trigger/Phase3SmartPixels/doc/RefitSidecarSpec.md` v0.1 §4.4). ONLY for digiRefit
+  `L1Trigger/Phase3SmartPixels/doc/RefitSidecarSpec.md` §4.4). ONLY for digiRefit
   variants (the sidecar exists only in that mode); wired automatically from
   `smartPixelsCoexist`/`smartPixelsCoopt` when a digiRefit variant is present.
 - autoNANO flavours (in `PhysicsTools/NanoAOD/autoNANO.py`): one per base L1 DPG tier

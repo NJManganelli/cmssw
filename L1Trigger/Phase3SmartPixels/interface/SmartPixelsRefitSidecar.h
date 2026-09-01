@@ -4,7 +4,7 @@
 // -*- C++ -*-
 //
 // Persistent SmartPixels refit sidecar data model. Authoritative contract:
-// L1Trigger/Phase3SmartPixels/doc/RefitSidecarSpec.md (spec v0). This header
+// L1Trigger/Phase3SmartPixels/doc/RefitSidecarSpec.md §2. This header
 // implements §2 of that spec EXACTLY (field names, types, sentinel rules). Any
 // change requires a version bump in the spec + classes_def.xml first.
 //
@@ -59,7 +59,7 @@ namespace smartpixels {
     uint8_t nAcceptedHits = 0;  // hits accepted into the KF
     uint8_t nKFUpdates = 0;     // scalar-update groups applied (== layers updated)
     uint8_t layerHitMask = 0;   // accepted-hit bitmask, bit0=L1 .. bit3=L4;
-                                // popcount(layerHitMask) == nAcceptedHits (exact, v0.1)
+                                // popcount(layerHitMask) == nAcceptedHits (exact)
     uint16_t maxWindowMult = 0; // max windowMult over this track's crossings
     float chi2IncRPhiTot = -999.f, chi2IncRZTot = -999.f;  // sums over crossings
   };

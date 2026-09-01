@@ -87,7 +87,7 @@ DIGIREFIT_DEFAULTS = {
     # grazing-crossing tail (chi2 up to ~1e10) and leave the physical bulk untouched.
     "jacobianMaxAbs": 1.0e4,  # |H[k][j]| above this (or non-finite) zeroes that Jacobian column
     "chi2UpdateGate": 2.0e6,  # scalar update with r^2/S above this is skipped entirely
-    # Grazing-angle clamps (spec v0.4 §6b). measAngleMaxAbs is LOAD-BEARING (a
+    # Grazing-angle clamps (spec §6b). measAngleMaxAbs is LOAD-BEARING (a
     # synthesized measured cotAlpha/cotBeta beyond it invalidates that angle only,
     # removing the measurement-driven chi2 pathology at source); predAngleMaxAbs is
     # secondary hygiene (a predicted crossing angle beyond it invalidates the

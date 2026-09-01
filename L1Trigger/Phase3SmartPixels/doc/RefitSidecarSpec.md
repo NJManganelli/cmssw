@@ -1,7 +1,25 @@
-# SmartPixels Refit Sidecar — data-model and adapter contract (spec v0.4)
+# SmartPixels Refit Sidecar — data-model and adapter contract (v2.5)
 
-Changelog:
-- v0.4 (2026-07-20): RELOCATES the grazing clamp. The v0.3 root-cause attribution
+Versioning — READ THIS BEFORE ADDING A VERSION LABEL ANYWHERE. The only
+canonical version axis for this document is the SmartPixels **simulation**
+version: v2.1 and v2.2 predate digiRefit entirely, and the refit sidecar first
+shipped in v2.5. The `spec v0.x` labels on the 2026-07 entries below were a
+parallel numbering scheme that should never have been invented — it duplicated
+a version axis that already existed, and it made every code comment cite a
+document revision instead of the contract section it actually meant. That
+scheme is RETIRED, not continued: every `v0.x` change listed below landed
+inside simulation v2.5, and code comments now cite spec SECTIONS (§2, §3, §6b,
+…) with no version at all. The parenthesized old labels are kept below only so
+that pre-existing references (git history, `ngtagger-train`, memories) remain
+resolvable. Two version axes that are NOT this one and remain live:
+`REFIT_BDT_FEATURES v0`/`v1` (the feature-vector contract, selected by the
+loaded model's `n_features`) and the ROOT `ClassVersion`s in
+`src/classes_def.xml`.
+
+Changelog (the parenthesized version is the simulation version the change
+shipped in):
+- 2026-07-20 (v2.5, was "spec v0.4"): RELOCATES the grazing clamp. The preceding
+  root-cause attribution
   (non-physical PREDICTED crossing angles) was falsified by the pre-implementation
   investigation: all 77 gated updates on the reference PU sample have physical
   predicted angles (max |cotBeta| 5.66) and are driven by the MEASUREMENT term —
@@ -16,7 +34,7 @@ Changelog:
   non-physical predicted crossings observed (windowMult ~0; not gate drivers).
   chi2UpdateGate remains the numerical backstop; its activation count dropping
   77 -> ~0 under the measured-angle clamp is the acceptance check.
-- v0.3 (2026-07-20): REFIT_BDT_FEATURES v1 (24 features: the v0 17 plus the
+- 2026-07-20 (v2.5, was "spec v0.3"): REFIT_BDT_FEATURES v1 (24 features: the v0 17 plus the
   classic-7 TrackQuality hw features of the INPUT track, indices 17-23 — the
   one evidenced gain of the model-space study, +0.014-0.017 AUC in 8/8 paired
   seeds; the producer selects the assembly by the model's n_features, 17=v0 or
@@ -26,20 +44,20 @@ Changelog:
   clamp: the chi2 pathology's root cause (non-physical predicted crossing
   angles at near-grazing incidence) is now rejected at the projector, with the
   chi2UpdateGate retained as the backstop.
-- v0.2 (2026-07-19): adds section 6 — the in-producer refit-quality BDT feature
+- 2026-07-19 (v2.5, was "spec v0.2"): adds section 6 — the in-producer refit-quality BDT feature
   vector (REFIT_BDT_FEATURES v0, 17 ordered features) and the KF numerical-guard
   knobs (jacobianMaxAbs, chi2UpdateGate) motivated by the observed ~1% chi2
   numerical-Jacobian tail (increments up to 3.3e9 on the PU production).
-- v0.1 (2026-07-19): SmartPixelsRefitTrackInfo gains `layerHitMask` and
+- 2026-07-19 (v2.5, was "spec v0.1"): SmartPixelsRefitTrackInfo gains `layerHitMask` and
   `maxWindowMult` so the per-track record is self-contained for the compact word;
-  the canonical packing signature becomes `packCompactWord(trackInfo)` (the v0
+  the canonical packing signature becomes `packCompactWord(trackInfo)` (the original
   two-argument form implied a mask fabricated from a count, which was rejected in
   review — popcount(layerHitMask) == nAcceptedHits is now exact by construction).
-- v0 (2026-07-19): initial contract.
+- 2026-07-19 (v2.5, was "spec v0"): initial contract.
 
-Status: DRAFT v0.4 (2026-07-19). Companion to `PixelAVAngleResponseSpec.md`; same contract
+Status: DRAFT. Companion to `PixelAVAngleResponseSpec.md`; same contract
 discipline: consumers and producers MUST match this document exactly, and any change
-requires a version bump here first.
+requires a simulation version bump recorded here first.
 
 Scope: defines where all NEW SmartPixels information (per-layer hit residuals, angles,
 pulls, chi2 increments, window occupancy — information that does not exist in the
@@ -96,7 +114,7 @@ struct SmartPixelsRefitHitInfo {   // one entry per LAYER CROSSING attempted (no
   float pullX, pullY, pullAlpha, pullBeta;  // KF pulls r_k/sqrt(S_k) from the scalar updates
   float chi2IncRPhi;       // sum over this crossing's scalar updates of r^2/S, x + alpha terms
   float chi2IncRZ;         //                                              y + beta  terms
-  float selChi2Margin;     // v0.3: runner-up minus best selection chi2 (>=0); how unambiguous
+  float selChi2Margin;     // runner-up minus best selection chi2 (>=0); how unambiguous
                            // the hit choice was. Sentinel -999.f when no hit accepted or the
                            // window held fewer than 2 candidates. Hardware-plausible (computed
                            // from in-window quantities); eligible for transmitted subsets v2+.
@@ -113,7 +131,7 @@ struct SmartPixelsRefitTrackInfo { // one entry per track (refit or passthrough)
   uint8_t  nAcceptedHits;  // hits accepted into the KF
   uint8_t  nKFUpdates;     // scalar-update groups applied (== layers updated)
   uint8_t  layerHitMask;   // accepted-hit bitmask, bit0=L1 .. bit3=L4;
-                           // popcount(layerHitMask) == nAcceptedHits (exact, v0.1)
+                           // popcount(layerHitMask) == nAcceptedHits (exact)
   uint16_t maxWindowMult;  // max windowMult over this track's crossings
   float chi2IncRPhiTot, chi2IncRZTot;  // sums over crossings
 };
@@ -139,7 +157,7 @@ inference-side adapter MUST implement the `transmittedSubset` knob:
 
 - `"score"` (TS0): nothing beyond the refit-quality BDT score already embedded in the
   track word MVA field / `trkMVA1`. 0 extra bits.
-- `"compact"` (TS1): a 16-bit summary word (provisional v0 layout, pending a spare-bit
+- `"compact"` (TS1): a 16-bit summary word (provisional layout, pending a spare-bit
   audit of `TTTrack_TrackWord`):
   - bits 0-3   : per-layer accepted-hit bitmask (L1..L4); popcount == nAcceptedHits
   - bits 4-7   : `q(chi2IncRPhiTot)`
@@ -185,15 +203,16 @@ REQUIREMENTS:
 
 ## 5. Versioning and provenance
 
-- This spec carries a version (v0). The structs carry no schema version field; the
-  EDM/ROOT class version in `classes_def.xml` is bumped in lockstep with this doc.
+- This spec is versioned with the SmartPixels simulation (see the note at the top of
+  this file). The structs carry no schema version field; the EDM/ROOT class version in
+  `classes_def.xml` is bumped in lockstep with this doc.
 - Any producer filling the sidecar MUST already record its payload provenance
   (fitSmartHitPayloads / PixelAV set descriptions); the sidecar itself adds none.
 - Reserved for future versions (do NOT improvise): endcap layers (TEPX/TFPX ids),
   per-hit KF gain snapshots for `gainMode="lut"` studies, PixelAV high-res position
   fields (`spx_pos_*` era), per-candidate subset words materialized in the track word.
 
-## 6. In-producer refit-quality BDT and KF numerical guards (v0.2)
+## 6. In-producer refit-quality BDT and KF numerical guards
 
 ### 6a. REFIT_BDT_FEATURES v0 — the feature contract
 
@@ -224,7 +243,7 @@ exact order; the model JSON's feature count is validated against it at load.
                          complements, not replaces, the legacy quality)
 ```
 
-### v1 extension (v0.3): indices 17-23 = the classic-7 TrackQuality features
+### REFIT_BDT_FEATURES v1 extension: indices 17-23 = the classic-7 TrackQuality features
 
 The INPUT track's deployed-TQ hw features, decoded exactly as the trkquality
 training does (two's-complement for signed fields, bin indices for the binned
@@ -277,11 +296,11 @@ Both guards act at source, so sidecar/nano/compact-word chi2 values inherit
 them; the offline log-clip workaround in eval_refitq becomes unnecessary for
 post-guard productions.
 
-### Grazing-angle clamps (v0.4 — root cause measured, fix relocated)
+### Grazing-angle clamps (root cause measured, fix relocated)
 
 Two successive investigations each falsified their predecessor's mechanism:
-the chi2 pathology is neither Jacobian blowup (v0.2 finding: physical |H| max
-177.5) nor a non-physical PREDICTED crossing angle (v0.3 hypothesis: falsified
+the chi2 pathology is neither Jacobian blowup (first finding: physical |H| max
+177.5) nor a non-physical PREDICTED crossing angle (second hypothesis: falsified
 — all 77 gated updates have physical predictions, max |cotBeta| 5.66, and a
 projector clamp catches 0/77). The measured mechanism (77/77 decomposed): the
 SYNTHESIZED MEASURED angle for a wrong/noise hit explodes when the parent
@@ -290,7 +309,7 @@ p_z at its 1e-9 floor yields |cot| up to ~2274, while the prediction h0 stays
 physical; the innovation m - h0 is then measurement-dominated (relinearization
 term <= 0.05 in every gated case).
 
-v0.4 guards, all config knobs (FPGA-fidelity handles):
+The clamps, all config knobs (FPGA-fidelity handles):
 
 - `digiRefitMeasAngleMaxAbs` (double, default 12.0) — THE LOAD-BEARING CLAMP:
   a synthesized measured cotAlpha/cotBeta beyond the bound invalidates that
@@ -310,7 +329,7 @@ v0.4 guards, all config knobs (FPGA-fidelity handles):
   must remain unclipped (analyzer defaults = no clamp) so payload fits see the
   full distribution.
 - `chi2UpdateGate` (unchanged) — the numerical backstop. Acceptance check for
-  the v0.4 clamps: gate activations on the reference PU sample drop 77 -> ~0.
+  the clamps: gate activations on the reference PU sample drop 77 -> ~0.
 
 Sidecar/nano/compact-word chi2 values inherit all guards at source.
 

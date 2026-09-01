@@ -124,7 +124,7 @@ It is the single persistent home for every NEW SmartPixels fact absent from the 
 synthesized angles + sigmas, KF pulls, per-crossing chi2 increments, window multiplicity,
 truth-only simlink class + parent angles) plus one `SmartPixelsRefitTrackInfo` per track
 (status bits, hit/update counts, chi2 totals). The authoritative contract is
-`doc/RefitSidecarSpec.md` (spec v0); the quantizers and the 16-bit "compact" transmitted
+`doc/RefitSidecarSpec.md`; the quantizers and the 16-bit "compact" transmitted
 word live header-only in `interface/SmartPixelsTransmittedSubset.h` (the single source of
 truth ngtagger-train mirrors). A **1:1 output-sync invariant** (one output track and one
 sidecar row per input track, in order) is asserted before `put()` and throws
