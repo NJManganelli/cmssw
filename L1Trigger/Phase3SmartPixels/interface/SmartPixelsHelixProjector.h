@@ -88,7 +88,7 @@ namespace smartpixels {
     // reach the layer radius or lands off every module. `field` supplies the
     // local B at the module center.
     //
-    // predAngleMaxAbs (spec v0.4 §6b, secondary hygiene clamp): if the predicted
+    // predAngleMaxAbs (spec §6b, secondary hygiene clamp): if the predicted
     // module-local |cotAlpha| or |cotBeta| exceeds this bound, the crossing is
     // treated as INVALID (valid=false) — a near-grazing predicted crossing whose
     // angle is non-physical. Default <=0 DISABLES the clamp: the analyzer

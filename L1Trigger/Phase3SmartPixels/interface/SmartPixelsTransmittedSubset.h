@@ -4,7 +4,7 @@
 // -*- C++ -*-
 //
 // SmartPixels transmitted-subset (hardware-boundary) model. Authoritative
-// contract: L1Trigger/Phase3SmartPixels/doc/RefitSidecarSpec.md (spec v0) §3.
+// contract: L1Trigger/Phase3SmartPixels/doc/RefitSidecarSpec.md §3.
 //
 // This header is the SINGLE SOURCE OF TRUTH for the quantizers and the 16-bit
 // "compact" (TS1) summary word. ngtagger-train MUST reproduce these bit-exactly
@@ -20,7 +20,7 @@
 //   bit  15    : reserved (0)
 // with q(c) = clamp(round(2 * log2(1 + c)), 0, 15).
 //
-// The canonical entry point is packCompactWord(trackInfo) (spec v0.1): the
+// The canonical entry point is packCompactWord(trackInfo) (spec §3): the
 // SmartPixelsRefitTrackInfo now carries the exact layerHitMask and maxWindowMult,
 // so no per-crossing state is needed. The explicit 4-arg form is the low-level
 // primitive.
@@ -73,7 +73,7 @@ namespace smartpixels {
     return w;
   }
 
-  // Canonical entry point (spec v0.1): assemble the compact word directly from a
+  // Canonical entry point (spec §3): assemble the compact word directly from a
   // SmartPixelsRefitTrackInfo, which carries the exact layerHitMask and
   // maxWindowMult. popcount(layerHitMask) == nAcceptedHits holds by construction.
   inline uint16_t packCompactWord(const SmartPixelsRefitTrackInfo& t) {

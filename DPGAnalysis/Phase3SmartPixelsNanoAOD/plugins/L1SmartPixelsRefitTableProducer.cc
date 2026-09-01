@@ -1,5 +1,5 @@
 // Nano adapter for the SmartPixels refit sidecar (spec §4.4;
-// L1Trigger/Phase3SmartPixels/doc/RefitSidecarSpec.md v0.1). Consumes a refit
+// L1Trigger/Phase3SmartPixels/doc/RefitSidecarSpec.md §4). Consumes a refit
 // TTTrack collection and its 1:1 row-synced smartpixels::SmartPixelsRefitSidecar
 // (same module, same instance label) and emits two nanoaod::FlatTables:
 //

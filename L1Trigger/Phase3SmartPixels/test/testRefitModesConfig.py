@@ -133,7 +133,7 @@ _m_ovr = getattr(
 check(_m_ovr.digiRefitJacobianMaxAbs.value() == 5.0e5
       and _m_ovr.digiRefitChi2UpdateGate.value() == 3.0e6,
       "jacobianMaxAbs / chi2UpdateGate overrides flow onto the module")
-# Grazing-angle clamps (spec v0.4 §6b): defaults 12.0 carried, overrides flow.
+# Grazing-angle clamps (spec §6b): defaults 12.0 carried, overrides flow.
 check(_m.digiRefitMeasAngleMaxAbs.value() == DIGIREFIT_DEFAULTS["measAngleMaxAbs"] == 12.0,
       "measAngleMaxAbs default (12.0) carried onto the module")
 check(_m.digiRefitPredAngleMaxAbs.value() == DIGIREFIT_DEFAULTS["predAngleMaxAbs"] == 12.0,
@@ -237,7 +237,7 @@ expect_raises(ValueError,
               lambda: _resolveDigiRefitConfig({"chi2UpdateGate": "big"}),
               "non-numeric chi2UpdateGate raises ValueError",
               contains="chi2UpdateGate")
-# Grazing-angle clamps must be positive doubles (spec v0.4 §6b).
+# Grazing-angle clamps must be positive doubles (spec §6b).
 expect_raises(ValueError,
               lambda: _resolveDigiRefitConfig({"measAngleMaxAbs": -1.0}),
               "non-positive measAngleMaxAbs raises ValueError",

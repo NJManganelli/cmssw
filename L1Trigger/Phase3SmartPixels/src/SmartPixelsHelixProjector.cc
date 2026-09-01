@@ -228,7 +228,7 @@ namespace smartpixels {
     out.localMom = lmom;
     out.cotAlpha = lmom.x() / lpz;
     out.cotBeta = lmom.y() / lpz;
-    // Predicted-angle grazing clamp (spec v0.4 §6b, secondary hygiene): a
+    // Predicted-angle grazing clamp (spec §6b, secondary hygiene): a
     // near-grazing predicted crossing yields a non-physical local angle. When a
     // finite bound is supplied (producer only; analyzer passes 0 = disabled),
     // reject the crossing. Investigation: ~18/68k crossings on the PU sample have

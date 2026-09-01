@@ -65,7 +65,7 @@ def addPh3L1SmartPixelsTracks(process,
 
 
 # ---------------------------------------------------------------------------
-# digiRefit sidecar tables (spec RefitSidecarSpec.md v0.1 §4.4)
+# digiRefit sidecar tables (spec RefitSidecarSpec.md §4.4)
 # ---------------------------------------------------------------------------
 # The digiRefit producer emits a smartpixels::SmartPixelsRefitSidecar 1:1 row-
 # synced with its refit TTTrack collection, under the SAME instance label
