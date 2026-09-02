@@ -30,11 +30,11 @@ producer instance (prompt and extended cloned separately):
   `L1TSmartPixelsExtRefitHit<Suffix>`): one row per layer-crossing record across all
   tracks. Columns: `trackIdx` (index of the owning track in the variant track table,
   the `L1SC4NGJetCands` link pattern), `layer`, `detId`, `windowMult`, `flags` +
-  unpacked bools (`hitAccepted`, `windowTruncated`, `hasAlpha`, `hasBeta`), `resX`,
-  `resY` (full float), `cotAlphaMeas`, `cotBetaMeas`, `sigAlpha`, `sigBeta` (float12),
+  unpacked bools (`hitAccepted`, `windowTruncated`, `hasAlpha`, `hasBeta`), `projResX`,
+  `projResY` (full float), `recoCotAlpha`, `recoCotBeta`, `sigAlpha`, `sigBeta` (float12),
   `pullX`, `pullY`, `pullAlpha`, `pullBeta` (full float), `chi2IncX`, `chi2IncY`,
   `chi2IncAlpha`, `chi2IncBeta` (float12), and TRUTH-ONLY `selHitClass`,
-  `parCotAlpha`, `parCotBeta`.
+  `truthCotAlpha`, `truthCotBeta`.
 - **track EXTENSION table** (`extension=True`, SAME name+length as the variant track
   table `L1TSmartPixelsTrack<Suffix>` / `L1TSmartPixelsExtTrack<Suffix>`): `spxStatus`
   + unpacked bools (`spxRefitPerformed`, `spxSeedCovOK`, `spxParametrizedSeed`,

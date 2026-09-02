@@ -1924,10 +1924,10 @@ void L1SmartPixelsTrackProducer::produce(edm::Event& iEvent, const edm::EventSet
           hi.flags |= smartpixels::hitflag::kHasAlpha;
         if (best.hasB)
           hi.flags |= smartpixels::hitflag::kHasBeta;
-        hi.resX = static_cast<float>(best.x - cx.local.x());
-        hi.resY = static_cast<float>(best.y - cx.local.y());
-        hi.cotAlphaMeas = best.hasA ? static_cast<float>(best.cotA) : -999.f;
-        hi.cotBetaMeas = best.hasB ? static_cast<float>(best.cotB) : -999.f;
+        hi.projResX = static_cast<float>(best.x - cx.local.x());
+        hi.projResY = static_cast<float>(best.y - cx.local.y());
+        hi.recoCotAlpha = best.hasA ? static_cast<float>(best.cotA) : -999.f;
+        hi.recoCotBeta = best.hasB ? static_cast<float>(best.cotB) : -999.f;
         hi.sigAlpha = best.hasA ? static_cast<float>(best.sigA) : -999.f;
         hi.sigBeta = best.hasB ? static_cast<float>(best.sigB) : -999.f;
         hi.pullX = applied[0] ? static_cast<float>(pull[0]) : -999.f;
@@ -1950,8 +1950,8 @@ void L1SmartPixelsTrackProducer::produce(edm::Event& iEvent, const edm::EventSet
         hi.chi2IncBeta = static_cast<float>(incBeta);
         hi.selChi2Margin = (drSelChi2Margin > -900.) ? static_cast<float>(drSelChi2Margin) : -999.f;
         hi.selHitClass = best.cls;
-        hi.parCotAlpha = static_cast<float>(best.parCotA);
-        hi.parCotBeta = static_cast<float>(best.parCotB);
+        hi.truthCotAlpha = static_cast<float>(best.parCotA);
+        hi.truthCotBeta = static_cast<float>(best.parCotB);
         drHitInfo.push_back(hi);
 
         // Compact-word layer bitmask + per-track chi2 totals (spec §2/§3).
