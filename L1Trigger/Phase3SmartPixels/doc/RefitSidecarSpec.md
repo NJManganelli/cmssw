@@ -54,8 +54,10 @@ freeze and the next schema change become v2.7. Program of work:
   4-bit log quantizer's resolution. ClassVersions: HitInfo 4->5, TrackInfo 4->5,
   Sidecar 5->6 — v2.5 files are NOT schema-evolved onto the renamed members, so
   analyze v2.5 productions with v2.5 software.
-  (b) PLANNED, same ClassVersion: the reco/pred/res/truth vocabulary below made
-  explicit and applied to the field names; per-hit reco position and its sigma;
+  (b) the reco/proj/projRes/truth vocabulary below made normative and applied to
+  the field names (resX/Y -> projResX/Y, cotAlphaMeas/cotBetaMeas ->
+  recoCotAlpha/recoCotBeta, parCotAlpha/parCotBeta -> truthCotAlpha/truthCotBeta).
+  PLANNED, same ClassVersion: per-hit reco position and its sigma;
   per-dimension innovation sigma sqrt(S); per-track projected chi2 of stubs + IT
   hits against the refit track (float approximation); truth-hit and
   selection-rank diagnostics; and the study knobs (layer order, hit selection
@@ -143,6 +145,28 @@ to the producing module's variant suffix conventions (default instance `""` on t
 prompt producer, `"Extended"` semantics follow the track collections). ROOT dictionary
 via `src/classes.h` + `src/classes_def.xml` in this package.
 
+**Vocabulary (normative -- four prefixes, never mixed).**
+
+- `reco*` -- what the sensor produced. A RECONSTRUCTED quantity: the position
+  comes from the Phase-2 pixel CPE, the angles from a parametrized throw on
+  truth. Both are reco, neither is truth. This is also the only thing a real
+  sensor could encode into its per-cluster payload, since it knows nothing about
+  any track.
+- `proj*` -- the OT-only track projected to this layer crossing. Derivable
+  (`proj = reco - projRes`), so not stored.
+- `projRes*` -- `reco - proj`, the KF innovation numerator.
+- `truth*` -- unsmeared generator/parent quantity. TRUTH-ONLY, excluded from
+  every transmitted subset.
+
+The bare word "residual" is banned in field names: for a hit it naturally reads
+as reco-vs-truth, for a track as fitted-vs-truth, and the sidecar needs both
+senses. `truthRes*` (reco - truth, i.e. the sensor resolution itself) is
+therefore a DIFFERENT field from `projRes*`, not a synonym.
+
+The payload ntuple written by `SmartPixelsPayloadAnalyzer` keeps its own
+historical `digi_parCot*` branch names; it is a separate product feeding the
+PixelAV response fit and is not governed by this contract.
+
 ```cpp
 struct SmartPixelsRefitHitInfo {   // one entry per LAYER CROSSING attempted (not per accepted hit)
   uint8_t  layer;          // TBPX layer 1..4
@@ -151,8 +175,8 @@ struct SmartPixelsRefitHitInfo {   // one entry per LAYER CROSSING attempted (no
   uint8_t  flags;          // bit0 hitAccepted; bit1 windowTruncated (maxHitsPerWindow hit);
                            // bit2 hasAlpha; bit3 hasBeta; bits4-7 reserved
   // --- selected hit, valid only when hitAccepted (else sentinel -999.f) ---
-  float resX, resY;        // selected-hit local residual vs predicted crossing [cm]
-  float cotAlphaMeas, cotBetaMeas;   // synthesized measured angles
+  float projResX, projResY;          // reco - proj, module-local [cm]
+  float recoCotAlpha, recoCotBeta;   // reco incidence angles
   float sigAlpha, sigBeta; // per-hit angle sigmas from the PixelAV payload
   float pullX, pullY, pullAlpha, pullBeta;  // KF pulls r_k/sqrt(S_k) from the scalar updates
   float chi2IncX;          // this crossing's scalar-update chi2 increments r^2/S, per
@@ -165,7 +189,7 @@ struct SmartPixelsRefitHitInfo {   // one entry per LAYER CROSSING attempted (no
                            // from in-window quantities); eligible for transmitted subsets v2+.
   // --- TRUTH-ONLY fields (never hardware-available; excluded from every transmitted subset) ---
   int8_t selHitClass;      // simlink class of the selected hit: 0 sameTP, 1 otherTP, 2 noise, -1 none
-  float  parCotAlpha, parCotBeta;   // selected-hit parent local angles (-999.f if no parent)
+  float  truthCotAlpha, truthCotBeta;  // selected hit's unsmeared parent local angles (-999.f if none)
 };
 
 struct SmartPixelsRefitTrackInfo { // one entry per track (refit or passthrough)

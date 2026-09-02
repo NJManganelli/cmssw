@@ -35,8 +35,19 @@ namespace smartpixels {
                                // bit2 hasAlpha; bit3 hasBeta; bits4-7 reserved
 
     // --- selected hit, valid only when hitAccepted (else sentinel -999.f) ---
-    float resX = -999.f, resY = -999.f;                // selected-hit local residual vs predicted crossing [cm]
-    float cotAlphaMeas = -999.f, cotBetaMeas = -999.f; // synthesized measured angles
+    // VOCABULARY (spec §2). Four prefixes, never mixed:
+    //   reco*     what the sensor produced (a reconstructed quantity; today the
+    //             position comes from the Phase-2 pixel CPE and the angles from a
+    //             parametrized throw on truth -- both are reco, not truth)
+    //   proj*     the OT-only track projected to this layer crossing
+    //   projRes*  reco - proj  (the KF innovation numerator)
+    //   truth*    unsmeared generator/parent quantity, TRUTH-ONLY
+    // "residual" alone is ambiguous -- it means reco-vs-truth for a hit and
+    // fitted-vs-truth for a track -- so it never appears unprefixed.
+    // NOTE the payload ntuple (SmartPixelsPayloadAnalyzer) keeps its own historical
+    // digi_parCot* branch names; they are a different product, not this contract.
+    float projResX = -999.f, projResY = -999.f;        // reco - proj, module-local [cm]
+    float recoCotAlpha = -999.f, recoCotBeta = -999.f; // reco incidence angles
     float sigAlpha = -999.f, sigBeta = -999.f;         // per-hit angle sigmas from the PixelAV payload
     float pullX = -999.f, pullY = -999.f;              // KF pulls r_k/sqrt(S_k) from the scalar updates
     float pullAlpha = -999.f, pullBeta = -999.f;
@@ -51,7 +62,7 @@ namespace smartpixels {
 
     // --- TRUTH-ONLY (never hardware-available; excluded from every transmitted subset) ---
     int8_t selHitClass = -1;                           // selected-hit simlink class: 0 sameTP, 1 otherTP, 2 noise, -1 none
-    float parCotAlpha = -999.f, parCotBeta = -999.f;   // selected-hit parent local angles (-999.f if no parent)
+    float truthCotAlpha = -999.f, truthCotBeta = -999.f;  // selected hit's parent local angles, unsmeared (-999.f if no parent)
   };
 
   // One entry per track (refit or passthrough).

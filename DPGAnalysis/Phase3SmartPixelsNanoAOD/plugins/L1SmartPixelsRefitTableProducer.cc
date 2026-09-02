@@ -91,11 +91,11 @@ public:
     std::vector<uint16_t> hitWindowMult;
     std::vector<int32_t> hitFlags;
     std::vector<bool> hitAccepted, windowTruncated, hasAlpha, hasBeta;
-    std::vector<float> resX, resY, cotAlphaMeas, cotBetaMeas, sigAlpha, sigBeta;
+    std::vector<float> projResX, projResY, recoCotAlpha, recoCotBeta, sigAlpha, sigBeta;
     std::vector<float> pullX, pullY, pullAlpha, pullBeta, selChi2Margin;
     std::vector<float> chi2IncX, chi2IncY, chi2IncAlpha, chi2IncBeta;
     std::vector<int32_t> selHitClass;
-    std::vector<float> parCotAlpha, parCotBeta;
+    std::vector<float> truthCotAlpha, truthCotBeta;
 
     for (size_t it = 0; it < nTracks; ++it) {
       const auto& ti = sidecar.trackInfo[it];
@@ -125,10 +125,10 @@ public:
         windowTruncated.push_back(hi.flags & smartpixels::hitflag::kWindowTruncated);
         hasAlpha.push_back(hi.flags & smartpixels::hitflag::kHasAlpha);
         hasBeta.push_back(hi.flags & smartpixels::hitflag::kHasBeta);
-        resX.push_back(hi.resX);
-        resY.push_back(hi.resY);
-        cotAlphaMeas.push_back(hi.cotAlphaMeas);
-        cotBetaMeas.push_back(hi.cotBetaMeas);
+        projResX.push_back(hi.projResX);
+        projResY.push_back(hi.projResY);
+        recoCotAlpha.push_back(hi.recoCotAlpha);
+        recoCotBeta.push_back(hi.recoCotBeta);
         sigAlpha.push_back(hi.sigAlpha);
         sigBeta.push_back(hi.sigBeta);
         pullX.push_back(hi.pullX);
@@ -141,8 +141,8 @@ public:
         chi2IncBeta.push_back(hi.chi2IncBeta);
         selChi2Margin.push_back(hi.selChi2Margin);
         selHitClass.push_back(hi.selHitClass);
-        parCotAlpha.push_back(hi.parCotAlpha);
-        parCotBeta.push_back(hi.parCotBeta);
+        truthCotAlpha.push_back(hi.truthCotAlpha);
+        truthCotBeta.push_back(hi.truthCotBeta);
       }
     }
 
@@ -160,10 +160,10 @@ public:
     hitTable->addColumn<bool>("windowTruncated", windowTruncated, "window hit the maxHitsPerWindow truncation");
     hitTable->addColumn<bool>("hasAlpha", hasAlpha, "synthesized cotAlpha available");
     hitTable->addColumn<bool>("hasBeta", hasBeta, "synthesized cotBeta available");
-    hitTable->addColumn<float>("resX", resX, "selected-hit local residual x vs predicted crossing [cm] (-999 if none)");
-    hitTable->addColumn<float>("resY", resY, "selected-hit local residual y vs predicted crossing [cm] (-999 if none)");
-    hitTable->addColumn<float>("cotAlphaMeas", cotAlphaMeas, "synthesized measured cotAlpha (-999 if none)", /*mantissaBits=*/12);
-    hitTable->addColumn<float>("cotBetaMeas", cotBetaMeas, "synthesized measured cotBeta (-999 if none)", /*mantissaBits=*/12);
+    hitTable->addColumn<float>("projResX", projResX, "reco minus projected-crossing local x [cm] (-999 if none)");
+    hitTable->addColumn<float>("projResY", projResY, "reco minus projected-crossing local y [cm] (-999 if none)");
+    hitTable->addColumn<float>("recoCotAlpha", recoCotAlpha, "reco cotAlpha of the selected hit (-999 if none)", /*mantissaBits=*/12);
+    hitTable->addColumn<float>("recoCotBeta", recoCotBeta, "reco cotBeta of the selected hit (-999 if none)", /*mantissaBits=*/12);
     hitTable->addColumn<float>("sigAlpha", sigAlpha, "per-hit cotAlpha sigma from the PixelAV payload (-999 if none)", /*mantissaBits=*/12);
     hitTable->addColumn<float>("sigBeta", sigBeta, "per-hit cotBeta sigma from the PixelAV payload (-999 if none)", /*mantissaBits=*/12);
     hitTable->addColumn<float>("pullX", pullX, "KF pull x = r/sqrt(S) (-999 if none)");
@@ -176,8 +176,8 @@ public:
     hitTable->addColumn<float>("chi2IncBeta", chi2IncBeta, "crossing chi2 increment, cotBeta angle term (-999 if none; 0 if not applied)", /*mantissaBits=*/12);
     hitTable->addColumn<float>("selChi2Margin", selChi2Margin, "runner-up minus best selection chi2 (>=0; -999 if <2 candidates or no accepted hit)", /*mantissaBits=*/12);
     hitTable->addColumn<int32_t>("selHitClass", selHitClass, "TRUTH-ONLY simlink class of selected hit: 0 sameTP, 1 otherTP, 2 noise, -1 none");
-    hitTable->addColumn<float>("parCotAlpha", parCotAlpha, "TRUTH-ONLY selected-hit parent local cotAlpha (-999 if none)", /*mantissaBits=*/12);
-    hitTable->addColumn<float>("parCotBeta", parCotBeta, "TRUTH-ONLY selected-hit parent local cotBeta (-999 if none)", /*mantissaBits=*/12);
+    hitTable->addColumn<float>("truthCotAlpha", truthCotAlpha, "TRUTH-ONLY unsmeared parent local cotAlpha of the selected hit (-999 if none)", /*mantissaBits=*/12);
+    hitTable->addColumn<float>("truthCotBeta", truthCotBeta, "TRUTH-ONLY unsmeared parent local cotBeta of the selected hit (-999 if none)", /*mantissaBits=*/12);
     hitTable->setDoc("SmartPixels refit per-crossing records for the " + trackTableName_ +
                      " tracks (one row per layer crossing; trackIdx links to that track table)");
     iEvent.put(std::move(hitTable), "hit");
