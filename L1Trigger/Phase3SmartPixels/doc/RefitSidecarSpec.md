@@ -17,8 +17,19 @@ loaded model's `n_features`) and the ROOT `ClassVersion`s in
 `src/classes_def.xml`.
 
 Changelog (the parenthesized version is the simulation version the change
-shipped in):
-- 2026-08-12 (v2.6): 4-WAY CHI2 SPLIT. The per-hit chi2IncRPhi/chi2IncRZ and
+shipped in).
+
+**v2.6 IS NOT MINTED.** Its entry below is a single CONSOLIDATED, still-mutable
+record of everything going into v2.6, not one entry per commit; nothing is
+pushed and no production has written a v2.6 file. Therefore: the whole of v2.6
+gets exactly ONE ClassVersion bump (HitInfo 4->5, TrackInfo 4->5, Sidecar 5->6),
+already taken — later v2.6 field additions RE-PIN those checksums rather than
+bumping again, because there is no intermediate schema anyone can hold. v2.6 is
+minted when the first production is written with it; only then does the entry
+freeze and the next schema change become v2.7. Program of work:
+`RefitStudyProgram.md`.
+
+- 2026-08-12 onward (v2.6, IN PROGRESS): (a) 4-WAY CHI2 SPLIT. The per-hit chi2IncRPhi/chi2IncRZ and
   per-track chi2IncRPhiTot/chi2IncRZTot become per-measurement-dimension fields
   chi2IncX/Y/Alpha/Beta (+ *Tot). Rationale, as MEASURED 2026-09-01 on the
   post-guard PU200 sample (32799 refit tracks; see ngtagger-train
@@ -43,6 +54,13 @@ shipped in):
   4-bit log quantizer's resolution. ClassVersions: HitInfo 4->5, TrackInfo 4->5,
   Sidecar 5->6 — v2.5 files are NOT schema-evolved onto the renamed members, so
   analyze v2.5 productions with v2.5 software.
+  (b) PLANNED, same ClassVersion: the reco/pred/res/truth vocabulary below made
+  explicit and applied to the field names; per-hit reco position and its sigma;
+  per-dimension innovation sigma sqrt(S); per-track projected chi2 of stubs + IT
+  hits against the refit track (float approximation); truth-hit and
+  selection-rank diagnostics; and the study knobs (layer order, hit selection
+  including the TP oracle, measurement bit widths, multiple-scattering term,
+  window policy). See `RefitStudyProgram.md` for the evidence and sequencing.
 - 2026-07-20 (v2.5, was "spec v0.4"): RELOCATES the grazing clamp. The preceding
   root-cause attribution (non-physical PREDICTED crossing angles) was falsified
   by the pre-implementation investigation: all 77 gated updates on the reference

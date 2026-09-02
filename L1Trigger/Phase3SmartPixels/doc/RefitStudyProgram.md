@@ -1,4 +1,4 @@
-# v2.7 study program: sensor bit allocation, window sizing, and the two architectures
+# v2.6 study program: sensor bit allocation, window sizing, and the two architectures
 
 Status: **plan agreed, no producer code written for it yet.** Canonical home for
 this program; the copy that briefly lived in the (unversioned) host
@@ -7,6 +7,26 @@ this program; the copy that briefly lived in the (unversioned) host
 repo (`docs/`, `eval_refitq/`) and are cross-referenced per section. Written 2026-09-02 after the
 latency budget and the sensor payload constraint were made explicit; several
 conclusions recorded earlier in the v2.6 work are corrected below.
+
+## Version discipline: v2.6 IS NOT MINTED YET
+
+Everything in this program lands **inside v2.6**. The commits already on the
+branch that carry "v2.6" in their subject (the 4-way chi2 split and the spec
+changelog) are **work in progress**, not a shipped schema: nothing is pushed and
+no production has ever written a v2.6 file. Consequences, all load-bearing:
+
+1. **ONE ClassVersion bump for the whole of v2.6.** HitInfo 4->5, TrackInfo
+   4->5, Sidecar 5->6 already cover it. Adding the reco payload, the innovation
+   sigmas and the projected chi2 fields must NOT bump again — re-pin the
+   ClassVersion 5/5/6 checksums instead. There is no intermediate schema to stay
+   compatible with, and inventing one would recreate exactly the version sprawl
+   the `spec v0.x` retirement just cleaned up.
+2. **The changelog carries a single consolidated v2.6 entry**, not one entry per
+   commit. It is rewritten as the content settles, and only frozen when v2.6 is
+   minted (= first production written with it).
+3. **v2.6 is minted when a production is written with it**, and not before.
+   After that point any schema change is v2.7 and the normal
+   bump-and-keep-old-versions discipline applies.
 
 ---
 
@@ -362,7 +382,7 @@ each category. The observational half needs no new production — see 5.
 
 ---
 
-## 5. What is measurable today, and what needs v2.7
+## 5. What is measurable today, and what needs the rest of v2.6
 
 **Available now, no schema change, no new production:**
 - innovation sigma per layer/pT (3b) — `sqrt(S_x) = resX/pullX`;
@@ -375,7 +395,7 @@ each category. The observational half needs no new production — see 5.
   immediately. Only the ORACLE arm needs a producer knob.
 - Phase-0 sizing for A2/B (4d).
 
-**Needs the v2.7 sidecar payload and knobs:**
+**Needs the rest of the v2.6 sidecar payload and knobs:**
 
 Per-hit additions (studies): `predLocalX/Y`, `predCotAlpha/Beta` (currently only
 the residual and the measured angle are stored, so prediction and measurement
