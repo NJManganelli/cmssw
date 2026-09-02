@@ -20,12 +20,19 @@ Changelog (the parenthesized version is the simulation version the change
 shipped in):
 - 2026-08-12 (v2.6): 4-WAY CHI2 SPLIT. The per-hit chi2IncRPhi/chi2IncRZ and
   per-track chi2IncRPhiTot/chi2IncRZTot become per-measurement-dimension fields
-  chi2IncX/Y/Alpha/Beta (+ *Tot). The OT-seeded prediction of the local
-  incidence angle is O(0.1 deg) while the SmartPixels measured-angle resolution
-  is O(5 deg), so the angle terms carry no parameter-refinement weight and only
-  coarse hit-consistency information; summing them into the position chi2
-  dilutes any total-chi2 discriminant. The split keeps the terms separable for
-  the BDT and for analyses. The r-phi and r-z totals remain available as
+  chi2IncX/Y/Alpha/Beta (+ *Tot). Rationale, as MEASURED 2026-09-01 on the
+  post-guard PU200 sample (32799 refit tracks; see ngtagger-train
+  docs/refit-chi2-bitwidth-study.md): the angle terms are the STRONGEST
+  wrong-hit discriminants of the four (single-feature AUC for "every accepted
+  hit came from the track's own TP": Beta 0.879, Y 0.768, X 0.753, Alpha 0.706),
+  and the old (r-phi, r-z) pairing hid that by mixing each angle with a position
+  term. Splitting exposes them separately so the BDT and analyses can weight
+  each dimension. NOTE: the original stated reason for this change — that
+  summing the near-inert angle term into the position chi2 "dilutes any
+  total-chi2 discriminant" — was NOT borne out. The plain 4-way sum is in fact
+  the best single scalar (AUC 0.941) and beats position-only (0.768) and
+  angle-only (0.883); summing does not dilute. The split is still correct, for
+  the reason above, but do not repeat the dilution argument. The r-phi and r-z totals remain available as
   X + Alpha and Y + Beta, and a non-applied update contributes exactly 0, so the
   16-bit compact word LAYOUT (§3) and the REFIT_BDT_FEATURES contract (§6a,
   features 9/10 = those combinations) are unchanged and deployed conifer models
