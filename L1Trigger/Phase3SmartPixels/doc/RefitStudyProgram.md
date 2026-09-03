@@ -198,11 +198,35 @@ should be 1.0):
 
 29.8% of *correct* x-hits sit beyond 3 sigma. digiRefit has **no multiple
 scattering term**, which the spec's Q1 table already flagged against TMTT
-(`sigmaScat = KalmanMultiScattTerm/pT`, 0.00075). Its absence would inflate L1
-pulls (extrapolation-dominated) while barely touching L2-L4
-(measurement-dominated) — which is the observed pattern. The hand-tuned L1
-window being 1.6x the modeled sigma looks like silent compensation for the same
-gap.
+(`sigmaScat = KalmanMultiScattTerm/pT`, 0.00075).
+
+CORRECTED 2026-09-03 — this section originally predicted that the missing MS
+term would inflate **L1** pulls while barely touching L2-L4, and claimed that
+was the observed pattern. Both halves were wrong. The per-layer measurement
+(trackCov seed, correct hits only) runs the other way:
+
+| layer | correct-hit pullX |
+|---|---|
+| L1 | ~1.0 |
+| L2 | 4.1 |
+| L3 | 5.4 |
+| L4 | 7.8 |
+
+L1 is *fine* and the outer layers are catastrophic. The reason is that the
+covariance **never grows**: `C` is filled from the seed, shrunk by each update
+(`C -= K vᵗ`) and copied out, and there is no propagation step at all — the
+state is the 5 helix parameters and "propagating" is `crossLayer()` re-evaluating
+the same helix at another radius. So the first update collapses `C`, and every
+later layer is projected from an over-confident state with nothing added back.
+L1 happens to be visited first, which is exactly why it is the one layer whose
+pull is right.
+
+The MS term itself is real and validated by its **shape**: fitting
+`sigma_eff² = sigma_pred² + (k/pT)²` gives k = 167 / 121 / 114 µm·GeV at
+L2/L3/L4, stable across pT and consistent with TMTT's 0.00075 rad·GeV given the
+lever arms. But it is not the whole story — there is also a **pT-independent
+floor** (10-17 µm at L2-L4, ~117 µm at L1) that scattering cannot produce; see
+section 4c for what that floor probably is.
 
 **Ordering consequence: the MS term must be fixed before windows are derived
 from the covariance**, or an optimistic S will produce windows that lose real
@@ -331,21 +355,79 @@ downstream chi2 encoding for the BDT.
    Metrics per policy: truth-hit capture efficiency per layer, windowMult,
    wrong-hit inclusion, truncation rate, and downstream parameter resolution.
 
-### 4c. Layer crossing order
+### 4c. Layer crossing order — and why it is coupled to the MS term
 
-Knob `digiRefitLayerOrder = insideOut | outsideIn | byAmbiguity`. The loop is
-currently hardcoded inside-out, and because the KF updates state as it goes, a
-wrong hit at the first layer corrupts the prediction for the rest — and the first
-layer is currently L1, which has both the largest S and the worst contamination
-(47.7%).
+Knob `digiRefitLayerOrder = outsideIn | insideOut`, **now implemented**, default
+`outsideIn`. (A `byAmbiguity` arm was considered and dropped: it would make the
+visit order hit-dependent, so the projection sequence would differ track to
+track and the result would not be reproducible from the track state alone.)
 
-Prior after 3b, stated so it can be falsified: whichever layer goes first pays
-the full seed uncertainty, and in r-phi that is cheapest at L1 (the extrapolation
-converges as r->0; the static windows encode 18x growth outward). So inside-out
-may well be correct in r-phi while z favours the opposite, and the ordering may
-be second-order next to window sizing. The single-layer runs in 4b.2 settle it
-empirically. `digiRefitMaxKFUpdates_` interacts: order decides WHICH layers are
-used when the cap bites.
+REVISED 2026-09-03. This section previously argued that inside-out "may well be
+correct in r-phi" and that ordering was probably second-order next to window
+sizing. That reasoning used only the **geometric** convergence of the r-phi
+window as r->0 and ignored scattering entirely. Correcting for the geometry of
+the problem reverses the conclusion.
+
+The physical picture, which the earlier version had inverted:
+
+- The particle **always** traverses L1 -> L2 -> L3 -> L4 and then OT layers 1-6/7,
+  outward.
+- The fit does **not** follow the particle. We rely on the established Phase-2
+  **OT-only** track fit, whose helix is determined entirely by stubs at r >= 25 cm,
+  and extrapolate it *inward*.
+- The refit then tries some subset of IT layers 1-4. The subset is short both
+  because hits are missing and because some IT layers carry **no Smart Pixels
+  instrumentation at all** and cannot participate in L1 track finding.
+
+Two consequences follow.
+
+**(i) The unmodelled scattering for layer L is the material between L and the OT,
+and it grows inward.** The OT fit never saw the inner trajectory, and the tracklet
+fit carries no material term, so `helixCovMat` contains the OT stubs' measurement
+uncertainty and nothing about the kicks the particle took in the IT. Predicting L4
+skips only the L4->OT gap; predicting L1 additionally accrues L2, L3 and L4. That
+ordering matches the fitted k (167 / 121 / 114 µm·GeV at L2/L3/L4): longer inward
+path, larger term. It also means the material must be integrated over the
+**geometric path**, counting layers that yield no measurement — uninstrumented or
+simply missing a hit — because the particle scatters there regardless. `Q` is
+keyed to geometry, never to the set of layers that produced updates.
+
+**(ii) Which layer goes first is therefore a design lever, not a given.** The
+first update is the influential one — it is where `C` collapses — and it is
+projected with whatever scattering budget its layer carries:
+
+| order | first update carries |
+|---|---|
+| `insideOut` (L1 first) | `Q(L1 <-> OT)` — the **largest** budget, essentially the whole IT traverse |
+| `outsideIn` (L4 first) | `Q(L4 <-> OT)` — the **smallest** |
+
+So inside-out commits on the projection with the most unmodelled scattering, at
+the layer that also has the worst contamination (47.7% wrong, unchanged in the
+cluster era at 48.4%). Outside-in has the opposite trade: least-extrapolated
+first projection, but the widest window and hence the most ambiguous match. Both
+arguments are real; the knob exists so they are measured rather than argued
+(`eval_refitq/ordering/layer_order_ab.py`, paired A/B on identical seed tracks).
+
+**The deeper caveat, and the test it implies.** A single 5-parameter helix
+**cannot represent a scattered trajectory**: the OT constrains the outer segment,
+an IT hit constrains the inner one, and the helix has no freedom to express the
+kicks between them. `Q` is therefore a patch on an approximation, not a fix, and
+**no single `Q` will flatten all four layers**. The honest version of the physics
+is process noise applied in the physical order, or a broken-line/GBL-style fit
+with kink parameters — neither of which fits the latency budget.
+
+That predicts something falsifiable: the single-helix approximation should be
+*least* strained when the first update sits closest to the OT, so **outside-in
+should show a smaller pT-independent pull floor than inside-out**. The floor
+(10-17 µm at L2-L4, ~117 µm at L1) is exactly the component scattering cannot
+produce. If it shrinks under `outsideIn`, the floor is the approximation showing
+itself and `Q` will not remove it; if it is unchanged, the floor is something else
+(alignment-like, or a projection bias) and needs its own explanation. Either way
+this must be answered **before** `Q` is coded, because it decides what an
+acceptable calibration target even is.
+
+`digiRefitMaxKFUpdates_` interacts: order decides WHICH layers are used when the
+cap bites — `outsideIn` keeps the outer layers, `insideOut` the inner ones.
 
 ### 4d. Architecture: window matching vs pixel-only candidate building
 
@@ -470,9 +552,13 @@ studies) or only the totals.
 | `eval_refitq/quantstudy/chi2_bitwidth_study.py` | committed (`63ff147`) | the bit-width/label study of record |
 | `eval_refitq/quantstudy/chi2_code_efficiency.py` | committed | label-free code entropy/saturation diagnostics |
 | `eval_refitq/quantstudy/chi2_perfield_k.py` | committed | per-field BDT-isolated k scan |
-| window-sigma measurement (3b) | **written, not yet committed** | fold into `eval_refitq/windows/` |
-| n_wrong categorization (4e observational) | **not written** | next, no new production needed |
+| `eval_refitq/windows/window_sigma.py` | committed | innovation sigma vs the static window half-widths (3b) |
+| `eval_refitq/windows/cluster_era_combinatorics.py` | committed | re-measures multiplicity / pulls / wrong-hit rate in the cluster era |
+| `eval_refitq/windows/ms_term_shape.py` | committed | tests the 1/pT SHAPE of the pull excess and splits out the pT-independent floor |
+| `eval_refitq/wronghits/param_vs_wronghits.py` | committed | 4e observational: refit value by wrong-hit count, plus trust-gate ceiling |
+| `eval_refitq/ordering/layer_order_ab.py` | **new** | paired outsideIn-vs-insideOut A/B (4c), incl. the floor test that gates `Q` |
 | measurement-quantization emulator (4a) | **not written** | offline first (quantize nano values, re-derive), producer knob second |
+| `Q` process-noise term | **not written — deliberately blocked on 4c** | see 4c: the floor test decides the calibration target |
 
 Deliberately still pending: the new `REFIT_BDT_FEATURES` version, the
 migration of `_dataio.py` / `refit_replay.py` / two tests / five

@@ -65,7 +65,7 @@ public:
 
     // ---- EXTENSION table on the variant track table (extension=true, same name/length) ----
     std::vector<uint8_t> status, nCrossings, nAcceptedHits, nKFUpdates, layerHitMask, maxWindowMult;
-    std::vector<bool> refitPerformed, seedCovOK, parametrizedSeed, anyWindowTruncated;
+    std::vector<bool> refitPerformed, seedCovOK, anyWindowTruncated;
     std::vector<float> chi2IncXTot, chi2IncYTot, chi2IncAlphaTot, chi2IncBetaTot;
     std::vector<int32_t> compactWord;
     status.reserve(nTracks);
@@ -76,7 +76,6 @@ public:
     maxWindowMult.reserve(nTracks);
     refitPerformed.reserve(nTracks);
     seedCovOK.reserve(nTracks);
-    parametrizedSeed.reserve(nTracks);
     anyWindowTruncated.reserve(nTracks);
     chi2IncXTot.reserve(nTracks);
     chi2IncYTot.reserve(nTracks);
@@ -111,7 +110,6 @@ public:
       maxWindowMult.push_back(ti.maxWindowMult);
       refitPerformed.push_back(ti.status & smartpixels::trackstatus::kRefitPerformed);
       seedCovOK.push_back(ti.status & smartpixels::trackstatus::kSeedCovOK);
-      parametrizedSeed.push_back(ti.status & smartpixels::trackstatus::kParametrizedSeed);
       anyWindowTruncated.push_back(ti.status & smartpixels::trackstatus::kAnyWindowTruncated);
       chi2IncXTot.push_back(ti.chi2IncXTot);
       chi2IncYTot.push_back(ti.chi2IncYTot);
@@ -206,10 +204,9 @@ public:
 
     // EXTENSION table on the variant track table (extension=true -> merged by name)
     auto trkTable = std::make_unique<nanoaod::FlatTable>(nTracks, trackTableName_, false, true);
-    trkTable->addColumn<uint8_t>("spxStatus", status, "packed refit status (bit0 refitPerformed, bit1 seedCovOK, bit2 parametrizedSeed, bit3 anyWindowTruncated)");
+    trkTable->addColumn<uint8_t>("spxStatus", status, "packed refit status (bit0 refitPerformed, bit1 seedCovOK, bit2 RETIRED, bit3 anyWindowTruncated)");
     trkTable->addColumn<bool>("spxRefitPerformed", refitPerformed, "refit performed (else passthrough copy of input track)");
     trkTable->addColumn<bool>("spxSeedCovOK", seedCovOK, "seed covariance was usable");
-    trkTable->addColumn<bool>("spxParametrizedSeed", parametrizedSeed, "seed covariance came from the parametrized model");
     trkTable->addColumn<bool>("spxAnyWindowTruncated", anyWindowTruncated, "at least one crossing window hit maxHitsPerWindow");
     trkTable->addColumn<uint8_t>("spxNCrossings", nCrossings, "valid layer crossings attempted");
     trkTable->addColumn<uint8_t>("spxNAcceptedHits", nAcceptedHits, "hits accepted into the KF");

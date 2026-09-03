@@ -194,7 +194,7 @@ struct SmartPixelsRefitHitInfo {   // one entry per LAYER CROSSING attempted (no
 
 struct SmartPixelsRefitTrackInfo { // one entry per track (refit or passthrough)
   uint8_t  status;         // bit0 refit performed (else passthrough); bit1 seedCovOK;
-                           // bit2 seedCovMode==parametrized; bit3 anyWindowTruncated;
+                           // bit2 RETIRED (was parametrized seed); bit3 anyWindowTruncated;
                            // bits4-7 reserved
   uint8_t  nCrossings;     // valid layer crossings attempted
   uint8_t  nAcceptedHits;  // hits accepted into the KF
@@ -215,6 +215,12 @@ struct SmartPixelsRefitSidecar {
 Rules:
 - Sentinel for any unavailable float is `-999.f`; consumers MUST test `> -900.f`.
 - Passthrough tracks have `status` bit0 unset, empty `hitInfo[i]`, zeros elsewhere.
+- `hitInfo[i]` holds one entry per valid crossing, **in the order the Kalman loop
+  visited the layers** — which is a config choice (`digiRefitLayerOrder`, default
+  `outsideIn` = L4->L1), not ascending layer. The order is meaningful: it is the
+  sequence in which the state was actually updated. Consumers MUST therefore key
+  on `hitInfo[i][j].layer` and MUST NOT assume position `j` corresponds to layer
+  `j+1` or that `layer` increases along the vector.
 - Parameter/covariance deltas (Δd0, Δpt, ...) are NOT stored: they are derivable from
   (output track i, input track i) via the invariant. Adapters compute them on demand.
 - Fields marked TRUTH-ONLY exist for training labels and diagnostics; no inference
