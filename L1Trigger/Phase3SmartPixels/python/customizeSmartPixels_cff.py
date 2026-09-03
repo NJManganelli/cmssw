@@ -306,12 +306,57 @@ def addSmartPixelsTrackProducerVariants(process, variants=None, correctionSet=DE
         module.smartPixelsCorrectionSet = cms.FileInPath(correctionSet)
       if mode == "digiRefit":
         _applyDigiRefitConfig(module, digiRefitResolved)
+        _addPixelRecHitChain(process, module)
         # No RandomNumberGeneratorService: the digiRefit producer uses a LOCAL
         # engine seeded per-event from hash(module label, run, lumi, event), so
         # outputs are event-order-independent and split-job invariant (see
         # doc/Phase2Acceptance.md §1 and the producer's digiRefitSeed()).
 
   return process, modules
+
+
+# SmartPixels-owned IT cluster + rec hit chain. Scheduling notes, all deliberate:
+#  * OUR OWN LABELS (spxPixelClusters / spxPixelRecHits), so we can never collide
+#    with a standard siPixelClusters/siPixelRecHits that some other sequence may
+#    schedule, and provenance says plainly that these are ours.
+#  * A cms.Task, never a Path or Sequence: unscheduled, so these run ONLY because
+#    the refit producer consumes them. No digiRefit variant => not even added.
+#  * Never added to outputCommands. Nano event content is table-driven, so nothing
+#    leaks into nano; for any other output the products are simply not listed.
+#  * Clustered from the SAME digi collection the refit producer reads, so the
+#    cluster -> digi channel -> PixelDigiSimLink truth chain is consistent BY
+#    CONSTRUCTION rather than conditional on nobody re-digitizing. Stored
+#    siPixelClusters would silently diverge the moment a workflow re-runs DIGI.
+#  * PixelCPEGeneric under the Phase-2 era gives UseErrorsFromTemplates,
+#    LoadTemplatesFromDB, Alpha2Order and useLAWidthFromDB, i.e. Lorentz- and
+#    angle-corrected positions with template errors. That is what replaces the
+#    pitch/sqrt(12) error model. It is offline-quality Phase-2 pixel reco, NOT a
+#    model of what a smart-pixel ASIC computes on-chip -- do not quote CPE
+#    resolution as an ASIC capability.
+SPX_PIXEL_DIGI_TAG = cms.InputTag("simSiPixelDigis", "Pixel")
+
+
+def _addPixelRecHitChain(process, refitModule, digiTag=SPX_PIXEL_DIGI_TAG):
+  """Wire spxPixelClusters -> spxPixelRecHits for a digiRefit producer module.
+
+  The digi tag is SET EXPLICITLY on the producer as well as on the clusterizer,
+  rather than left to the C++ fillDescriptions default on one side and guessed on
+  the other. The two must be the same collection or the cluster -> digi channel ->
+  simlink truth chain silently describes different digis than the refit used, and
+  a config dump would not show the disagreement.
+  """
+  refitModule.pixelDigiInputTag = digiTag
+  if not hasattr(process, "spxPixelClusters"):
+    from RecoLocalTracker.SiPixelClusterizer.SiPixelClusterizer_cfi import siPixelClusters
+    process.spxPixelClusters = siPixelClusters.clone(src=digiTag)
+  if not hasattr(process, "spxPixelRecHits"):
+    process.load("RecoLocalTracker.SiPixelRecHits.PixelCPEGeneric_cfi")
+    from RecoLocalTracker.SiPixelRecHits.SiPixelRecHits_cfi import siPixelRecHits
+    process.spxPixelRecHits = siPixelRecHits.clone(src="spxPixelClusters", CPE="PixelCPEGeneric")
+  if not hasattr(process, "spxPixelRecHitTask"):
+    process.spxPixelRecHitTask = cms.Task(process.spxPixelClusters, process.spxPixelRecHits)
+  refitModule.pixelRecHitInputTag = cms.InputTag("spxPixelRecHits")
+  return process
 
 
 TRUTH_ASSOCIATOR_LABELS = ("TTClusterAssociatorFromPixelDigis",
@@ -576,6 +621,11 @@ def _scheduleVariantModules(process, modules, taskName):
   setattr(process, taskName, task)
   for _, path in process.paths_().items():
     path.associate(task)
+    # The SmartPixels-owned IT cluster/rec hit chain, when a digiRefit variant
+    # created it. Associated (not scheduled) so it runs on demand only, i.e.
+    # exactly when a refit producer asks for its rec hits.
+    if hasattr(process, "spxPixelRecHitTask"):
+      path.associate(process.spxPixelRecHitTask)
   return process
 
 
