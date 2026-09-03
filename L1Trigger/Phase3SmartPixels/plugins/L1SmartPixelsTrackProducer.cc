@@ -394,9 +394,17 @@ private:
   // passed to the projector to reject non-physical predicted crossings.
   double digiRefitMeasAngleMaxAbs_ = 12.0;  // |synthesized measured cot| above this clears has{Alpha,Beta}
   double digiRefitPredAngleMaxAbs_ = 12.0;  // |predicted crossing cot| above this invalidates the crossing
+  // Order in which IT layers are visited by the Kalman loop. The particle
+  // traverses L1->L4 outward, but the seed is an OT-only fit, so the state
+  // enters from OUTSIDE: the projection to a layer carries the unmodelled
+  // scattering accumulated between that layer and the innermost OT layer,
+  // which grows inward. Visiting L4 first therefore commits the first (and
+  // most influential, since it collapses C) update on the projection with the
+  // least unmodelled scattering. Kept as a knob because the opposing argument
+  // -- the r-phi window is tightest at L1, so L1 is the least ambiguous match
+  // -- is also real, and the two have to be measured against each other.
+  std::string digiRefitLayerOrder_ = "outsideIn";  // "outsideIn" (L4->L1, default) | "insideOut" (L1->L4)
   int digiRefitSeedNPar_ = 5;           // 4 (prompt) | 5 (extended + covariance seed)
-  std::string digiRefitSeedCovMode_ = "trackCov";  // "trackCov" (TTTrack helixCovMat, default) | "parametrized"
-  std::vector<double> digiRefitParamSigmas_;       // parametrized-mode seed sigmas: (rInv[cm^-1], phi0, tanL, z0[cm], d0[cm])
   std::string digiRefitPixelavAngleSet_ = "";  // PixelAV angle sigma/bias/valid payload path
   std::string digiRefitSmarthitTrueSet_ = "";  // smarthit_true payload (RESERVED): NOT consumed by Tier-2; warns if set
   std::string digiRefitSmarthitFakeSet_ = "";  // inclusive noise-angle payload path
@@ -570,9 +578,8 @@ L1SmartPixelsTrackProducer::L1SmartPixelsTrackProducer(edm::ParameterSet const& 
     digiRefitChi2UpdateGate_ = iConfig.getParameter<double>("digiRefitChi2UpdateGate");
     digiRefitMeasAngleMaxAbs_ = iConfig.getParameter<double>("digiRefitMeasAngleMaxAbs");
     digiRefitPredAngleMaxAbs_ = iConfig.getParameter<double>("digiRefitPredAngleMaxAbs");
+    digiRefitLayerOrder_ = iConfig.getParameter<std::string>("digiRefitLayerOrder");
     digiRefitSeedNPar_ = iConfig.getParameter<int>("digiRefitSeedNPar");
-    digiRefitSeedCovMode_ = iConfig.getParameter<std::string>("digiRefitSeedCovMode");
-    digiRefitParamSigmas_ = iConfig.getParameter<std::vector<double>>("digiRefitParamSigmas");
     {
       const std::string av = iConfig.getParameter<std::string>("digiRefitPixelavAngleSet");
       digiRefitPixelavAngleSet_ = av.empty() ? std::string() : edm::FileInPath(av).fullPath();
@@ -608,14 +615,10 @@ L1SmartPixelsTrackProducer::L1SmartPixelsTrackProducer(edm::ParameterSet const& 
       throw cms::Exception("NotImplemented")
           << "digiRefit gainMode='lut' (table-driven Kalman gains) is a reserved placeholder; "
              "use gainMode='full'.";
-    if (digiRefitSeedCovMode_ != "trackCov" && digiRefitSeedCovMode_ != "parametrized")
+    if (digiRefitLayerOrder_ != "outsideIn" && digiRefitLayerOrder_ != "insideOut")
       throw cms::Exception("Configuration")
-          << "digiRefit seedCovMode='" << digiRefitSeedCovMode_
-          << "' invalid; use 'trackCov' (TTTrack helixCovMat, default) or 'parametrized'.";
-    if (digiRefitSeedCovMode_ == "parametrized" && digiRefitParamSigmas_.size() != 5)
-      throw cms::Exception("Configuration")
-          << "digiRefitParamSigmas must have exactly 5 entries (rInv, phi0, tanL, z0, d0), got "
-          << digiRefitParamSigmas_.size() << ".";
+          << "digiRefit layerOrder='" << digiRefitLayerOrder_
+          << "' is not recognized; use 'outsideIn' (L4->L1) or 'insideOut' (L1->L4).";
     if (digiRefitSeedNPar_ != 4 && digiRefitSeedNPar_ != 5)
       throw cms::Exception("Configuration") << "digiRefit seedNPar must be 4 or 5.";
     if (digiRefitUseAngles_ != "none" && digiRefitUseAngles_ != "alpha" && digiRefitUseAngles_ != "alphaBeta")
@@ -776,12 +779,14 @@ void L1SmartPixelsTrackProducer::endStream() {
              "does not correspond to the input track collection (stale map + remade tracks, or "
              "wrong trackInputMode). Run reemulateL1TrackFinding (L1TrackTrigger re-run on the input digis) so tracks, "
              "digis, simlinks and maps are self-consistent.";
-    if (digiRefitSeedCovMode_ == "trackCov" && digiRefitZeroCovTracks_ == digiRefitTracksSeen_)
+    if (digiRefitZeroCovTracks_ == digiRefitTracksSeen_)
       throw cms::Exception("SmartPixelsSeedCovMissing")
-          << "digiRefit seedCovMode='trackCov' but ALL " << digiRefitTracksSeen_
-          << " seed tracks carried an all-zero helixCovMat. These look like schema-evolved "
-             "old-layout file tracks - run trackInputMode=reemulateL1TrackFinding so the in-job fit fills the covariance, "
-             "or use seedCovMode='parametrized'.";
+          << "ALL " << digiRefitTracksSeen_
+          << " seed tracks carried an all-zero helixCovMat, so the refit has no seed uncertainty "
+             "to start from. These look like schema-evolved old-layout file tracks. Run "
+             "trackInputMode=reemulateL1TrackFinding (or rebuildTracksFromStubs) so the in-job fit "
+             "fills the covariance -- and note the mode must rebuild EVERY collection you refit: "
+             "with extendedTracks=False the Extended producer still reads old-layout stored tracks.";
   }
 }
 
@@ -1614,9 +1619,14 @@ void L1SmartPixelsTrackProducer::produce(edm::Event& iEvent, const edm::EventSet
       // Seed snapshot for the refit-BDT parameter deltas (spec §6a features 11-15).
       const ROOT::Math::SVector<double, 5> aSeed = a;
 
+      // The seed covariance is ALWAYS the OT fit's own helixCovMat. There is no
+      // parametrized alternative: a fixed diagonal is not the OT fit's
+      // uncertainty, it silently substitutes for a missing one, and every
+      // seed-covariance-dependent measurement (window sizing, pull widths,
+      // layer ordering, the MS term) is meaningless under it.
       ROOT::Math::SMatrix<double, 5, 5, ROOT::Math::MatRepSym<double, 5>> C;
       bool seedCovOK = true;
-      if (digiRefitSeedCovMode_ == "trackCov") {
+      {
         const auto& tc = iterL1Track->helixCovMat();
         double diagSum = 0.;
         for (int i = 0; i < 5; ++i) {
@@ -1632,9 +1642,6 @@ void L1SmartPixelsTrackProducer::produce(edm::Event& iEvent, const edm::EventSet
           seedCovOK = false;
           ++digiRefitZeroCovTracks_;
         }
-      } else {  // "parametrized" fallback/ablation seed
-        for (int i = 0; i < 5; ++i)
-          C(i, i) = digiRefitParamSigmas_[i] * digiRefitParamSigmas_[i];
       }
       // 4-par seeds carry no d0 information: weak prior so the IT hits determine d0.
       if (digiRefitSeedNPar_ == 4 || !(C(4, 4) > 0.))
@@ -1657,7 +1664,13 @@ void L1SmartPixelsTrackProducer::produce(edm::Event& iEvent, const edm::EventSet
       int nAcceptedHits = 0;
       int nUpdates = 0;
 
-      for (int layer = 1; layer <= projector_.nLayers(); ++layer) {
+      // Visit order per digiRefitLayerOrder_. Sidecar hitInfo records are pushed
+      // in VISIT order, so their sequence documents how the fit actually
+      // proceeded; every consumer selects on hitInfo.layer, never on position.
+      const int drNLayers = projector_.nLayers();
+      const bool drOutsideIn = (digiRefitLayerOrder_ == "outsideIn");
+      for (int step = 0; step < drNLayers; ++step) {
+        const int layer = drOutsideIn ? (drNLayers - step) : (step + 1);
         if (!seedCovOK || nUpdates >= digiRefitMaxKFUpdates_)
           break;
         if (!drActiveLayer[layer - 1])
@@ -2048,8 +2061,6 @@ void L1SmartPixelsTrackProducer::produce(edm::Event& iEvent, const edm::EventSet
         smartpixels::SmartPixelsRefitTrackInfo pt;  // all zero / status bit0 unset
         if (seedCovOK)
           pt.status |= smartpixels::trackstatus::kSeedCovOK;
-        if (digiRefitSeedCovMode_ == "parametrized")
-          pt.status |= smartpixels::trackstatus::kParametrizedSeed;
         pt.chi2IncXTot = 0.f;
         pt.chi2IncYTot = 0.f;
         pt.chi2IncAlphaTot = 0.f;
@@ -2134,8 +2145,6 @@ void L1SmartPixelsTrackProducer::produce(edm::Event& iEvent, const edm::EventSet
         // Finalize the per-track sidecar record (spec §2).
         drTrackInfo.status |= smartpixels::trackstatus::kRefitPerformed;
         drTrackInfo.status |= smartpixels::trackstatus::kSeedCovOK;
-        if (digiRefitSeedCovMode_ == "parametrized")
-          drTrackInfo.status |= smartpixels::trackstatus::kParametrizedSeed;
         if (drAnyWindowTruncated)
           drTrackInfo.status |= smartpixels::trackstatus::kAnyWindowTruncated;
         drTrackInfo.nAcceptedHits = static_cast<uint8_t>(nAcceptedHits);
@@ -2310,10 +2319,14 @@ void L1SmartPixelsTrackProducer::fillDescriptions(edm::ConfigurationDescriptions
       ->setComment("secondary hygiene grazing clamp (spec §6b): a predicted crossing |cotAlpha|/|cotBeta| "
                    "above this bound invalidates the crossing at the projector (no window, no sidecar record). "
                    "Rejects the ~18 non-physical predicted crossings (up to |cotAlpha| 51.8); NOT the gate driver.");
+  desc.add<std::string>("digiRefitLayerOrder", "outsideIn")
+      ->setComment("IT layer visit order for the Kalman loop: outsideIn (L4->L1, default) | insideOut (L1->L4). "
+                   "The seed is an OT-only fit, so the projection to a layer carries the unmodelled multiple "
+                   "scattering accumulated between that layer and the innermost OT layer, which grows inward. "
+                   "outsideIn commits the first update - the one that collapses the covariance - on the "
+                   "least-extrapolated projection. insideOut instead takes the tightest r-phi window first. "
+                   "Affects hit selection and the refit result, NOT the set of layers considered.");
   desc.add<int>("digiRefitSeedNPar", 5)->setComment("seed-track parametrization for the KF: 4 | 5");
-  desc.add<std::string>("digiRefitSeedCovMode", "trackCov")->setComment("seed covariance: trackCov (TTTrack helixCovMat, default) | parametrized");
-  desc.add<std::vector<double>>("digiRefitParamSigmas", std::vector<double>{1e-4, 1e-3, 2e-3, 0.06, 0.05})
-      ->setComment("parametrized-mode seed sigmas (rInv[cm^-1], phi0, tanL, z0[cm], d0[cm])");
   desc.add<std::string>("digiRefitPixelavAngleSet", "")->setComment("PixelAV angle-response correctionlib payload path (REQUIRED for digiRefit)");
   desc.add<std::string>("digiRefitSmarthitFakeSet", "")->setComment("optional smarthit_fake payload (inclusive noise-angle model)");
   desc.add<std::string>("digiRefitSmarthitTrueSet", "")

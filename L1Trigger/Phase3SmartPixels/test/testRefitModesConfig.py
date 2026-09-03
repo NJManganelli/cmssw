@@ -110,13 +110,10 @@ _dr_prompt = "l1tSmartPixelsTrackProducerWdigiRefitAAII"
 check(hasattr(p_dr, _dr_prompt), "digiRefit prompt producer variant exists")
 _m = getattr(p_dr, _dr_prompt)
 check(_m.smartPixelsEmulatorMode.value() == "digiRefit", "mode set to digiRefit")
-check(_m.digiRefitSeedCovMode.value() == "trackCov", "seedCovMode default is trackCov")
 check(_m.digiRefitSeedNPar.value() == 5, "seedNPar default is 5")
 check(_m.digiRefitUseAngles.value() == "alpha", "useAngles default is alpha")
 check(_m.digiRefitPixelavAngleSet.value() == _DR_CFG["pixelavAngleSet"],
       "pixelavAngleSet carried onto the module")
-check(list(_m.digiRefitParamSigmas) == list(DIGIREFIT_DEFAULTS["paramSigmas"]),
-      "paramSigmas carried onto the module")
 # KF numerical guards (spec §6b) default onto the module and take the
 # investigation-chosen values.
 check(_m.digiRefitJacobianMaxAbs.value() == DIGIREFIT_DEFAULTS["jacobianMaxAbs"] == 1.0e4,
@@ -147,6 +144,25 @@ _m_clamp = getattr(
 check(_m_clamp.digiRefitMeasAngleMaxAbs.value() == 8.0
       and _m_clamp.digiRefitPredAngleMaxAbs.value() == 15.0,
       "measAngleMaxAbs / predAngleMaxAbs overrides flow onto the module")
+# Kalman layer visit order: the DEFAULT is outsideIn (L4->L1), because the
+# projection to a layer carries the unmodelled scattering between that layer and
+# the OT, which grows inward. insideOut remains selectable for the comparison.
+check(_m.digiRefitLayerOrder.value() == DIGIREFIT_DEFAULTS["layerOrder"] == "outsideIn",
+      "layerOrder default (outsideIn) carried onto the module")
+_m_order = getattr(
+    addSmartPixelsTrackProducerVariants(
+        cms.Process("TEST"), variants=[("digiRefit", "1100")],
+        digiRefitConfig={"pixelavAngleSet": "dummy/x.json", "layerOrder": "insideOut"})[0],
+    _dr_prompt)
+check(_m_order.digiRefitLayerOrder.value() == "insideOut",
+      "layerOrder override (insideOut) flows onto the module")
+try:
+  addSmartPixelsTrackProducerVariants(
+      cms.Process("TEST"), variants=[("digiRefit", "1100")],
+      digiRefitConfig={"layerOrder": "outsidein"})
+  check(False, "bad layerOrder must raise")
+except ValueError:
+  check(True, "bad layerOrder raises ValueError at config time")
 # Refit-quality BDT model (spec §6a): default empty (no scoring), override flows.
 check(_m.digiRefitBdtModel.value() == DIGIREFIT_DEFAULTS["bdtModel"] == "",
       "bdtModel default is empty (no BDT scoring) and carried onto the module")
@@ -305,7 +321,7 @@ check(set(TRACKINPUTMODE_CHOICES) == {"reemulateL1TrackFinding", "useStoredTrack
       "trackInputMode vocabulary is exactly the three renamed modes")
 
 
-def _build_fromfilestubs(extendedTracks, seedCovMode="trackCov"):
+def _build_fromfilestubs(extendedTracks):
     """Full coexist build with trackInputMode=rebuildTracksFromStubs on a process
     carrying a dummy Path (so the stub-rebuild Task has somewhere to associate)."""
     p = cms.Process("TEST")
@@ -313,7 +329,7 @@ def _build_fromfilestubs(extendedTracks, seedCovMode="trackCov"):
     return smartPixelsCoexist(
         p, variants=[("digiRefit", "1100")], addNanoTables=False,
         trackInputMode="rebuildTracksFromStubs", extendedTracks=extendedTracks,
-        digiRefitConfig={"pixelavAngleSet": "dummy/x.json", "seedCovMode": seedCovMode})
+        digiRefitConfig={"pixelavAngleSet": "dummy/x.json"})
 
 
 # extended ON (default): full prompt+extended stub-rebuild chain present
@@ -406,7 +422,7 @@ check(_chain == _PROMPT_CHAIN,
       f"attachFromFileStubsChain(extendedTracks=False) returns prompt chain (got {_chain})")
 
 # --- (g) promptHnpar (PRIME target: 5-par prompt seed) ----------------------
-print("[g] promptHnpar wiring (5-par prompt seed -> prompt digiRefit trackCov)")
+print("[g] promptHnpar wiring (5-par prompt seed -> real 5x5 digiRefit seed cov)")
 check(set(PROMPT_HNPAR_CHOICES) == {4, 5},
       "promptHnpar vocabulary is exactly {4, 5}")
 
@@ -422,7 +438,7 @@ def _build_ffs_hnpar(promptHnpar):
 
 
 # promptHnpar=5 -> PRIME target: prompt tracklet producer set to Hnpar=5, extended
-# stays 5, and the prompt digiRefit variant seeds seedNPar=5 / seedCovMode=trackCov.
+# stays 5, and the prompt digiRefit variant seeds seedNPar=5.
 p_h5 = _build_ffs_hnpar(5)
 check(p_h5.l1tTTTracksFromTrackletEmulation.Hnpar.value() == 5,
       "promptHnpar=5 sets prompt l1tTTTracksFromTrackletEmulation.Hnpar = 5")
@@ -431,8 +447,8 @@ check(p_h5.l1tTTTracksFromTrackletEmulation.Extended.value() is False,
 check(p_h5.l1tTTTracksFromExtendedTrackletEmulation.Hnpar.value() == 5,
       "extended chain stays Hnpar = 5")
 _dr5 = getattr(p_h5, "l1tSmartPixelsTrackProducerWdigiRefitAAII")
-check(_dr5.digiRefitSeedNPar.value() == 5 and _dr5.digiRefitSeedCovMode.value() == "trackCov",
-      "prompt digiRefit variant seeds seedNPar=5 + seedCovMode=trackCov (prime target)")
+check(_dr5.digiRefitSeedNPar.value() == 5,
+      "prompt digiRefit variant seeds seedNPar=5 (prime target)")
 
 # promptHnpar=4 (ablation only, still selectable) -> prompt Hnpar=4, d0 pinned.
 p_h4 = _build_ffs_hnpar(4)

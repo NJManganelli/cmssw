@@ -7,9 +7,9 @@ Produces, in ONE cmsRun job on a GEN-SIM-DIGI-RAW-MINIAOD input:
       L1TrackTrigger + SimL1Emulator (reemulateL1TrackFinding) from the input, AND
   (2) the SmartPixels digiRefit track + refit-hit + stub tables for the chosen
       activeSP, layered via smartPixelsCoexist (trackInputMode='reemulateL1TrackFinding' -- the
-      re-emulated tracklet tracks carry a real helixCovMat, so seedCovMode
-      'trackCov' is valid here; the covariance is native to this branch via
-      the cms-L1TK merge, no covMatrix backport needed).
+      re-emulated tracklet tracks carry a real helixCovMat, which digiRefit
+      requires as its seed covariance; the covariance is native to this branch
+      via the cms-L1TK merge, no covMatrix backport needed).
 
 Input must be POST-cms-sw/cmssw#51503: that PR rewrote the persisted L1
 track-trigger DataFormats, so pre-break samples (CMSSW_14/15-era Phase2Spring24
@@ -36,7 +36,7 @@ dataset, so the PoolSource below is a valid placeholder taken from
 options.inputFiles.
 
 Local test (D121 RelVal from the SD mount):
-  cmsRun runUnifiedNano_cfg.py maxEvents=2 activeSP=1100 seedCovMode=trackCov \
+  cmsRun runUnifiedNano_cfg.py maxEvents=2 activeSP=1100 \
     pixelavAngleSet=/work/spxsmoke/spx_angle_response_Conv1D_Full-2bit_v4fixed.json \
     inputFiles=file:/host_volumes/NJM256GBSD/smartpixels-cmssw-testfiles/RelValTTbar_14TeV_PU_150X_mcRun4_realistic_v1_STD_D121_RegeneratedGS_PU-v1_file1.root \
     outputFile=/work/spx_unifiednano_test.root
@@ -57,9 +57,6 @@ options.register('activeSP', '1100', VarParsing.multiplicity.singleton,
 options.register('tier', 'L1PFTrkNanowithGen', VarParsing.multiplicity.singleton,
                  VarParsing.varType.string,
                  "autoNANO flavor (fullest); documented, wiring is explicit below")
-options.register('seedCovMode', 'trackCov', VarParsing.multiplicity.singleton,
-                 VarParsing.varType.string,
-                 "digiRefit seed covariance: trackCov | parametrized")
 options.register('pixelavAngleSet', 'spx_angle_response.json',
                  VarParsing.multiplicity.singleton, VarParsing.varType.string,
                  "PixelAV angle-response payload (see resolution below)")
@@ -273,8 +270,8 @@ process = addGenObjects(process)
 # Layer the SmartPixels digiRefit tables (WF1 coexist) into the SAME nano output.
 # trackInputMode='reemulateL1TrackFinding': this job re-runs L1TrackTrigger +
 # SimL1Emulator, so the in-process TT truth associators run and the re-emulated
-# tracklet tracks carry a real helixCovMat -> seedCovMode='trackCov' is valid on
-# the covMatrix build.
+# tracklet tracks carry a real helixCovMat, which digiRefit requires as its
+# seed covariance.
 # ---------------------------------------------------------------------------
 from L1Trigger.Phase3SmartPixels.customizeSmartPixels_cff import smartPixelsCoexist
 
@@ -285,7 +282,6 @@ process = smartPixelsCoexist(
     addNanoTables=True,
     digiRefitConfig={
         "pixelavAngleSet": _pixelavAngleSet,
-        "seedCovMode": options.seedCovMode,
     },
 )
 

@@ -68,27 +68,35 @@ warning for one transition cycle):
   straight from the file. Real PU everywhere, but the file's tracks are the old
   (pre-PR#51503) layout so `helixCovMat` is all-zero. Use for: PU studies against
   the file's *own* downstream objects (file L1 jets, etc.), and old-release track
-  studies. `digiRefit` here **must** use `seedCovMode="parametrized"`.
+  studies. `digiRefit` **cannot** run on such a file: it always seeds from
+  `helixCovMat` and an all-zero one throws `SmartPixelsSeedCovMissing`.
 - **`rebuildTracksFromStubs`** — rebuild NEW-layout tracks from the file's
   persisted stub tier (`ProducerDTC` → tracklet emulator(s) → re-run track
   associator vs the file's cluster/stub maps); remove only the cluster/stub
   associators, never DIGI. Real PU **and** real per-track covariance, at
   ~2-3 s/event with no pileup re-mixing. `extendedTracks=True` (default) also
   rebuilds the displaced chain. Use for: the primary PU development mode and
-  any trackCov-seeded refit production.
+  any refit production.
 
-`seedCovMode="trackCov"` validity (digiRefit default):
+digiRefit seeds from the track's own `helixCovMat`, always. There is no
+parametrized alternative: a fixed diagonal is not the OT fit's uncertainty, it
+substitutes silently for a missing one, and every seed-covariance-dependent
+measurement (window sizing, pull widths, layer ordering, the MS term) is
+meaningless under it. So digiRefit requires a track collection whose covariance
+is real:
 
-| trackInputMode | tracks | `trackCov` valid? |
+| trackInputMode | tracks | digiRefit usable? |
 |---|---|---|
 | `reemulateL1TrackFinding` | fresh, new layout | **yes** (PU retained) |
-| `useStoredTracks` | file, old layout | **no** — zero cov; runtime guard `SmartPixelsSeedCovMissing` fires. Use `parametrized`. |
+| `useStoredTracks` | file, old layout | **no** — zero cov; `SmartPixelsSeedCovMissing` fires at `endStream` |
+| `useStoredTracks` | file, post-#51503 | **yes** |
 | `rebuildTracksFromStubs` | fresh, new layout | **yes** (with PU) |
 
-The `useStoredTracks` + `trackCov` combination is deliberately *not*
-special-cased at config time; it fails loudly at runtime via the
-`SmartPixelsSeedCovMissing` `endStream` guard, by design. Use
-`rebuildTracksFromStubs` for trackCov on PU files.
+**The ✅ rows are per REBUILT COLLECTION, not per job.** With
+`extendedTracks=False`, `rebuildTracksFromStubs` rebuilds only the prompt chain,
+so the Extended producer still reads old-layout stored tracks and every extended
+seed is unusable. This is not special-cased at config time; it fails loudly at
+runtime, by design.
 
 ## Refit modes (tier model)
 

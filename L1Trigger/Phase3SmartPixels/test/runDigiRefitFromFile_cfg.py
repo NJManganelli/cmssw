@@ -5,9 +5,11 @@ simSiPixelDigis:Pixel digis+simlinks, association maps and TrackingParticles
 (all HLT-process, mutually consistent, WITH pileup). Re-running DIGI here would
 re-digitize the signal-only g4SimHits and silently lose the PU.
 
-File tracks are old-layout (schema-evolved, all-zero helixCovMat), so
-seedCovMode='parametrized' is REQUIRED — 'trackCov' throws
-SmartPixelsSeedCovMissing, by design.
+The INPUT MUST BE POST-cms-sw/cmssw#51503. digiRefit always seeds from the
+track's own helixCovMat (there is no parametrized alternative), and pre-#51503
+tracks schema-evolve to an all-zero covariance, so an old-layout file throws
+SmartPixelsSeedCovMissing here — by design. For such files, rebuild the tracks
+(trackInputMode='rebuildTracksFromStubs') instead of reading them.
 
 Run (in the container, cmsenv):
   cmsRun L1Trigger/Phase3SmartPixels/test/runDigiRefitFromFile_cfg.py \
@@ -57,8 +59,7 @@ process, spxModules = addSmartPixelsTrackProducerVariants(
     process,
     variants=[("passthrough", None), ("digiRefit", options.activeSP)],
     digiRefitConfig={"pixelavAngleSet": options.pixelavAngleSet,
-                     "useAngles": options.useAngles,
-                     "seedCovMode": "parametrized"})
+                     "useAngles": options.useAngles})
 
 process.p = cms.Path()
 for m in spxModules:

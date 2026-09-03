@@ -82,7 +82,8 @@ namespace smartpixels {
   // One entry per track (refit or passthrough).
   struct SmartPixelsRefitTrackInfo {
     uint8_t status = 0;         // bit0 refit performed (else passthrough); bit1 seedCovOK;
-                                // bit2 seedCovMode==parametrized; bit3 anyWindowTruncated; bits4-7 reserved
+                                // bit2 RETIRED (was seedCovMode==parametrized, mode removed);
+                                // bit3 anyWindowTruncated; bits4-7 reserved
     uint8_t nCrossings = 0;     // valid layer crossings attempted
     uint8_t nAcceptedHits = 0;  // hits accepted into the KF
     uint8_t nKFUpdates = 0;     // scalar-update groups applied (== layers updated)
@@ -113,7 +114,9 @@ namespace smartpixels {
   namespace trackstatus {
     inline constexpr uint8_t kRefitPerformed = 0x1;   // bit0
     inline constexpr uint8_t kSeedCovOK = 0x2;        // bit1
-    inline constexpr uint8_t kParametrizedSeed = 0x4; // bit2
+    // 0x4 (bit2) is RETIRED: it flagged the removed 'parametrized' seedCovMode.
+    // Do not reuse it -- pre-removal files may have it set, and a new meaning
+    // would silently mis-read them.
     inline constexpr uint8_t kAnyWindowTruncated = 0x8; // bit3
   }  // namespace trackstatus
 
