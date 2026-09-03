@@ -46,6 +46,14 @@ namespace smartpixels {
     // fitted-vs-truth for a track -- so it never appears unprefixed.
     // NOTE the payload ntuple (SmartPixelsPayloadAnalyzer) keeps its own historical
     // digi_parCot* branch names; they are a different product, not this contract.
+    // Reco payload: what the sensor produced for the selected cluster. This is the
+    // ONLY group a real sensor could encode into its per-cluster word, since it
+    // knows nothing about any track -- hence it is stored in full, not just as a
+    // track-relative residual.
+    float recoLocalX = -999.f, recoLocalY = -999.f;    // cluster position, module-local [cm]
+    float sigX = -999.f, sigY = -999.f;                // position uncertainty from the pixel CPE [cm]
+    uint8_t recoSizeX = 0, recoSizeY = 0;              // cluster extent in pixels (shape: an angle handle)
+    float recoCharge = -999.f;                         // cluster charge [ADC]
     float projResX = -999.f, projResY = -999.f;        // reco - proj, module-local [cm]
     float recoCotAlpha = -999.f, recoCotBeta = -999.f; // reco incidence angles
     float sigAlpha = -999.f, sigBeta = -999.f;         // per-hit angle sigmas from the PixelAV payload
@@ -61,8 +69,14 @@ namespace smartpixels {
                                                        // window held fewer than 2 candidates. Hardware-plausible.
 
     // --- TRUTH-ONLY (never hardware-available; excluded from every transmitted subset) ---
-    int8_t selHitClass = -1;                           // selected-hit simlink class: 0 sameTP, 1 otherTP, 2 noise, -1 none
+    int8_t selHitClass = -1;                           // selected-cluster class by DOMINANT charge contributor:
+                                                       // 0 sameTP, 1 otherTP, 2 noise (no simlink), -1 none
     float truthCotAlpha = -999.f, truthCotBeta = -999.f;  // selected hit's parent local angles, unsmeared (-999.f if no parent)
+    float truthChargeFrac = -999.f;                    // dominant contributor's share of the cluster charge. < 1 means
+                                                       // the cluster is shared; see hitflag::kClusterMerged. A cluster
+                                                       // can be class 0 and still carry another TP's charge, which
+                                                       // biases its position and makes its angle ill-defined -- an
+                                                       // effect the pre-cluster (per-digi) hit model could not express.
   };
 
   // One entry per track (refit or passthrough).
@@ -91,6 +105,8 @@ namespace smartpixels {
     inline constexpr uint8_t kWindowTruncated = 0x2; // bit1
     inline constexpr uint8_t kHasAlpha = 0x4;        // bit2
     inline constexpr uint8_t kHasBeta = 0x8;         // bit3
+    inline constexpr uint8_t kClusterMerged = 0x10;  // bit4: a second TP contributes
+                                                     // more than clusterMergeFrac of the charge (TRUTH-ONLY)
   }  // namespace hitflag
 
   // Bit accessors for SmartPixelsRefitTrackInfo::status (spec §2).

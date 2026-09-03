@@ -49,6 +49,8 @@
 #include "L1Trigger/Phase3SmartPixels/interface/SmartPixelsTransmittedSubset.h"
 #include "DataFormats/Common/interface/DetSetVector.h"
 #include "DataFormats/SiPixelDigi/interface/PixelDigi.h"
+#include "DataFormats/SiPixelCluster/interface/SiPixelCluster.h"
+#include "DataFormats/TrackerRecHit2D/interface/SiPixelRecHitCollection.h"
 #include "DataFormats/DetId/interface/DetId.h"
 #include "DataFormats/SiPixelDetId/interface/PixelSubdetector.h"
 #include "Geometry/CommonTopologies/interface/PixelGeomDetUnit.h"
@@ -377,6 +379,7 @@ private:
   int digiRefitMinHits_ = 1;            // min attached IT hits to emit a refit track
   std::string digiRefitUseAngles_ = "alpha";  // "none" | "alpha" | "alphaBeta"
   int digiRefitMaxHitsPerWindow_ = 8;   // combinatorics truncation
+  double digiRefitClusterMergeFrac_ = 0.1;  // runner-up charge share that flags a merged cluster
   int digiRefitMaxKFUpdates_ = 4;       // KF update / layer cap
   std::string digiRefitGainMode_ = "full";     // "full" | "lut" (RESERVED -> throws)
   // KF numerical guards (spec §6b, FPGA-fidelity handles). Defaults chosen from
@@ -425,6 +428,7 @@ private:
 
   // Extra tokens for digiRefit (pixel digis, simlinks, sim tracks).
   edm::EDGetTokenT<edm::DetSetVector<PixelDigi>> pixelDigiToken_;
+  edm::EDGetTokenT<SiPixelRecHitCollection> pixelRecHitToken_;
   edm::EDGetTokenT<edm::DetSetVector<PixelDigiSimLink>> pixelSimLinkToken_;
   edm::EDGetTokenT<edm::SimTrackContainer> simTrackToken_;
 
@@ -559,6 +563,7 @@ L1SmartPixelsTrackProducer::L1SmartPixelsTrackProducer(edm::ParameterSet const& 
     digiRefitMinHits_ = iConfig.getParameter<int>("digiRefitMinHits");
     digiRefitUseAngles_ = iConfig.getParameter<std::string>("digiRefitUseAngles");
     digiRefitMaxHitsPerWindow_ = iConfig.getParameter<int>("digiRefitMaxHitsPerWindow");
+    digiRefitClusterMergeFrac_ = iConfig.getParameter<double>("digiRefitClusterMergeFrac");
     digiRefitMaxKFUpdates_ = iConfig.getParameter<int>("digiRefitMaxKFUpdates");
     digiRefitGainMode_ = iConfig.getParameter<std::string>("digiRefitGainMode");
     digiRefitJacobianMaxAbs_ = iConfig.getParameter<double>("digiRefitJacobianMaxAbs");
@@ -665,6 +670,8 @@ L1SmartPixelsTrackProducer::L1SmartPixelsTrackProducer(edm::ParameterSet const& 
 
     pixelDigiToken_ =
         consumes<edm::DetSetVector<PixelDigi>>(iConfig.getParameter<edm::InputTag>("pixelDigiInputTag"));
+    pixelRecHitToken_ =
+        consumes<SiPixelRecHitCollection>(iConfig.getParameter<edm::InputTag>("pixelRecHitInputTag"));
     pixelSimLinkToken_ =
         consumes<edm::DetSetVector<PixelDigiSimLink>>(iConfig.getParameter<edm::InputTag>("pixelDigiSimLinkInputTag"));
     simTrackToken_ = consumes<edm::SimTrackContainer>(iConfig.getParameter<edm::InputTag>("simTrackInputTag"));
@@ -834,6 +841,7 @@ void L1SmartPixelsTrackProducer::produce(edm::Event& iEvent, const edm::EventSet
   // origin momenta (parent-angle synthesis), shared projector, local RNG engine,
   // and the per-collection refit sidecar (spec §2).
   edm::Handle<edm::DetSetVector<PixelDigi>> drDigis;
+  edm::Handle<SiPixelRecHitCollection> drRecHits;
   edm::Handle<edm::DetSetVector<PixelDigiSimLink>> drSimlinks;
   smartpixels::ParentMomentumMap drParentMom;
   std::unique_ptr<CLHEP::MixMaxRng> drEngineOwned;
@@ -842,6 +850,7 @@ void L1SmartPixelsTrackProducer::produce(edm::Event& iEvent, const edm::EventSet
   auto sidecar = std::make_unique<smartpixels::SmartPixelsRefitSidecar>();
   if (smartPixelsEmulatorMode_ == "digiRefit") {
     iEvent.getByToken(pixelDigiToken_, drDigis);
+    iEvent.getByToken(pixelRecHitToken_, drRecHits);
     iEvent.getByToken(pixelSimLinkToken_, drSimlinks);
     edm::Handle<edm::SimTrackContainer> drSimTracks;
     iEvent.getByToken(simTrackToken_, drSimTracks);
@@ -1680,20 +1689,30 @@ void L1SmartPixelsTrackProducer::produce(edm::Event& iEvent, const edm::EventSet
         hi.layer = static_cast<uint8_t>(layer);
         hi.detId = cx.detId;
 
-        // ---- window-collect + classify digis (readout order, FPGA truncation) ----
+        // ---- window-collect + classify CLUSTERS (readout order, FPGA truncation) ----
+        // One candidate per reconstructed cluster, not per fired pixel: a pixel is
+        // not a measurement, and one inclined particle fires several of them. The
+        // position and its uncertainty come from the pixel CPE (Lorentz- and
+        // angle-corrected, template errors), which is both the honest "what the
+        // sensor produced" and the fix for the pitch/sqrt(12) error model.
         struct HitCand {
           double x = 0., y = 0.;
+          double ex = 0., ey = 0.;          // reco position uncertainty from the CPE
+          uint8_t sizeX = 0, sizeY = 0;     // cluster extent in pixels
+          double charge = 0.;               // cluster charge [ADC]
           double cotA = -999., cotB = -999.;
           double sigA = 0., sigB = 0.;
           bool hasA = false, hasB = false;  // per-angle validity (a real payload may be alpha-only)
           double sel = 0.;
-          int8_t cls = 2;                   // simlink class: 0 sameTP, 1 otherTP, 2 noise
+          int8_t cls = 2;                   // dominant-contributor class: 0 sameTP, 1 otherTP, 2 noise
+          double chargeFrac = -999.;        // dominant contributor's share of the charge (truth-only)
+          bool merged = false;              // a second TP contributes > clusterMergeFrac
           double parCotA = -999., parCotB = -999.;  // parent local angles (truth-only)
         };
         std::vector<HitCand> cands;
         bool windowTruncated = false;
-        const auto digiSet = drDigis->find(cx.detId);
-        if (digiSet != drDigis->end()) {
+        const auto rhSet = drRecHits->find(cx.detId);
+        if (rhSet != drRecHits->end()) {
           std::map<unsigned int, const PixelDigiSimLink*> linkByChannel;
           const auto linkSet = drSimlinks->find(cx.detId);
           if (linkSet != drSimlinks->end()) {
@@ -1703,13 +1722,12 @@ void L1SmartPixelsTrackProducer::produce(edm::Event& iEvent, const edm::EventSet
                 linkByChannel[lk.channel()] = &lk;
             }
           }
-          for (const auto& digi : *digiSet) {
+          for (const auto& rh : *rhSet) {
             if (static_cast<int>(cands.size()) >= digiRefitMaxHitsPerWindow_) {
               windowTruncated = true;  // combinatorics truncation in readout order (hardware-like)
               break;
             }
-            const LocalPoint dlp =
-                pixTopo.localPosition(MeasurementPoint(digi.row() + 0.5, digi.column() + 0.5));
+            const LocalPoint dlp = rh.localPosition();
             if (std::abs(dlp.x() - cx.local.x()) > digiRefitWindowRPhi_[layer - 1] ||
                 std::abs(dlp.y() - cx.local.y()) > digiRefitWindowZ_[layer - 1])
               continue;
@@ -1717,18 +1735,60 @@ void L1SmartPixelsTrackProducer::produce(edm::Event& iEvent, const edm::EventSet
             HitCand cand;
             cand.x = dlp.x();
             cand.y = dlp.y();
+            const LocalError le = rh.localPositionError();
+            cand.ex = (le.xx() > 0.) ? std::sqrt(le.xx()) : sigX;
+            cand.ey = (le.yy() > 0.) ? std::sqrt(le.yy()) : sigY;
 
-            const auto lit = linkByChannel.find(digi.channel());
-            if (lit != linkByChannel.end()) {
-              // Linked digi (same-TP or other-TP): angle from ITS OWN parent's
-              // origin-momentum incidence (payload-analyzer convention), smeared
-              // with the PixelAV response; validity coin from valid_prob.
+            // Truth by CHARGE SHARE, not by a single channel: a cluster spans many
+            // channels and may collect charge from several TPs. The dominant
+            // contributor defines the class and the angle parent; a runner-up above
+            // clusterMergeFrac raises kClusterMerged, because such a cluster has a
+            // biased position and an ill-defined incidence angle.
+            const PixelDigiSimLink* domLink = nullptr;
+            if (const SiPixelCluster* cl = rh.cluster().isNonnull() ? &(*rh.cluster()) : nullptr) {
+              cand.sizeX = static_cast<uint8_t>(std::min(cl->sizeX(), 255));
+              cand.sizeY = static_cast<uint8_t>(std::min(cl->sizeY(), 255));
+              cand.charge = cl->charge();
+              std::map<std::pair<uint32_t, unsigned int>, double> qByTp;
+              std::map<std::pair<uint32_t, unsigned int>, const PixelDigiSimLink*> linkByTp;
+              double qTot = 0.;
+              for (const auto& px : cl->pixels()) {
+                qTot += px.adc;
+                const auto lit = linkByChannel.find(
+                    PixelDigi::pixelToChannel(static_cast<int>(px.x), static_cast<int>(px.y)));
+                if (lit == linkByChannel.end())
+                  continue;
+                const auto key = std::make_pair(lit->second->eventId().rawId(), lit->second->SimTrackId());
+                qByTp[key] += px.adc;
+                linkByTp[key] = lit->second;
+              }
+              double qDom = 0., qSecond = 0.;
+              for (const auto& kv : qByTp) {
+                if (kv.second > qDom) {
+                  qSecond = qDom;
+                  qDom = kv.second;
+                  domLink = linkByTp[kv.first];
+                } else if (kv.second > qSecond) {
+                  qSecond = kv.second;
+                }
+              }
+              if (qTot > 0. && qDom > 0.) {
+                cand.chargeFrac = qDom / qTot;
+                cand.merged = (qSecond / qTot) > digiRefitClusterMergeFrac_;
+              }
+            }
+
+            if (domLink != nullptr) {
+              // Linked cluster (same-TP or other-TP): angle from the DOMINANT
+              // contributor's own parent origin-momentum incidence
+              // (payload-analyzer convention), smeared with the PixelAV response;
+              // validity coin from valid_prob.
               // Class (truth-only): same TP as THIS track vs a different TP.
-              cand.cls = (lit->second->eventId() == drMatchedEvtId &&
-                          drMatchedSimIds.count(lit->second->SimTrackId()))
+              cand.cls = (domLink->eventId() == drMatchedEvtId &&
+                          drMatchedSimIds.count(domLink->SimTrackId()))
                              ? int8_t(0)
                              : int8_t(1);
-              const auto mit = drParentMom.find({lit->second->eventId().rawId(), lit->second->SimTrackId()});
+              const auto mit = drParentMom.find({domLink->eventId().rawId(), domLink->SimTrackId()});
               if (mit != drParentMom.end()) {
                 const auto& pm = mit->second;
                 const LocalVector plv = pixDet->toLocal(GlobalVector(pm.px(), pm.py(), pm.pz()));
@@ -1754,10 +1814,10 @@ void L1SmartPixelsTrackProducer::produce(edm::Event& iEvent, const edm::EventSet
                 }
               }
             } else if (corrNoiseCotAlpha_ && corrNoiseCotBeta_) {
-              cand.cls = 2;  // no simlink -> noise
-              // No-link (noise) digi with a Stack-B inclusive angle model:
+              cand.cls = 2;  // no simlink on any pixel of the cluster -> noise
+              // No-link (noise) cluster with a Stack-B inclusive angle model:
               // inverse-CDF draw (layer, uniform quantile). Without the model,
-              // noise digis contribute position only.
+              // noise clusters contribute position only.
               const std::vector<std::variant<int, double, std::string>> na = {
                   layer, CLHEP::RandFlat::shoot(drEngine)};
               const std::vector<std::variant<int, double, std::string>> nb = {
@@ -1789,8 +1849,10 @@ void L1SmartPixelsTrackProducer::produce(edm::Event& iEvent, const edm::EventSet
             }
 
             // Selection chi2 against the prediction (position always; angles when enabled+valid).
-            double sel = std::pow((cand.x - cx.local.x()) / sigX, 2) +
-                         std::pow((cand.y - cx.local.y()) / sigY, 2);
+            // Per-hit CPE uncertainties, not a per-module pitch/sqrt(12) constant:
+            // the selection metric is now the same quantity the KF divides by.
+            double sel = std::pow((cand.x - cx.local.x()) / cand.ex, 2) +
+                         std::pow((cand.y - cx.local.y()) / cand.ey, 2);
             if (useAlpha && cand.hasA)
               sel += std::pow((cand.cotA - cx.cotAlpha) / cand.sigA, 2);
             if (useBeta && cand.hasB)
@@ -1911,8 +1973,8 @@ void L1SmartPixelsTrackProducer::produce(edm::Event& iEvent, const edm::EventSet
             for (int j = 0; j <= i; ++j)
               C(i, j) -= K[i] * v[j];  // K = v/S -> K_i v_j symmetric
         };
-        scalarUpdate(0, best.x, sigX);
-        scalarUpdate(1, best.y, sigY);
+        scalarUpdate(0, best.x, best.ex);
+        scalarUpdate(1, best.y, best.ey);
         if (useAlpha && best.hasA)
           scalarUpdate(2, best.cotA, best.sigA);
         if (useBeta && best.hasB)
@@ -1924,6 +1986,13 @@ void L1SmartPixelsTrackProducer::produce(edm::Event& iEvent, const edm::EventSet
           hi.flags |= smartpixels::hitflag::kHasAlpha;
         if (best.hasB)
           hi.flags |= smartpixels::hitflag::kHasBeta;
+        hi.recoLocalX = static_cast<float>(best.x);
+        hi.recoLocalY = static_cast<float>(best.y);
+        hi.sigX = static_cast<float>(best.ex);
+        hi.sigY = static_cast<float>(best.ey);
+        hi.recoSizeX = best.sizeX;
+        hi.recoSizeY = best.sizeY;
+        hi.recoCharge = static_cast<float>(best.charge);
         hi.projResX = static_cast<float>(best.x - cx.local.x());
         hi.projResY = static_cast<float>(best.y - cx.local.y());
         hi.recoCotAlpha = best.hasA ? static_cast<float>(best.cotA) : -999.f;
@@ -1952,6 +2021,9 @@ void L1SmartPixelsTrackProducer::produce(edm::Event& iEvent, const edm::EventSet
         hi.selHitClass = best.cls;
         hi.truthCotAlpha = static_cast<float>(best.parCotA);
         hi.truthCotBeta = static_cast<float>(best.parCotB);
+        hi.truthChargeFrac = static_cast<float>(best.chargeFrac);
+        if (best.merged)
+          hi.flags |= smartpixels::hitflag::kClusterMerged;
         drHitInfo.push_back(hi);
 
         // Compact-word layer bitmask + per-track chi2 totals (spec §2/§3).
@@ -2210,7 +2282,13 @@ void L1SmartPixelsTrackProducer::fillDescriptions(edm::ConfigurationDescriptions
       ->setComment("per-layer z search-window half-widths [cm] (TBPX L1-L4)");
   desc.add<int>("digiRefitMinHits", 1)->setComment("min attached IT hits to emit a refit track (else passthrough copy)");
   desc.add<std::string>("digiRefitUseAngles", "alpha")->setComment("which synthesized angles enter the refit: none | alpha | alphaBeta");
-  desc.add<int>("digiRefitMaxHitsPerWindow", 8)->setComment("combinatorics truncation: max in-window digis kept per layer (readout order)");
+  desc.add<int>("digiRefitMaxHitsPerWindow", 8)
+      ->setComment("combinatorics truncation: max in-window CLUSTERS kept per layer (readout order). This is a "
+                   "LATENCY model of the match stage, not a fidelity knob: every surviving candidate costs time "
+                   "in the ~1 us refit budget.");
+  desc.add<double>("digiRefitClusterMergeFrac", 0.1)
+      ->setComment("TRUTH-ONLY diagnostic: runner-up charge share above which a cluster is flagged merged "
+                   "(hitflag::kClusterMerged). Such a cluster has a biased position and an ill-defined angle.");
   desc.add<int>("digiRefitMaxKFUpdates", 4)->setComment("max Kalman layer updates applied");
   desc.add<std::string>("digiRefitGainMode", "full")->setComment("full (exact gains) | lut (RESERVED table-driven placeholder)");
   desc.add<double>("digiRefitJacobianMaxAbs", 1.0e4)
@@ -2249,6 +2327,10 @@ void L1SmartPixelsTrackProducer::fillDescriptions(edm::ConfigurationDescriptions
                    "features of the input track). Empty = keep the input trkMVA1. When set, the score replaces the "
                    "refit track's trkMVA1 ctor slot (+ track-word MVA bits); n_features must be 17 or 24 or it throws.");
   desc.add<edm::InputTag>("pixelDigiInputTag", edm::InputTag("simSiPixelDigis", "Pixel"));
+  desc.add<edm::InputTag>("pixelRecHitInputTag", edm::InputTag("spxPixelRecHits"))
+      ->setComment("IT pixel rec hits used as the refit hit candidates. Default is the SmartPixels-owned "
+                   "spxPixelRecHits, clustered from pixelDigiInputTag so that cluster -> digi channel -> "
+                   "simlink truth is consistent by construction; point elsewhere only deliberately.");
   desc.add<edm::InputTag>("pixelDigiSimLinkInputTag", edm::InputTag("simSiPixelDigis", "Pixel"));
   desc.add<edm::InputTag>("simTrackInputTag", edm::InputTag("g4SimHits"));
   descriptions.addWithDefaultLabel(desc);
