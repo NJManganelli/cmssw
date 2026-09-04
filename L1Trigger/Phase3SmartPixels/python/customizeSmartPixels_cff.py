@@ -422,11 +422,14 @@ def useTruthAssociationFromFile(process, associatorLabels=TRUTH_ASSOCIATOR_LABEL
 #    per-track covariance; for inputs without a usable digi tier or jobs
 #    that must not schedule the full L1TrackTrigger step.
 TRACKINPUTMODE_CHOICES = ("reemulateL1TrackFinding", "useStoredTracks", "rebuildTracksFromStubs")
-# Pre-rename spellings, accepted with a deprecation warning for one
-# transition cycle; remove once all drivers use the new names.
-# (redigitizePVignorePU was this mode's short-lived intermediate name; it
-# described the DIGI-step accident, not the mode's actual behavior.)
-_TRACKINPUTMODE_DEPRECATED = {
+# The pre-rename spellings (inJob, redigitizePVignorePU, fromFile,
+# fromFileStubs) and the truthSource= keyword are GONE, not deprecated. They were
+# accepted with a warning for a transition cycle during which NOTHING migrated:
+# of the 222 archived scratch configs, 106 used truthSource= and zero used
+# trackInputMode=. A warning nobody reads is not a migration path, it is a second
+# vocabulary. The archive (config-archive/, tag spxsmoke-archive-2026-09-03)
+# holds every affected config, and doc/ConfigProvenance.md maps old to new.
+_TRACKINPUTMODE_RETIRED = {
     "inJob": "reemulateL1TrackFinding",
     "redigitizePVignorePU": "reemulateL1TrackFinding",
     "fromFile": "useStoredTracks",
@@ -434,22 +437,17 @@ _TRACKINPUTMODE_DEPRECATED = {
 }
 
 
-def _resolveTrackInputMode(trackInputMode, truthSource=None):
-  """Validate trackInputMode; map deprecated spellings (including the old
-  truthSource keyword) onto the current names with a loud warning."""
-  if truthSource is not None:
-    print(f"SmartPixels: the truthSource= keyword is DEPRECATED; "
-          f"use trackInputMode= (got truthSource={truthSource!r})")
-    trackInputMode = truthSource
-  if trackInputMode in _TRACKINPUTMODE_DEPRECATED:
-    new = _TRACKINPUTMODE_DEPRECATED[trackInputMode]
-    print(f"SmartPixels: trackInputMode={trackInputMode!r} is a DEPRECATED "
-          f"spelling; use {new!r}")
-    trackInputMode = new
+def _resolveTrackInputMode(trackInputMode):
+  """Validate trackInputMode, naming the replacement for retired spellings."""
+  if trackInputMode in _TRACKINPUTMODE_RETIRED:
+    raise ValueError(
+        f"trackInputMode={trackInputMode!r} is a RETIRED pre-rename spelling; "
+        f"use {_TRACKINPUTMODE_RETIRED[trackInputMode]!r}. The truthSource= "
+        "keyword is also gone; pass trackInputMode=. See "
+        "L1Trigger/Phase3SmartPixels/doc/ConfigProvenance.md.")
   if trackInputMode not in TRACKINPUTMODE_CHOICES:
     raise ValueError(
-        f"trackInputMode must be one of {TRACKINPUTMODE_CHOICES} "
-        f"(or a deprecated alias {tuple(_TRACKINPUTMODE_DEPRECATED)}), "
+        f"trackInputMode must be one of {TRACKINPUTMODE_CHOICES}, "
         f"got '{trackInputMode}'")
   return trackInputMode
 
@@ -466,7 +464,7 @@ def _resolveTrackInputMode(trackInputMode, truthSource=None):
 PROMPT_HNPAR_CHOICES = (4, 5)
 
 
-def attachFromFileStubsChain(process, extendedTracks=True, promptHnpar=5):
+def attachStubRebuildChain(process, extendedTracks=True, promptHnpar=5):
   """POSTURE C: rebuild NEW-layout L1 tracks from the FILE'S persisted stub tier.
 
   promptHnpar (4 | 5): helix-parameter count of the PROMPT tracklet fit. 5 (DEFAULT,
@@ -555,12 +553,12 @@ def attachFromFileStubsChain(process, extendedTracks=True, promptHnpar=5):
                      "TTTrackAssociatorFromPixelDigisExtended"]
 
   # A Task so unscheduled mode auto-runs the chain; associate it to every path.
-  process.l1tSmartPixelsFromFileStubsTask = cms.Task(
+  process.l1tSmartPixelsStubRebuildTask = cms.Task(
       *[getattr(process, m) for m in chainModules])
   for _, path in process.paths_().items():
-    path.associate(process.l1tSmartPixelsFromFileStubsTask)
+    path.associate(process.l1tSmartPixelsStubRebuildTask)
   for _, epath in process.endpaths_().items():
-    epath.associate(process.l1tSmartPixelsFromFileStubsTask)
+    epath.associate(process.l1tSmartPixelsStubRebuildTask)
   print(f"SmartPixels rebuildTracksFromStubs: prompt tracklet Hnpar={promptHnpar} "
         + ("(5-par PRIME seed: real d0 + 5x5 cov -> usable prompt digiRefit seed)"
            if promptHnpar == 5
@@ -606,7 +604,7 @@ def _applyTrackInputMode(process, trackInputMode, variants, extendedTracks=True,
     process = useTruthAssociationFromFile(
         process, associatorLabels=("TTClusterAssociatorFromPixelDigis",
                                    "TTStubAssociatorFromPixelDigis"))
-    process, attached = attachFromFileStubsChain(process, extendedTracks=extendedTracks,
+    process, attached = attachStubRebuildChain(process, extendedTracks=extendedTracks,
                                                  promptHnpar=promptHnpar)
     removed = ["TTClusterAssociatorFromPixelDigis", "TTStubAssociatorFromPixelDigis"]
   # Load-bearing summary line (mode, chains attached, what was removed).
@@ -709,7 +707,7 @@ def injectSmartPixelsTrackProducer(process,
 # ---------------------------------------------------------------------------
 def smartPixelsCoexist(process, variants=None, correctionSet=DEFAULT_CORRECTION_SET, addNanoTables=True,
                        trackInputMode="reemulateL1TrackFinding", digiRefitConfig=None,
-                       extendedTracks=True, promptHnpar=5, truthSource=None,
+                       extendedTracks=True, promptHnpar=5,
                        allowSignalOnlyRedigitization=False):
   """Add SmartPixels track collections (default: one passthrough variant)
   alongside the standard tracks, plus one pair of L1Nano track tables per
@@ -730,8 +728,8 @@ def smartPixelsCoexist(process, variants=None, correctionSet=DEFAULT_CORRECTION_
      only for the collections the mode actually rebuilds: with
      extendedTracks=False the extended chain still reads stored tracks.
   Truth is REQUIRED for the regression/TP/digiRefit modes (silent per-track
-  passthrough otherwise). The truthSource= keyword is the deprecated name of
-  this option and is honored with a warning.
+  passthrough otherwise). The truthSource= keyword is RETIRED, not deprecated:
+  passing it is a TypeError.
 
   extendedTracks (rebuildTracksFromStubs only): also rebuild the extended
   (displaced) chain so the extended digiRefit variant's inputs are fresh
@@ -755,7 +753,7 @@ def smartPixelsCoexist(process, variants=None, correctionSet=DEFAULT_CORRECTION_
   cmsDriver (defaults):  --customise L1Trigger/Phase3SmartPixels/customizeSmartPixels_cff.smartPixelsCoexist
   cmsDriver (explicit):  --customise_commands 'from L1Trigger.Phase3SmartPixels.customizeSmartPixels_cff import smartPixelsCoexist; process = smartPixelsCoexist(process, variants=[("correctionlibRegression", "1100")])'
   """
-  trackInputMode = _resolveTrackInputMode(trackInputMode, truthSource=truthSource)
+  trackInputMode = _resolveTrackInputMode(trackInputMode)
   if variants is None:
     variants = [("passthrough", None)]
   variants = _normalizeVariants(variants)
@@ -795,7 +793,7 @@ def smartPixelsCoopt(process, mode="passthrough", activeSP=None,
                      correctionSet=DEFAULT_CORRECTION_SET,
                      addPh3Table=False, skipModuleTypes=None,
                      trackInputMode="reemulateL1TrackFinding", digiRefitConfig=None,
-                     extendedTracks=True, promptHnpar=5, truthSource=None,
+                     extendedTracks=True, promptHnpar=5,
                      allowSignalOnlyRedigitization=False):
   """Produce ONE SmartPixels variant in-job and inject it into every downstream
   consumer of the standard tracklet tracks. Any nano flavor run in this job then
@@ -812,7 +810,7 @@ def smartPixelsCoopt(process, mode="passthrough", activeSP=None,
   digis, pileup retained), 'useStoredTracks', or 'rebuildTracksFromStubs'
   (rebuild from file stubs, real PU + real covariance). Truth is REQUIRED for
   the regression/TP/digiRefit modes.
-  truthSource= is the deprecated name.
+  The truthSource= keyword is RETIRED; passing it is a TypeError.
 
   extendedTracks (rebuildTracksFromStubs only): also rebuild the extended
   chain. Default True.
@@ -826,7 +824,7 @@ def smartPixelsCoopt(process, mode="passthrough", activeSP=None,
   cmsDriver (defaults):  --customise L1Trigger/Phase3SmartPixels/customizeSmartPixels_cff.smartPixelsCoopt
   cmsDriver (explicit):  --customise_commands 'from L1Trigger.Phase3SmartPixels.customizeSmartPixels_cff import smartPixelsCoopt; process = smartPixelsCoopt(process, mode="correctionlibRegression", activeSP="1100")'
   """
-  trackInputMode = _resolveTrackInputMode(trackInputMode, truthSource=truthSource)
+  trackInputMode = _resolveTrackInputMode(trackInputMode)
   process, modules = addSmartPixelsTrackProducerVariants(process, [(mode, activeSP)], correctionSet,
                                                          digiRefitConfig=digiRefitConfig)
   process = _scheduleVariantModules(process, modules, "l1tSmartPixelsCooptTask")
