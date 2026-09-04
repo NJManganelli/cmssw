@@ -37,8 +37,9 @@ from L1Trigger.Phase3SmartPixels.customizeSmartPixels_cff import (
     _normalizeVariants,
     _resolveDigiRefitConfig,
     addSmartPixelsTrackProducerVariants,
-    attachFromFileStubsChain,
+    attachStubRebuildChain,
     smartPixelsCoexist,
+    smartPixelsCoopt,
     smartPixelsVariantLabels,
     smartPixelsVariantSuffix,
 )
@@ -360,9 +361,9 @@ for m in ("TTClusterAssociatorFromPixelDigis", "TTStubAssociatorFromPixelDigis",
     check(not hasattr(p_ffs, m),
           f"DIGI-tier/cluster-stub module '{m}' NOT scheduled in-process (rebuildTracksFromStubs)")
 # the stub-rebuild Task exists and contains exactly the chain modules
-check(hasattr(p_ffs, "l1tSmartPixelsFromFileStubsTask"),
-      "stub-rebuild Task l1tSmartPixelsFromFileStubsTask exists")
-_task_names = {mod.label_() for mod in p_ffs.l1tSmartPixelsFromFileStubsTask._collection}
+check(hasattr(p_ffs, "l1tSmartPixelsStubRebuildTask"),
+      "stub-rebuild Task l1tSmartPixelsStubRebuildTask exists")
+_task_names = {mod.label_() for mod in p_ffs.l1tSmartPixelsStubRebuildTask._collection}
 check(_task_names == set(_PROMPT_CHAIN + _EXT_CHAIN),
       f"stub-rebuild Task holds exactly prompt+extended chain (got {sorted(_task_names)})")
 
@@ -376,13 +377,13 @@ for m in _PROMPT_CHAIN:
     check(hasattr(p_ffs_p, m), f"prompt-only build still has '{m}'")
 check(not hasattr(p_ffs_p, "TTTrackAssociatorFromPixelDigisExtended"),
       "extendedTracks=False -> extended track associator NOT cloned")
-_task_names_p = {mod.label_() for mod in p_ffs_p.l1tSmartPixelsFromFileStubsTask._collection}
+_task_names_p = {mod.label_() for mod in p_ffs_p.l1tSmartPixelsStubRebuildTask._collection}
 check(_task_names_p == set(_PROMPT_CHAIN),
       f"prompt-only stub-rebuild Task holds exactly the prompt chain (got {sorted(_task_names_p)})")
 check("l1tTTTracksFromExtendedTrackletEmulation" not in _task_names_p,
       "extendedTracks=False -> extended emulator NOT on the stub-rebuild Task")
 # extended ON vs OFF changes the scheduled module set (knob is live)
-_task_names_on = {mod.label_() for mod in p_ffs.l1tSmartPixelsFromFileStubsTask._collection}
+_task_names_on = {mod.label_() for mod in p_ffs.l1tSmartPixelsStubRebuildTask._collection}
 check(_task_names_on != _task_names_p and _EXT_CHAIN[0] in _task_names_on,
       "extendedTracks on/off changes the scheduled stub-rebuild module set")
 
@@ -393,16 +394,30 @@ def _bad_trackinputmode():
 expect_raises(ValueError, _bad_trackinputmode,
               "unknown trackInputMode raises ValueError", contains="trackInputMode must be one of")
 
-# deprecated pre-rename spellings resolve (one transition cycle)
+# RETIRED pre-rename spellings now RAISE, and the error names the replacement.
+# They were accepted with a warning for a transition cycle in which nothing
+# migrated (106 of 222 archived configs used truthSource=, zero used
+# trackInputMode=), so the alias was a second vocabulary rather than a path.
 from L1Trigger.Phase3SmartPixels.customizeSmartPixels_cff import _resolveTrackInputMode
 for _old, _new in (("inJob", "reemulateL1TrackFinding"),
                    ("redigitizePVignorePU", "reemulateL1TrackFinding"),
                    ("fromFile", "useStoredTracks"),
                    ("fromFileStubs", "rebuildTracksFromStubs")):
-    check(_resolveTrackInputMode(_old) == _new,
-          f"deprecated trackInputMode spelling {_old!r} resolves to {_new!r}")
-check(_resolveTrackInputMode("reemulateL1TrackFinding", truthSource="fromFile") == "useStoredTracks",
-      "deprecated truthSource= keyword overrides and resolves")
+    expect_raises(ValueError, lambda o=_old: _resolveTrackInputMode(o),
+                  f"retired trackInputMode spelling {_old!r} raises",
+                  contains="RETIRED")
+    expect_raises(ValueError, lambda o=_old: _resolveTrackInputMode(o),
+                  f"the error for {_old!r} names {_new!r} as the replacement",
+                  contains=_new)
+# the truthSource= keyword is gone from the signatures entirely -> TypeError
+expect_raises(TypeError,
+              lambda: smartPixelsCoexist(cms.Process("TEST"), truthSource="fromFile"),
+              "retired truthSource= keyword is a TypeError on smartPixelsCoexist",
+              contains="truthSource")
+expect_raises(TypeError,
+              lambda: smartPixelsCoopt(cms.Process("TEST"), truthSource="fromFile"),
+              "retired truthSource= keyword is a TypeError on smartPixelsCoopt",
+              contains="truthSource")
 
 # PU-safety guard: reemulateL1TrackFinding + a scheduled digitisation step is
 # refused (signal-only re-digitization would destroy pileup and its truth).
@@ -414,12 +429,12 @@ expect_raises(RuntimeError, _reemulate_with_digi_step,
               "reemulateL1TrackFinding + digitisation step raises (PU guard)",
               contains="DESTROYS pileup")
 
-# attachFromFileStubsChain returns the chain module list (prompt-only when off)
+# attachStubRebuildChain returns the chain module list (prompt-only when off)
 p_direct = cms.Process("TEST")
 p_direct.pdummy = cms.Path()
-_p, _chain = attachFromFileStubsChain(p_direct, extendedTracks=False)
+_p, _chain = attachStubRebuildChain(p_direct, extendedTracks=False)
 check(_chain == _PROMPT_CHAIN,
-      f"attachFromFileStubsChain(extendedTracks=False) returns prompt chain (got {_chain})")
+      f"attachStubRebuildChain(extendedTracks=False) returns prompt chain (got {_chain})")
 
 # --- (g) promptHnpar (PRIME target: 5-par prompt seed) ----------------------
 print("[g] promptHnpar wiring (5-par prompt seed -> real 5x5 digiRefit seed cov)")
@@ -465,7 +480,7 @@ check(p_hdef.l1tTTTracksFromTrackletEmulation.Hnpar.value() == 5,
       "default promptHnpar (unspecified) == 5 (5-par-only framing: real prompt d0 + 5x5 cov)")
 
 # out-of-vocabulary promptHnpar raises loudly
-expect_raises(ValueError, lambda: attachFromFileStubsChain(
+expect_raises(ValueError, lambda: attachStubRebuildChain(
     (lambda pp: (setattr(pp, "pdummy", cms.Path()) or pp))(cms.Process("TEST")), promptHnpar=6),
     "promptHnpar=6 raises ValueError", contains="promptHnpar must be one of")
 

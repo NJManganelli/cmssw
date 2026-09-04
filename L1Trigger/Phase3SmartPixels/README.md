@@ -51,9 +51,11 @@ The TT truth-association maps are Ref/Ptr-keyed to specific track/cluster/stub
 collections; a stale map applied to remade tracks silently passes tracks through
 the regression/refit producers unmodified (study-breaking). Both
 `smartPixelsCoexist` and `smartPixelsCoopt` therefore take a closed
-`trackInputMode` vocabulary of three modes (deprecated spellings `inJob` /
-`fromFile` / `fromFileStubs` and the `truthSource=` keyword are accepted with a
-warning for one transition cycle):
+`trackInputMode` vocabulary of three modes. The pre-rename spellings (`inJob`,
+`redigitizePVignorePU`, `fromFile`, `fromFileStubs`) and the `truthSource=`
+keyword are **retired, not deprecated**: they raise, and the error names the
+replacement. They were warned-about for a transition cycle in which nothing
+migrated, so they had become a second vocabulary rather than a migration path.
 
 - **`reemulateL1TrackFinding`** (default) — re-run the full L1TrackTrigger
   chain from the input's STORED digi tier, with all truth associators in-job
