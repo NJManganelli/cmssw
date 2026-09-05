@@ -354,6 +354,26 @@ def _addPixelRecHitChain(process, refitModule, digiTag=SPIX_PIXEL_DIGI_TAG):
   return process
 
 
+def ensureSmartPixelsRecHits(process, angleSet, digiTag=SPIX_PIXEL_DIGI_TAG):
+  """Create spixSmartPixelsRecHits (cluster -> rec hit -> +angle) if absent; idempotent.
+
+  Downstream of the cluster chain, upstream of any refit. Single source of the
+  sensor angle estimate: before this existed the synthesis lived inside the refit
+  producer's event loop and could only be reused by copying it.
+  """
+  ensurePixelRecHitChain(process, digiTag)
+  if not hasattr(process, "spixSmartPixelsRecHits"):
+    from L1Trigger.Phase3SmartPixels.smartPixelsRecHits_cfi import smartPixelsRecHits
+    process.spixSmartPixelsRecHits = smartPixelsRecHits.clone(
+        pixelRecHits=cms.InputTag("spixPixelRecHits"),
+        pixelDigiSimLink=digiTag,
+        angleSet=cms.string(angleSet))
+    process.spixSmartPixelsRecHitTask = cms.Task(process.spixSmartPixelsRecHits)
+    if hasattr(process, "spixPixelRecHitTask"):
+      process.spixSmartPixelsRecHitTask.add(process.spixPixelRecHitTask)
+  return process
+
+
 def ensurePixelRecHitChain(process, digiTag=SPIX_PIXEL_DIGI_TAG):
   """Create spixPixelClusters -> spixPixelRecHits if absent; idempotent.
 

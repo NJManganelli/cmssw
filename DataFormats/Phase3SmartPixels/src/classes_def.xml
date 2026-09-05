@@ -1,0 +1,20 @@
+<lcgdict>
+  <!-- SmartPixels RecHit: one per IT pixel cluster, carrying the sensor angle
+       estimate. Truth-free by construction; truth lives in the parallel
+       SmartPixelsRecHitTruth collection. -->
+  <class name="SmartPixelsRecHit" ClassVersion="3">
+    <version ClassVersion="3" checksum="3138385308"/>
+  </class>
+  <class name="std::vector<SmartPixelsRecHit>"/>
+  <class name="edmNew::DetSet<SmartPixelsRecHit>"/>
+  <class name="edmNew::DetSetVector<SmartPixelsRecHit>"/>
+  <class name="edm::Wrapper<edmNew::DetSetVector<SmartPixelsRecHit>>" splitLevel="0"/>
+
+  <class name="SmartPixelsRecHitTruth" ClassVersion="3">
+    <version ClassVersion="3" checksum="82713663"/>
+  </class>
+  <class name="std::vector<SmartPixelsRecHitTruth>"/>
+  <class name="edmNew::DetSet<SmartPixelsRecHitTruth>"/>
+  <class name="edmNew::DetSetVector<SmartPixelsRecHitTruth>"/>
+  <class name="edm::Wrapper<edmNew::DetSetVector<SmartPixelsRecHitTruth>>" splitLevel="0"/>
+</lcgdict>

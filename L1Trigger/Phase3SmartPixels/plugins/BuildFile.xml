@@ -10,7 +10,9 @@
   <use name="DataFormats/GeometrySurface"/>
   <use name="DataFormats/GeometryVector"/>
   <use name="DataFormats/L1TrackTrigger"/>
+  <use name="DataFormats/Phase3SmartPixels"/>
   <use name="DataFormats/SiPixelDetId"/>
+  <use name="DataFormats/TrackerRecHit2D"/>
   <use name="DataFormats/SiPixelDigi"/>
   <use name="DataFormats/TrackerCommon"/>
   <use name="CommonTools/UtilAlgos"/>
