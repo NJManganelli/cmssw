@@ -312,7 +312,8 @@ def addSmartPixelsTrackProducerVariants(process, variants=None, correctionSet=DE
         # The angle now comes from SmartPixelsRecHitProducer upstream, so the
         # payload configures THAT and the refit is engine-free (its old local RNG
         # existed only for the noise-angle draw, which moved with the synthesis).
-        ensureSmartPixelsRecHits(process, digiRefitResolved["pixelavAngleSet"])
+        ensureSmartPixelsRecHits(process, digiRefitResolved["pixelavAngleSet"],
+                                 digiRefitResolved["smarthitFakeSet"])
 
   return process, modules
 
@@ -340,7 +341,7 @@ SPIX_PIXEL_DIGI_TAG = cms.InputTag("simSiPixelDigis", "Pixel")
 
 
 
-def ensureSmartPixelsRecHits(process, angleSet, digiTag=SPIX_PIXEL_DIGI_TAG):
+def ensureSmartPixelsRecHits(process, angleSet, noiseSet="", digiTag=SPIX_PIXEL_DIGI_TAG):
   """Create spixSmartPixelsRecHits (cluster -> rec hit -> +angle) if absent; idempotent.
 
   Downstream of the cluster chain, upstream of any refit. Single source of the
@@ -353,7 +354,8 @@ def ensureSmartPixelsRecHits(process, angleSet, digiTag=SPIX_PIXEL_DIGI_TAG):
     process.spixSmartPixelsRecHits = smartPixelsRecHits.clone(
         pixelRecHits=cms.InputTag("spixPixelRecHits"),
         pixelDigiSimLink=digiTag,
-        angleSet=cms.string(angleSet))
+        angleSet=cms.string(angleSet),
+        noiseSet=cms.string(noiseSet))
     process.spixSmartPixelsRecHitTask = cms.Task(process.spixSmartPixelsRecHits)
     if hasattr(process, "spixPixelRecHitTask"):
       process.spixSmartPixelsRecHitTask.add(process.spixPixelRecHitTask)

@@ -78,6 +78,7 @@ GEOMETRY, ERA, CONDITIONS = "ExtendedRun4D121", "Phase2C22I13M9", "auto:phase2_r
 
 # digiRefitConfig keys this CLI exposes. Everything else takes DIGIREFIT_DEFAULTS.
 REFIT_AXES = {
+    "smarthitFakeSet": str,   # noise-angle inverse CDF; without it "has an angle" is a truth proxy
     "layerOrder": str,
     "useAngles": str,
     "maxHitsPerWindow": int,
