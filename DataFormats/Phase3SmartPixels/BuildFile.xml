@@ -1,0 +1,8 @@
+<use name="DataFormats/Common"/>
+<use name="DataFormats/GeometrySurface"/>
+<use name="DataFormats/GeometryVector"/>
+<use name="DataFormats/SiPixelCluster"/>
+<use name="SimDataFormats/TrackingAnalysis"/>
+<export>
+  <lib name="1"/>
+</export>

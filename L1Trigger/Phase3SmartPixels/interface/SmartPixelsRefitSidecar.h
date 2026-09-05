@@ -82,6 +82,16 @@ namespace smartpixels {
     float projSeedSigX = -999.f, projSeedSigY = -999.f;
     float projSeedCotAlpha = -999.f, projSeedCotBeta = -999.f;
 
+    // Row index of the SELECTED cluster in the untruncated cluster nano table
+    // (L1TSmartPixelsCluster), or -1. Both are produced from the same
+    // SiPixelRecHitCollection with the same filter and iteration order, so the
+    // index is exact -- which matters because matching on POSITION does not work:
+    // both tables store coordinates at 10-bit nano mantissa precision, ~5 um on a
+    // 0.5 cm coordinate, against a 25 um pitch.
+    // Consumers MUST assert cluster[selClusterIdx].detId == hitInfo.detId; that is a
+    // cheap check that the two orderings have not silently diverged.
+    int32_t selClusterIdx = -1;
+
     float selChi2Margin = -999.f;                      // runner-up minus best selection chi2 (>=0); how unambiguous
                                                        // the hit choice was. Sentinel -999.f when no hit accepted or the
                                                        // window held fewer than 2 candidates. Hardware-plausible.
@@ -132,6 +142,10 @@ namespace smartpixels {
     // logDetRatio = ln(det C_seed / det C_refit) >= 0: total information gained,
     // parametrisation-independent and insensitive to WHICH direction shrank.
     float logDetRatio = -999.f;
+    // Index of the TrackingParticle this track is truth-matched to, or -1.
+    // Join key against the cluster table's truthTpIdx: equality means the cluster
+    // came from this track's own particle. TRUTH-ONLY.
+    int32_t matchedTpIdx = -1;
   };
 
   struct SmartPixelsRefitSidecar {

@@ -857,6 +857,8 @@ void L1SmartPixelsTrackProducer::produce(edm::Event& iEvent, const edm::EventSet
   edm::Handle<SiPixelRecHitCollection> drRecHits;
   edm::Handle<edm::DetSetVector<PixelDigiSimLink>> drSimlinks;
   smartpixels::ParentMomentumMap drParentMom;
+  smartpixels::ParentTpIndexMap drParentTpIdx;
+  std::map<unsigned int, unsigned int> drClusterBaseIdx;
   std::unique_ptr<CLHEP::MixMaxRng> drEngineOwned;
   CLHEP::HepRandomEngine* drEngine = nullptr;
   std::array<bool, 4> drActiveLayer{{false, false, false, false}};
@@ -872,6 +874,29 @@ void L1SmartPixelsTrackProducer::produce(edm::Event& iEvent, const edm::EventSet
     // (eventId, trackId)-keyed parent momenta: TPs cover signal + pileup
     // parents; the signal-only SimTrack container backstops pruned TPs.
     drParentMom = smartpixels::buildParentMomentumMap(*drTPs, drSimTracks.product());
+    drParentTpIdx = smartpixels::buildParentTpIndexMap(*drTPs);
+    // Base row index of each module in the untruncated cluster nano table. The
+    // table iterates the SAME SiPixelRecHitCollection in the SAME order with the
+    // SAME filter (TBPX, layer 1..4, non-null cluster), so base + position-within-
+    // module is that cluster's row. Kept here rather than exported from the table
+    // producer because the two modules cannot communicate; the detId assertion on
+    // the analysis side is what makes a divergence loud instead of silent.
+    drClusterBaseIdx.clear();
+    {
+      unsigned running = 0;
+      for (const auto& dsv : *drRecHits) {
+        const DetId did(dsv.detId());
+        if (did.subdetId() != PixelSubdetector::PixelBarrel)
+          continue;
+        const unsigned lay = tTopo->pxbLayer(did);
+        if (lay < 1 || lay > 4)
+          continue;
+        drClusterBaseIdx[dsv.detId()] = running;
+        for (const auto& rh : dsv)
+          if (rh.cluster().isNonnull())
+            ++running;
+      }
+    }
     for (size_t i = 0; i < drActiveLayer.size() && i < smartPixelsActiveLayers_.size(); ++i)
       drActiveLayer[i] = (smartPixelsActiveLayers_[i] == '1');
     if (std::none_of(drActiveLayer.begin(), drActiveLayer.end(), [](bool b) { return b; }))
@@ -1624,6 +1649,13 @@ void L1SmartPixelsTrackProducer::produce(edm::Event& iEvent, const edm::EventSet
       a[2] = iterL1Track->tanL();
       a[3] = iterL1Track->z0();
       a[4] = (digiRefitSeedNPar_ == 5 && iterL1Track->nFitPars() == 5) ? tmp_trk_d0 : 0.0;
+      // Matched-TP identity, for joining clusters to the track that owns them.
+      if (!drMatchedSimIds.empty()) {
+        const auto tit =
+            drParentTpIdx.find({drMatchedEvtId.rawId(), *drMatchedSimIds.begin()});
+        if (tit != drParentTpIdx.end())
+          drTrackInfo.matchedTpIdx = tit->second;
+      }
       // Seed snapshot for the refit-BDT parameter deltas (spec §6a features 11-15).
       const ROOT::Math::SVector<double, 5> aSeed = a;
 
@@ -1793,6 +1825,7 @@ void L1SmartPixelsTrackProducer::produce(edm::Event& iEvent, const edm::EventSet
           double chargeFrac = -999.;        // dominant contributor's share of the charge (truth-only)
           bool merged = false;              // a second TP contributes > clusterMergeFrac
           double parCotA = -999., parCotB = -999.;  // parent local angles (truth-only)
+          int32_t clusterIdx = -1;          // row in the untruncated cluster nano table
         };
         std::vector<HitCand> cands;
         bool windowTruncated = false;
@@ -1807,7 +1840,9 @@ void L1SmartPixelsTrackProducer::produce(edm::Event& iEvent, const edm::EventSet
                 linkByChannel[lk.channel()] = &lk;
             }
           }
+          int rhPos = -1;
           for (const auto& rh : *rhSet) {
+            ++rhPos;
             if (static_cast<int>(cands.size()) >= digiRefitMaxHitsPerWindow_) {
               windowTruncated = true;  // combinatorics truncation in readout order (hardware-like)
               break;
@@ -1818,6 +1853,11 @@ void L1SmartPixelsTrackProducer::produce(edm::Event& iEvent, const edm::EventSet
               continue;
 
             HitCand cand;
+            {
+              const auto bit = drClusterBaseIdx.find(cx.detId);
+              if (bit != drClusterBaseIdx.end())
+                cand.clusterIdx = bit->second + rhPos;
+            }
             cand.x = dlp.x();
             cand.y = dlp.y();
             const LocalError le = rh.localPositionError();
@@ -2071,6 +2111,7 @@ void L1SmartPixelsTrackProducer::produce(edm::Event& iEvent, const edm::EventSet
           hi.flags |= smartpixels::hitflag::kHasAlpha;
         if (best.hasB)
           hi.flags |= smartpixels::hitflag::kHasBeta;
+        hi.selClusterIdx = best.clusterIdx;
         hi.recoLocalX = static_cast<float>(best.x);
         hi.recoLocalY = static_cast<float>(best.y);
         hi.sigX = static_cast<float>(best.ex);

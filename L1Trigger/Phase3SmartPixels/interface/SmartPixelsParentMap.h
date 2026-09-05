@@ -22,6 +22,10 @@
 namespace smartpixels {
 
   using ParentMomentumMap = std::map<std::pair<unsigned int, unsigned int>, math::XYZTLorentzVectorD>;
+  // (EncodedEventId.rawId, SimTrack trackId) -> index into the TrackingParticle
+  // collection. Same key as ParentMomentumMap, so a digi simlink resolves to a TP
+  // IDENTITY, not just a momentum.
+  using ParentTpIndexMap = std::map<std::pair<unsigned int, unsigned int>, int>;
 
   inline ParentMomentumMap buildParentMomentumMap(const std::vector<TrackingParticle>& tps,
                                                   const edm::SimTrackContainer* signalSimTracks) {
@@ -35,6 +39,20 @@ namespace smartpixels {
       const unsigned int sig = EncodedEventId(0, 0).rawId();
       for (const auto& st : *signalSimTracks)
         m.emplace(std::make_pair(sig, st.trackId()), st.momentum());  // no overwrite: TPs win
+    }
+    return m;
+  }
+
+  // A TrackingParticle owns SEVERAL g4Tracks, so "does this cluster belong to that
+  // track's TP" cannot be answered by comparing SimTrack ids -- every g4Track of the
+  // TP must map to the same answer. Mapping every g4Track onto the TP's INDEX gives
+  // exactly that, and turns the question into an integer comparison.
+  inline ParentTpIndexMap buildParentTpIndexMap(const std::vector<TrackingParticle>& tps) {
+    ParentTpIndexMap m;
+    for (size_t i = 0; i < tps.size(); ++i) {
+      const unsigned int evt = tps[i].eventId().rawId();
+      for (const auto& g4 : tps[i].g4Tracks())
+        m.emplace(std::make_pair(evt, g4.trackId()), static_cast<int>(i));
     }
     return m;
   }
