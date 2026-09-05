@@ -80,7 +80,10 @@
 #include "DataFormats/SiPixelDigi/interface/PixelDigi.h"
 #include "DataFormats/TrackerCommon/interface/TrackerTopology.h"
 #include "DataFormats/TrackerRecHit2D/interface/SiPixelRecHitCollection.h"
+#include "Geometry/CommonTopologies/interface/PixelGeomDetUnit.h"
+#include "Geometry/Records/interface/TrackerDigiGeometryRecord.h"
 #include "Geometry/Records/interface/TrackerTopologyRcd.h"
+#include "Geometry/TrackerGeometryBuilder/interface/TrackerGeometry.h"
 #include "L1Trigger/Phase3SmartPixels/interface/SmartPixelsParentMap.h"
 #include "SimDataFormats/Track/interface/SimTrackContainer.h"
 #include "SimDataFormats/TrackerDigiSimLink/interface/PixelDigiSimLink.h"
@@ -100,6 +103,7 @@ public:
         tpToken_(consumes<std::vector<TrackingParticle>>(cfg.getParameter<edm::InputTag>("trackingParticles"))),
         simTrackToken_(consumes<edm::SimTrackContainer>(cfg.getParameter<edm::InputTag>("simTracks"))),
         topoToken_(esConsumes()),
+        geomToken_(esConsumes()),
         tableName_(cfg.getParameter<std::string>("tableName")),
         maxLayer_(cfg.getParameter<unsigned>("maxLayer")),
         doTruth_(cfg.getParameter<bool>("doTruth")) {
@@ -108,6 +112,7 @@ public:
 
   void produce(edm::Event& iEvent, const edm::EventSetup& iSetup) override {
     const auto& topo = iSetup.getData(topoToken_);
+    const auto& geom = iSetup.getData(geomToken_);
     const auto& recHits = iEvent.get(recHitToken_);
 
     smartpixels::ParentMomentumMap parentMom;
@@ -120,6 +125,7 @@ public:
     std::vector<uint8_t> layer, sizeX, sizeY;
     std::vector<uint32_t> detId;
     std::vector<float> localX, localY, sigX, sigY, charge, truthPt, truthChargeFrac;
+    std::vector<float> truthCotAlpha, truthCotBeta;
     std::vector<uint8_t> truthLinked;
 
     for (const auto& dsv : recHits) {
@@ -129,6 +135,7 @@ public:
       const unsigned lay = topo.pxbLayer(did);
       if (lay < 1 || lay > maxLayer_)
         continue;
+      const auto* pdu = dynamic_cast<const PixelGeomDetUnit*>(geom.idToDet(did));
 
       // channel -> best simlink (highest fraction), as the producer builds it
       std::map<unsigned int, const PixelDigiSimLink*> linkByChannel;
@@ -156,7 +163,7 @@ public:
         sizeY.push_back(static_cast<uint8_t>(std::min(cl->sizeY(), 255)));
         charge.push_back(static_cast<float>(cl->charge()));
 
-        float tpt = -999.f, tfrac = -999.f;
+        float tpt = -999.f, tfrac = -999.f, tca = -999.f, tcb = -999.f;
         uint8_t linked = 0;
         if (simLinks != nullptr) {
           std::map<std::pair<uint32_t, unsigned int>, double> qByTp;
@@ -181,10 +188,26 @@ public:
             if (qTot > 0.)
               tfrac = static_cast<float>(qDom / qTot);
             const auto mit = parentMom.find(domKey);
-            if (mit != parentMom.end())
+            if (mit != parentMom.end()) {
               tpt = static_cast<float>(std::hypot(mit->second.px(), mit->second.py()));
+              // Incidence angles of the dominant contributor's PARENT, in this
+              // module's local frame -- the same construction the refit uses before
+              // it applies the PixelAV smear. These are the UNSMEARED truth angles:
+              // they bound how much an alpha/beta cut could ever filter, and are not
+              // what a sensor would report. The smeared reco angle needs the PixelAV
+              // payload and is deliberately left to the refit's own hit records.
+              if (pdu != nullptr) {
+                const auto& pm = mit->second;
+                const LocalVector plv = pdu->toLocal(GlobalVector(pm.px(), pm.py(), pm.pz()));
+                const double ppz = (std::abs(plv.z()) > 1e-9) ? plv.z() : 1e-9;
+                tca = static_cast<float>(plv.x() / ppz);
+                tcb = static_cast<float>(plv.y() / ppz);
+              }
+            }
           }
         }
+        truthCotAlpha.push_back(tca);
+        truthCotBeta.push_back(tcb);
         truthPt.push_back(tpt);
         truthChargeFrac.push_back(tfrac);
         truthLinked.push_back(linked);
@@ -207,6 +230,10 @@ public:
       tab->addColumn<float>("truthPt", truthPt,
                             "TRUTH-ONLY: pT [GeV] of the parent of the DOMINANT charge contributor; "
                             "-999 if unlinked or the parent is absent from the TP+SimTrack map", 10);
+      tab->addColumn<float>("truthCotAlpha", truthCotAlpha,
+                            "TRUTH-ONLY: UNSMEARED local cotAlpha of the dominant contributor's "
+                            "parent; bounds what an angle cut could filter", 12);
+      tab->addColumn<float>("truthCotBeta", truthCotBeta, "TRUTH-ONLY: unsmeared local cotBeta", 12);
       tab->addColumn<float>("truthChargeFrac", truthChargeFrac,
                             "TRUTH-ONLY: dominant contributor's share of the cluster charge", 10);
     }
@@ -231,6 +258,7 @@ private:
   const edm::EDGetTokenT<std::vector<TrackingParticle>> tpToken_;
   const edm::EDGetTokenT<edm::SimTrackContainer> simTrackToken_;
   const edm::ESGetToken<TrackerTopology, TrackerTopologyRcd> topoToken_;
+  const edm::ESGetToken<TrackerGeometry, TrackerDigiGeometryRecord> geomToken_;
   const std::string tableName_;
   const unsigned maxLayer_;
   const bool doTruth_;

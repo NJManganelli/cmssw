@@ -64,6 +64,24 @@ namespace smartpixels {
     // -999.f when no hit was accepted.
     float chi2IncX = -999.f, chi2IncY = -999.f;
     float chi2IncAlpha = -999.f, chi2IncBeta = -999.f;
+    // --- PROJECTION, stored for EVERY valid crossing (not only where a hit was
+    // accepted). Crossings with no accepted hit are exactly where combinatorics
+    // matter most, so making these conditional would hide the interesting cases.
+    //   proj*      : the state as it stands when this layer is visited, i.e. the
+    //                seed updated by whichever layers were visited BEFORE it under
+    //                digiRefitLayerOrder. Order-dependent by construction.
+    //   projSeed*  : the UNMODIFIED OT-only seed helix projected to this layer, with
+    //                no Kalman updates at all. Order-independent, and the honest
+    //                "cold start" a system matching all layers in parallel faces.
+    // projSeedSig{X,Y} = sqrt(H C_seed H^T) in the module-local frame: the
+    // single-shot projection cone from the OT fit's own covariance. It excludes the
+    // measurement term, so it is the TRACK's uncertainty, not an innovation sigma.
+    float projLocalX = -999.f, projLocalY = -999.f;
+    float projCotAlpha = -999.f, projCotBeta = -999.f;
+    float projSeedLocalX = -999.f, projSeedLocalY = -999.f;
+    float projSeedSigX = -999.f, projSeedSigY = -999.f;
+    float projSeedCotAlpha = -999.f, projSeedCotBeta = -999.f;
+
     float selChi2Margin = -999.f;                      // runner-up minus best selection chi2 (>=0); how unambiguous
                                                        // the hit choice was. Sentinel -999.f when no hit accepted or the
                                                        // window held fewer than 2 candidates. Hardware-plausible.
@@ -93,6 +111,27 @@ namespace smartpixels {
     // Per-dimension chi2-increment sums over crossings.
     float chi2IncXTot = -999.f, chi2IncYTot = -999.f;
     float chi2IncAlphaTot = -999.f, chi2IncBetaTot = -999.f;
+
+    // --- seed-vs-refit diagnostics, computable WITHOUT stubs -----------------
+    // A full joint chi2 of stubs + IT hits against the refit needs the stubs, which
+    // a downstream consumer may not have. These use only the IT hits the refit
+    // itself accepted, so they travel with the track.
+    //
+    // chi2ITAtSeed  : chi2 of THOSE hits against the UNMODIFIED OT seed helix.
+    // chi2ITAtRefit : the same hits against the final refit helix.
+    // Their DIFFERENCE is how much the refit improved its own IT description.
+    // Beware the obvious trap: the refit chose these hits by minimising exactly
+    // this quantity, so a large improvement is not by itself evidence of a better
+    // track -- it is equally the signature of having picked wrong hits that the
+    // fit then chased. It discriminates only in combination with the pulls.
+    float chi2ITAtSeed = -999.f, chi2ITAtRefit = -999.f;
+    // shiftChi2 = da^T (C_seed - C_refit)^-1 da, da = a_refit - a_seed: how far the
+    // fit moved measured in units of the information that moving it required.
+    // Sentinel if (C_seed - C_refit) is not invertible.
+    float shiftChi2 = -999.f;
+    // logDetRatio = ln(det C_seed / det C_refit) >= 0: total information gained,
+    // parametrisation-independent and insensitive to WHICH direction shrank.
+    float logDetRatio = -999.f;
   };
 
   struct SmartPixelsRefitSidecar {
