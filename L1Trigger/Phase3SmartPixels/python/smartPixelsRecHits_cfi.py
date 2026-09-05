@@ -13,4 +13,6 @@ smartPixelsRecHits = cms.EDProducer(
     clusterMergeFrac=cms.double(0.1),
     measAngleMaxAbs=cms.double(12.0),
     angleSet=cms.string(""),   # REQUIRED: PixelAV angle-response payload
+    noiseSet=cms.string(""),   # noise-angle inverse CDF; empty = unlinked clusters get NO
+                               # angle, which makes "has an angle" a truth proxy
 )

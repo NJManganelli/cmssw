@@ -39,12 +39,21 @@
 // asymmetry. So the helix is used for ALL clusters, uniformly, and PSimHit is
 // reserved as a validation reference on the signal subset where both exist.
 //
-// NOISE CLUSTERS (no simlink on any pixel) get NO angle here: hasAlpha/hasBeta
-// stay false. The old code drew one from smarthit_noise_cotAlpha/Beta, but that
-// payload is an inverse CDF of the broken production-momentum angle, so it must
-// be re-derived before it can be used again. Leaving the angle absent is the
-// honest state; it is a real sensor operating mode, not a gap to be filled with
-// a filler value.
+// NOISE CLUSTERS (no simlink on any pixel) get an angle from the noiseSet
+// inverse CDF, if one is configured. This matters more than it looks: while
+// unlinked clusters carried NO angle, "reports an angle" was a PERFECT truth
+// proxy -- measured hasAlpha 99.5% for TrackingParticle-linked clusters against
+// 0.0% for unlinked ones -- so every angle-weighted selection rule and every
+// angle-using MVA was buying "is this cluster real" for free. The chi2 weight
+// scan ran to the top of every grid and the per-cluster MVA reached AUC 0.9996
+// for that reason alone.
+//
+// The quantile is NOT drawn from an RNG. It is a deterministic hash of the
+// cluster itself (detId, quantized position, charge, plus a per-angle salt), so
+// the angle is reproducible, independent of event order, and invariant under job
+// splitting -- properties the old CLHEP-engine draw needed a carefully seeded
+// per-event engine to achieve. Two salts give alpha and beta independent draws,
+// matching the previous behaviour.
 
 #include "FWCore/Framework/interface/Event.h"
 #include "FWCore/Framework/interface/EventSetup.h"
@@ -83,6 +92,23 @@
 #include <string>
 #include <vector>
 
+namespace {
+  // splitmix64: deterministic uniform in [0,1) from the cluster's own identity.
+  // Chosen over an RNG so the noise angle is reproducible and split-job invariant
+  // without needing a seeded per-event engine.
+  inline double hashUniform(uint32_t detId, float x, float y, float q, uint64_t salt) {
+    uint64_t z = static_cast<uint64_t>(detId) * 0x9E3779B97F4A7C15ull;
+    z ^= static_cast<uint64_t>(static_cast<int64_t>(std::llround(x * 1e4))) * 0xBF58476D1CE4E5B9ull;
+    z ^= static_cast<uint64_t>(static_cast<int64_t>(std::llround(y * 1e4))) * 0x94D049BB133111EBull;
+    z ^= static_cast<uint64_t>(static_cast<int64_t>(std::llround(q))) * 0xD6E8FEB86659FD93ull;
+    z += salt;
+    z = (z ^ (z >> 30)) * 0xBF58476D1CE4E5B9ull;
+    z = (z ^ (z >> 27)) * 0x94D049BB133111EBull;
+    z = z ^ (z >> 31);
+    return static_cast<double>(z >> 11) * (1.0 / 9007199254740992.0);  // [0,1)
+  }
+}  // namespace
+
 class SmartPixelsRecHitProducer : public edm::stream::EDProducer<> {
 public:
   explicit SmartPixelsRecHitProducer(const edm::ParameterSet&);
@@ -106,6 +132,8 @@ private:
   correction::Correction::Ref corrAlphaSigma_, corrBetaSigma_;
   correction::Correction::Ref corrValidProb_, corrValidFlat_;
   correction::CompoundCorrection::Ref corrAlphaShift_, corrBetaShift_;
+  std::unique_ptr<correction::CorrectionSet> noiseSet_;
+  correction::Correction::Ref corrNoiseCotAlpha_, corrNoiseCotBeta_;
 };
 
 SmartPixelsRecHitProducer::SmartPixelsRecHitProducer(const edm::ParameterSet& cfg)
@@ -133,6 +161,13 @@ SmartPixelsRecHitProducer::SmartPixelsRecHitProducer(const edm::ParameterSet& cf
   corrValidFlat_ = angleSet_->at("spix_angle_valid_flat");
   corrAlphaShift_ = angleSet_->compound().at("spix_angle_alpha_shift");
   corrBetaShift_ = angleSet_->compound().at("spix_angle_beta_shift");
+
+  const std::string np = cfg.getParameter<std::string>("noiseSet");
+  if (!np.empty()) {
+    noiseSet_ = correction::CorrectionSet::from_file(edm::FileInPath(np).fullPath());
+    corrNoiseCotAlpha_ = noiseSet_->at("smarthit_noise_cotAlpha");
+    corrNoiseCotBeta_ = noiseSet_->at("smarthit_noise_cotBeta");
+  }
 
   produces<SmartPixelsRecHitCollection>();
   produces<SmartPixelsRecHitTruthCollection>();
@@ -292,6 +327,30 @@ void SmartPixelsRecHitProducer::produce(edm::Event& iEvent, const edm::EventSetu
         }
       }
 
+      if (domTp < 0 && corrNoiseCotAlpha_ && corrNoiseCotBeta_) {
+        // No simlink on any pixel: the sensor still sees charge and still emits an
+        // angle. Draw from the inclusive per-layer distribution so an unlinked
+        // cluster looks like an arbitrary cluster rather than a flagged special
+        // case -- the whole point, since "reports an angle" was otherwise a
+        // perfect truth proxy.
+        const float lx = rh.localPosition().x(), ly = rh.localPosition().y();
+        const double qa = hashUniform(did.rawId(), lx, ly, cl->charge(), 0x5CA1AB1Eull);
+        const double qb = hashUniform(did.rawId(), lx, ly, cl->charge(), 0xB16B00B5ull);
+        double cotA = corrNoiseCotAlpha_->evaluate({static_cast<int>(lay), qa});
+        double cotB = corrNoiseCotBeta_->evaluate({static_cast<int>(lay), qb});
+        const std::vector<std::variant<int, double, std::string>> pin = {
+            static_cast<int>(lay), cotA, cotB, bLocalY};
+        const double sigA = corrAlphaSigma_->evaluate(pin);
+        const double sigB = corrBetaSigma_->evaluate(pin);
+        bool hasA = sigA > 0., hasB = sigB > 0.;
+        if (std::abs(cotA) > measAngleMaxAbs_)
+          hasA = false;
+        if (std::abs(cotB) > measAngleMaxAbs_)
+          hasB = false;
+        hit.setAngles(static_cast<float>(cotA), static_cast<float>(cotB),
+                      static_cast<float>(sigA), static_cast<float>(sigB), hasA, hasB);
+      }
+
       const float frac = (qTot > 0. && qDom > 0.) ? static_cast<float>(qDom / qTot) : -999.f;
       const bool merged = (qTot > 0.) && ((qSecond / qTot) > clusterMergeFrac_);
       truth.set(domTp >= 0 ? TrackingParticleRef(tps, domTp) : TrackingParticleRef(),
@@ -326,6 +385,12 @@ void SmartPixelsRecHitProducer::fillDescriptions(edm::ConfigurationDescriptions&
   desc.add<double>("measAngleMaxAbs", 12.0)
       ->setComment("a sensor cannot report |cot| beyond this; clears hasAlpha/hasBeta for that angle "
                    "only. A HIT property, which is why it lives here and not in the fit.");
+  desc.add<std::string>("noiseSet", "")
+      ->setComment("inverse-CDF payload giving an angle to clusters with NO simlink "
+                   "(smarthit_noise_cotAlpha/Beta). Leaving it empty means unlinked clusters "
+                   "report no angle at all, which makes 'has an angle' a perfect truth proxy "
+                   "(measured 99.5% vs 0.0%) and silently inflates every angle-using study. "
+                   "Derive with ngtagger-train/eval_spixel_angles/derive_noise_angle_payload.py.");
   desc.add<std::string>("angleSet", "")
       ->setComment("REQUIRED PixelAV angle-response payload (spix_angle_* corrections)");
   descriptions.addWithDefaultLabel(desc);
