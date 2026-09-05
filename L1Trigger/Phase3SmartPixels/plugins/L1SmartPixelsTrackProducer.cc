@@ -403,6 +403,13 @@ private:
   // least unmodelled scattering. Kept as a knob because the opposing argument
   // -- the r-phi window is tightest at L1, so L1 is the least ambiguous match
   // -- is also real, and the two have to be measured against each other.
+  // Store the UNMODIFIED-seed projection (position, cone sigma, angles) for every
+  // crossing. Costs one extra crossLayer plus a 5-point numerical Jacobian per
+  // crossing, i.e. roughly doubles projector work. Default ON: v2.6 is a study
+  // release, and a default-off knob that every study config must remember to set
+  // is precisely the silent-misconfiguration failure mode this package keeps
+  // hitting. Turn it off for timing runs.
+  bool digiRefitStoreSeedProjection_ = true;
   std::string digiRefitLayerOrder_ = "outsideIn";  // "outsideIn" (L4->L1, default) | "insideOut" (L1->L4)
   int digiRefitSeedNPar_ = 5;           // 4 (prompt) | 5 (extended + covariance seed)
   std::string digiRefitPixelavAngleSet_ = "";  // PixelAV angle sigma/bias/valid payload path
@@ -578,6 +585,7 @@ L1SmartPixelsTrackProducer::L1SmartPixelsTrackProducer(edm::ParameterSet const& 
     digiRefitChi2UpdateGate_ = iConfig.getParameter<double>("digiRefitChi2UpdateGate");
     digiRefitMeasAngleMaxAbs_ = iConfig.getParameter<double>("digiRefitMeasAngleMaxAbs");
     digiRefitPredAngleMaxAbs_ = iConfig.getParameter<double>("digiRefitPredAngleMaxAbs");
+    digiRefitStoreSeedProjection_ = iConfig.getParameter<bool>("digiRefitStoreSeedProjection");
     digiRefitLayerOrder_ = iConfig.getParameter<std::string>("digiRefitLayerOrder");
     digiRefitSeedNPar_ = iConfig.getParameter<int>("digiRefitSeedNPar");
     {
@@ -1647,6 +1655,13 @@ void L1SmartPixelsTrackProducer::produce(edm::Event& iEvent, const edm::EventSet
       if (digiRefitSeedNPar_ == 4 || !(C(4, 4) > 0.))
         C(4, 4) = std::max(C(4, 4), 0.25);  // (0.5 cm)^2
 
+      // Seed covariance snapshot, taken AFTER the weak-d0 prior so it is the
+      // covariance the fit actually starts from. C is destroyed in place by the
+      // updates (C -= K v^T) and never restored, so anything that needs the
+      // starting uncertainty -- the single-shot projection cone here, and the
+      // shift/log-det diagnostics to come -- must keep its own copy.
+      const ROOT::Math::SMatrix<double, 5, 5, ROOT::Math::MatRepSym<double, 5>> CSeed = C;
+
       const MagneticField& drField = *bFieldHandle.product();
       const auto makeHelix = [&](const ROOT::Math::SVector<double, 5>& s) {
         smartpixels::HelixParams hp;
@@ -1701,6 +1716,63 @@ void L1SmartPixelsTrackProducer::produce(edm::Event& iEvent, const edm::EventSet
         smartpixels::SmartPixelsRefitHitInfo hi;
         hi.layer = static_cast<uint8_t>(layer);
         hi.detId = cx.detId;
+        // Running projection: cx IS the current state's crossing, so this is free.
+        hi.projLocalX = static_cast<float>(cx.local.x());
+        hi.projLocalY = static_cast<float>(cx.local.y());
+        hi.projCotAlpha = static_cast<float>(cx.cotAlpha);
+        hi.projCotBeta = static_cast<float>(cx.cotBeta);
+        // Seed projection + its cone, from the UNMODIFIED seed helix. Recomputed
+        // per crossing rather than cached because crossLayer resolves the module
+        // from the helix, and the seed may cross a DIFFERENT module than the
+        // updated state does -- silently comparing across modules would corrupt
+        // every band count derived from it.
+        if (digiRefitStoreSeedProjection_) {
+          const smartpixels::Crossing cs =
+              projector_.crossLayer(makeHelix(aSeed), layer, drField, digiRefitPredAngleMaxAbs_);
+          if (cs.valid && cs.detId == cx.detId) {
+            hi.projSeedLocalX = static_cast<float>(cs.local.x());
+            hi.projSeedLocalY = static_cast<float>(cs.local.y());
+            hi.projSeedCotAlpha = static_cast<float>(cs.cotAlpha);
+            hi.projSeedCotBeta = static_cast<float>(cs.cotBeta);
+            // Cone sigma: sqrt(diag(H C_seed H^T)) with H the numerical Jacobian of
+            // (localx, localy) at the SEED state. Same one-sided-difference scheme
+            // and same same-module guard as the update Jacobian below.
+            const double hs0[2] = {cs.local.x(), cs.local.y()};
+            double Hs[2][5] = {{0.}};
+            constexpr std::array<double, 5> kEpsS{{1e-6, 1e-5, 1e-5, 1e-3, 1e-3}};
+            for (int j = 0; j < 5; ++j)
+              for (const double sgn : {+1., -1.}) {
+                ROOT::Math::SVector<double, 5> ap = aSeed;
+                ap[j] += sgn * kEpsS[j];
+                const smartpixels::Crossing cp =
+                    projector_.crossLayer(makeHelix(ap), layer, drField, digiRefitPredAngleMaxAbs_);
+                if (!cp.valid || cp.detId != cs.detId)
+                  continue;
+                const double inv = 1.0 / (sgn * kEpsS[j]);
+                Hs[0][j] = (cp.local.x() - hs0[0]) * inv;
+                Hs[1][j] = (cp.local.y() - hs0[1]) * inv;
+                break;
+              }
+            for (int k = 0; k < 2; ++k) {
+              ROOT::Math::SVector<double, 5> Hrow;
+              bool ok = true;
+              for (int j = 0; j < 5; ++j) {
+                Hrow[j] = Hs[k][j];
+                if (!std::isfinite(Hs[k][j]) || std::abs(Hs[k][j]) > digiRefitJacobianMaxAbs_)
+                  ok = false;
+              }
+              if (!ok)
+                continue;
+              const double var = ROOT::Math::Dot(Hrow, CSeed * Hrow);
+              if (var > 0.) {
+                if (k == 0)
+                  hi.projSeedSigX = static_cast<float>(std::sqrt(var));
+                else
+                  hi.projSeedSigY = static_cast<float>(std::sqrt(var));
+              }
+            }
+          }
+        }
 
         // ---- window-collect + classify CLUSTERS (readout order, FPGA truncation) ----
         // One candidate per reconstructed cluster, not per fired pixel: a pixel is
@@ -2151,6 +2223,67 @@ void L1SmartPixelsTrackProducer::produce(edm::Event& iEvent, const edm::EventSet
         drTrackInfo.nKFUpdates = static_cast<uint8_t>(nUpdates);
         drTrackInfo.layerHitMask = drLayerHitMask;  // popcount == nAcceptedHits (spec §2)
         drTrackInfo.maxWindowMult = static_cast<uint16_t>(drMaxWindowMult);
+
+        // chi2 of the ACCEPTED IT hits against seed vs refit parameters. The seed
+        // side reuses the stored projSeed* (same crossing, same module, already
+        // module-matched); the refit side re-projects the final helix and requires
+        // the SAME module, so a hit whose module moved under the refit is skipped
+        // rather than compared across frames.
+        {
+          double c2Seed = 0., c2Refit = 0.;
+          bool seedOK = digiRefitStoreSeedProjection_;
+          for (const auto& hrec : drHitInfo) {
+            if (!(hrec.flags & smartpixels::hitflag::kHitAccepted))
+              continue;
+            if (!(hrec.sigX > 0.) || !(hrec.sigY > 0.))
+              continue;
+            if (seedOK && hrec.projSeedLocalX > -900.f) {
+              const double dx = hrec.recoLocalX - hrec.projSeedLocalX;
+              const double dy = hrec.recoLocalY - hrec.projSeedLocalY;
+              c2Seed += dx * dx / (hrec.sigX * hrec.sigX) + dy * dy / (hrec.sigY * hrec.sigY);
+            } else {
+              seedOK = false;
+            }
+            const smartpixels::Crossing cr =
+                projector_.crossLayer(makeHelix(a), hrec.layer, drField, digiRefitPredAngleMaxAbs_);
+            if (cr.valid && cr.detId == hrec.detId) {
+              const double dx = hrec.recoLocalX - cr.local.x();
+              const double dy = hrec.recoLocalY - cr.local.y();
+              c2Refit += dx * dx / (hrec.sigX * hrec.sigX) + dy * dy / (hrec.sigY * hrec.sigY);
+            }
+          }
+          if (seedOK)
+            drTrackInfo.chi2ITAtSeed = static_cast<float>(c2Seed);
+          drTrackInfo.chi2ITAtRefit = static_cast<float>(c2Refit);
+        }
+
+        // shiftChi2 and logDetRatio from the seed vs final covariance.
+        {
+          ROOT::Math::SVector<double, 5> da;
+          for (int i = 0; i < 5; ++i)
+            da[i] = a[i] - aSeed[i];
+          // SMatrix arithmetic yields expression templates; materialize before
+          // Inverse/Det2, both of which need a concrete (and for Det2, mutable) matrix.
+          ROOT::Math::SMatrix<double, 5, 5, ROOT::Math::MatRepSym<double, 5>> dC = CSeed - C;
+          int ifail = 0;
+          const auto dCinv = dC.Inverse(ifail);
+          if (ifail == 0) {
+            const double q = ROOT::Math::Dot(da, dCinv * da);
+            if (std::isfinite(q) && q >= 0.)
+              drTrackInfo.shiftChi2 = static_cast<float>(q);
+          }
+          ROOT::Math::SMatrix<double, 5, 5, ROOT::Math::MatRepSym<double, 5>> Cs = CSeed, Cf = C;
+          double dSeed = 0., dRef = 0.;
+          if (!Cs.Det2(dSeed))
+            dSeed = -1.;
+          if (!Cf.Det2(dRef))
+            dRef = -1.;
+          if (dSeed > 0. && dRef > 0.) {
+            const double lr = std::log(dSeed) - std::log(dRef);
+            if (std::isfinite(lr))
+              drTrackInfo.logDetRatio = static_cast<float>(lr);
+          }
+        }
         for (float* tot : {&drTrackInfo.chi2IncXTot,
                            &drTrackInfo.chi2IncYTot,
                            &drTrackInfo.chi2IncAlphaTot,
@@ -2319,6 +2452,11 @@ void L1SmartPixelsTrackProducer::fillDescriptions(edm::ConfigurationDescriptions
       ->setComment("secondary hygiene grazing clamp (spec §6b): a predicted crossing |cotAlpha|/|cotBeta| "
                    "above this bound invalidates the crossing at the projector (no window, no sidecar record). "
                    "Rejects the ~18 non-physical predicted crossings (up to |cotAlpha| 51.8); NOT the gate driver.");
+  desc.add<bool>("digiRefitStoreSeedProjection", true)
+      ->setComment("store projSeedLocalX/Y, projSeedSigX/Y and projSeedCotAlpha/Beta per crossing: "
+                   "the UNMODIFIED OT-seed projection and its covariance-derived cone. Costs one "
+                   "extra crossLayer plus a 5-point Jacobian per crossing. Needed by the "
+                   "combinatorics study; disable for timing measurements.");
   desc.add<std::string>("digiRefitLayerOrder", "outsideIn")
       ->setComment("IT layer visit order for the Kalman loop: outsideIn (L4->L1, default) | insideOut (L1->L4). "
                    "The seed is an OT-only fit, so the projection to a layer carries the unmodelled multiple "
