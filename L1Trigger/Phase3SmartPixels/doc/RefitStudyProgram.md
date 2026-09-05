@@ -556,7 +556,10 @@ studies) or only the totals.
 | `eval_refitq/windows/cluster_era_combinatorics.py` | committed | re-measures multiplicity / pulls / wrong-hit rate in the cluster era |
 | `eval_refitq/windows/ms_term_shape.py` | committed | tests the 1/pT SHAPE of the pull excess and splits out the pT-independent floor |
 | `eval_refitq/wronghits/param_vs_wronghits.py` | committed | 4e observational: refit value by wrong-hit count, plus trust-gate ceiling |
-| `eval_refitq/ordering/layer_order_ab.py` | **new** | paired outsideIn-vs-insideOut A/B (4c), incl. the floor test that gates `Q` |
+| `eval_refitq/ordering/layer_order_ab.py` | committed | paired outsideIn-vs-insideOut A/B (4c) |
+| `eval_refitq/combinatorics/spix_combinatorics_omnibus.py` | committed | OMNIBUS: cone occupancy, containment, angle discrimination, charge gate, unbiased containment. Add studies as `study_*` functions, do not fork |
+| `eval_refitq/sensor/cluster_pt_separability.py` | committed | can a sensor pick trigger-relevant clusters from cluster observables alone? |
+| `SmartPixelsClusterCensusAnalyzer` | committed | cluster occupancy per layer AND per module, plus the module geometry census |
 | measurement-quantization emulator (4a) | **not written** | offline first (quantize nano values, re-derive), producer knob second |
 | `Q` process-noise term | **not written — deliberately blocked on 4c** | see 4c: the floor test decides the calibration target |
 
@@ -565,3 +568,44 @@ migration of `_dataio.py` / `refit_replay.py` / two tests / five
 `modelspace/*` scripts off pre-v2.6 column names, and propagation of the three
 v2.6 commits to the arm mirror and the CMSSW_17 backports — all held because the
 producer will change again for this program.
+
+
+---
+
+## 8. RESULTS AND REVERSALS, 2026-09-03/05
+
+Full detail in `mem:smartpixels-v2p6-state`. Recorded here because several of
+these REVERSE statements made earlier in this document.
+
+### 8a. Layer order settled: outsideIn (§4c prediction confirmed)
+Paired A/B, PU200, event-ID matched. Wrong-hit fraction 0.225/0.136/0.077/0.052
+vs 0.482/0.205/0.131/0.094; clean refits 75.3% vs 53.9%; paired d0 34.1 vs
+77.1 um. Gain localizes entirely to HIT SELECTION (arms equal on tracks clean in
+both). Now the default.
+
+### 8b. The floor test proposed in §4c DOES NOT WORK — withdrawn
+It was meant to separate missing process noise from the single-helix
+approximation. The floor tracks VISIT ORDER too (L1 12.8 um visited last vs
+127.4 first), because `pred` comes from the same collapsed covariance. `Q` is
+therefore NOT blocked on it.
+
+### 8c. The cone works; sizing it is now the blocker
+Covariance cone reduces candidates 30-60x (54.3 -> 1.92 at L1). Unbiased
+containment 0.744 (q95) against an ideal BOX value of 0.903 — note a
+per-coordinate box cut has ideal containment (2*Phi(k)-1)^2, not 0.68/0.95.
+The ~16% loss is the missing `Q`, which makes `Q` the top open item.
+
+### 8d. Readout gating: total charge is disqualified
+Top-8-by-charge keeps 12.6% of needed clusters at PU200. High-pT tracks make
+SHORT, LOW-charge clusters. More generally **pT is not a local observable** (all
+raw-cluster AUC 0.44-0.55); it lives in curvature. `alpha` does carry pT but only
+at the outer layers (perfect-alpha AUC 0.538 -> 0.830 across L1-L4 against raw
+sizeX 0.528 -> 0.615), which is the quantitative case for the on-sensor ML angle
+and says the payoff is at L3/L4.
+
+### 8e. The angle definition was wrong, and is fixed
+The base truth angle was the parent momentum at its PRODUCTION VERTEX, not the
+incidence angle. Measured error 0.041/0.088/0.157/0.196 by layer against a sensor
+resolution of 0.0225. `SmartPixelsRecHitProducer` now propagates the TP helix to
+the hit. RETRACTED: the `spix_angle_*` payload is NOT implicated — it is real
+PixelAV simulation and is sound. `smarthit_noise_*` does still need re-deriving.
