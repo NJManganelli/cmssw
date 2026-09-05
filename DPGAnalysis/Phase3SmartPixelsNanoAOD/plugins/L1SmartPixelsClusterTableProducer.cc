@@ -116,16 +116,19 @@ public:
     const auto& recHits = iEvent.get(recHitToken_);
 
     smartpixels::ParentMomentumMap parentMom;
+    smartpixels::ParentTpIndexMap parentTpIdx;
     const edm::DetSetVector<PixelDigiSimLink>* simLinks = nullptr;
     if (doTruth_) {
       simLinks = &iEvent.get(simLinkToken_);
       parentMom = smartpixels::buildParentMomentumMap(iEvent.get(tpToken_), &iEvent.get(simTrackToken_));
+      parentTpIdx = smartpixels::buildParentTpIndexMap(iEvent.get(tpToken_));
     }
 
     std::vector<uint8_t> layer, sizeX, sizeY;
     std::vector<uint32_t> detId;
     std::vector<float> localX, localY, sigX, sigY, charge, truthPt, truthChargeFrac;
     std::vector<float> truthCotAlpha, truthCotBeta;
+    std::vector<int32_t> truthTpIdx;
     std::vector<uint8_t> truthLinked;
 
     for (const auto& dsv : recHits) {
@@ -164,6 +167,7 @@ public:
         charge.push_back(static_cast<float>(cl->charge()));
 
         float tpt = -999.f, tfrac = -999.f, tca = -999.f, tcb = -999.f;
+        int32_t ttp = -1;
         uint8_t linked = 0;
         if (simLinks != nullptr) {
           std::map<std::pair<uint32_t, unsigned int>, double> qByTp;
@@ -187,6 +191,9 @@ public:
             linked = 1;
             if (qTot > 0.)
               tfrac = static_cast<float>(qDom / qTot);
+            const auto tit = parentTpIdx.find(domKey);
+            if (tit != parentTpIdx.end())
+              ttp = tit->second;
             const auto mit = parentMom.find(domKey);
             if (mit != parentMom.end()) {
               tpt = static_cast<float>(std::hypot(mit->second.px(), mit->second.py()));
@@ -206,6 +213,7 @@ public:
             }
           }
         }
+        truthTpIdx.push_back(ttp);
         truthCotAlpha.push_back(tca);
         truthCotBeta.push_back(tcb);
         truthPt.push_back(tpt);
@@ -230,6 +238,12 @@ public:
       tab->addColumn<float>("truthPt", truthPt,
                             "TRUTH-ONLY: pT [GeV] of the parent of the DOMINANT charge contributor; "
                             "-999 if unlinked or the parent is absent from the TP+SimTrack map", 10);
+      tab->addColumn<int32_t>("truthTpIdx", truthTpIdx,
+                              "TRUTH-ONLY: index of the TrackingParticle owning the DOMINANT charge "
+                              "contributor, or -1. Join key against the refit track table's "
+                              "spixMatchedTpIdx: equality means this cluster came from that track's "
+                              "own particle. A TP owns several SimTracks, so comparing SimTrack ids "
+                              "would give the wrong answer; the TP index is the identity");
       tab->addColumn<float>("truthCotAlpha", truthCotAlpha,
                             "TRUTH-ONLY: UNSMEARED local cotAlpha of the dominant contributor's "
                             "parent; bounds what an angle cut could filter", 12);
