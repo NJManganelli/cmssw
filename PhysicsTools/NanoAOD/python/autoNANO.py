@@ -116,6 +116,27 @@ autoNANO = {
     'L1PFTrkNanoSmartPixwithGen' : {'sequence': '@Phase2L1DPG',
                                     'customize': '+'.join(['@L1PFTrkNanowithGen',
                                                            'DPGAnalysis/Phase3SmartPixelsNanoAOD/l1tPh3SmartPixelsNano_cff.addPh3L1SmartPixelsTracks']),},
+    #  Payload-named SmartPixels study tiers. The suffix names WHAT THE TIER
+    #  CARRIES, not what it is for: purpose drifts, content is checkable.
+    #    ...Clusters : + the UNTRUNCATED IT cluster table. Large (~1 MB/event at
+    #                  PU200) and intended for small-sample tracking/combinatorics
+    #                  studies -- the whole point is the clusters the refit window
+    #                  discards, so it is never filtered or truncated.
+    #    ...Reco     : RESERVED. + full offline RECO quantities for physics, plus
+    #                  enough refit information to interpret them, and NO clusters.
+    #                  Raises until its content is specified.
+    'L1PFTrkNanoSmartPixClusters' : {'sequence': '@Phase2L1DPG',
+                                     'customize': '+'.join(['@L1PFTrkNanoSmartPix',
+                                                            'DPGAnalysis/Phase3SmartPixelsNanoAOD/l1tPh3SmartPixelsNano_cff.addPh3L1SmartPixelsClusters']),},
+    'L1PFTrkNanoSmartPixClusterswithGen' : {'sequence': '@Phase2L1DPG',
+                                            'customize': '+'.join(['@L1PFTrkNanoSmartPixwithGen',
+                                                                   'DPGAnalysis/Phase3SmartPixelsNanoAOD/l1tPh3SmartPixelsNano_cff.addPh3L1SmartPixelsClusters']),},
+    'L1PFTrkNanoSmartPixReco' : {'sequence': '@Phase2L1DPG',
+                                 'customize': '+'.join(['@L1PFTrkNanoSmartPix',
+                                                        'DPGAnalysis/Phase3SmartPixelsNanoAOD/l1tPh3SmartPixelsNano_cff.addPh3L1SmartPixelsReco']),},
+    'L1PFTrkNanoSmartPixRecowithGen' : {'sequence': '@Phase2L1DPG',
+                                        'customize': '+'.join(['@L1PFTrkNanoSmartPixwithGen',
+                                                               'DPGAnalysis/Phase3SmartPixelsNanoAOD/l1tPh3SmartPixelsNano_cff.addPh3L1SmartPixelsReco']),},
     # Muon POG flavours : add tables through customize, supposed to be combined with PHYS
     'MUPOG': {'sequence': '@PHYS',
               'customize': '@PHYS+PhysicsTools/NanoAOD/custom_muon_cff.PrepMuonCustomNanoAOD'},

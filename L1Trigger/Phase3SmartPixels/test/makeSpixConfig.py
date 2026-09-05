@@ -64,7 +64,17 @@ TIERS = {
     "pftrk-truth": ("NANO:@L1PFTrkNanoSmartPixwithGen",    True),
     "pf":         ("NANO:@L1PFNanoSmartPix",               False),
     "pf-truth":   ("NANO:@L1PFNanoSmartPixwithGen",        True),
+    # Payload tiers. "clusters" carries the UNTRUNCATED IT cluster table and is
+    # ~1 MB/event at PU200 -- a small-sample tracking/combinatorics tier, not a
+    # production one. "reco" is RESERVED and raises until its content is defined.
+    "clusters":       ("NANO:@L1PFTrkNanoSmartPixClusters",        False),
+    "clusters-truth": ("NANO:@L1PFTrkNanoSmartPixClusterswithGen", True),
+    "reco":           ("NANO:@L1PFTrkNanoSmartPixReco",            False),
+    "reco-truth":     ("NANO:@L1PFTrkNanoSmartPixRecowithGen",     True),
 }
+
+# Tiers whose per-event size makes a large run a mistake rather than a choice.
+BIG_TIERS = {"clusters", "clusters-truth"}
 
 GEOMETRY, ERA, CONDITIONS = "ExtendedRun4D121", "Phase2C22I13M9", "auto:phase2_realistic_T35"
 
@@ -101,7 +111,7 @@ RELVAL_ABSENT_TABLES = (
     "l1tPuppiCandsTable", "l1tExtPuppiCandsTable", "l1tPFCandsTable",
     "l1tSC4JetCandsTable", "l1tSC4NGJetCandsTable",
     "l1tHGCClusterTable",
-    "l1tPuppiCandHGCClusterLink", "l1tExtPuppiCandHGCClusterLink",
+    "l1tPuppiCandHGCClusterLinkTable", "l1tExtPuppiCandHGCClusterLinkTable",
     "l1tPuppiCandTrackTruthTable", "l1tExtPuppiCandTrackTruthTable",
 )
 
@@ -123,7 +133,7 @@ def build_customise(args, overrides):
         "import FWCore.ParameterSet.Config as cms",
         "from L1Trigger.Phase3SmartPixels.customizeSmartPixels_cff import smartPixelsCoexist",
         "from DPGAnalysis.Phase3SmartPixelsNanoAOD.l1tPh3SmartPixelsNano_cff import "
-        "dropAbsentMenuTables, pruneAbsentSimpleTables",
+        "dropAbsentMenuTables, pruneAbsentSimpleTables, useGenParticlesFromFile, dropOrphanExtensionTables",
         f"process = smartPixelsCoexist(process, variants=[{variant}], addNanoTables=True, "
         f"trackInputMode='{args.track_input_mode}', extendedTracks={args.extended_tracks}, "
         f"promptHnpar={args.prompt_hnpar}, digiRefitConfig={refit!r})",
@@ -133,6 +143,11 @@ def build_customise(args, overrides):
     # curated default (_ABSENT_MENU_TABLES_DEFAULT) covers the ones seen so far;
     # --drop-tables extends it. Not optional: every archived config that ran on a
     # RelVal needed this, and omitting it is a run-time abort, not a warning.
+    # withGen tiers build a MINIAOD-shaped gen chain (finalGenParticles <-
+    # prunedGenParticles). A GEN-SIM-DIGI-RAW RelVal has `genParticles` instead, so
+    # the pruner must be repointed or genParticleTable aborts with ProductNotFound.
+    if TIERS[args.tier][1]:
+        parts.append("process = useGenParticlesFromFile(process)")
     drop = [t for t in (list(_ABSENT_MENU_TABLES_DEFAULT) + list(BASE_PRODUCER_TABLES)
                         + list(RELVAL_ABSENT_TABLES) + args.drop_tables)
             if t not in args.keep_table]
@@ -148,6 +163,9 @@ def build_customise(args, overrides):
         parts.append(
             f"_avail = set(l.strip() for l in open({args.labels_file!r}) if l.strip())")
         parts.append("process = pruneAbsentSimpleTables(process, _avail)")
+    # LAST: whatever the two prunes above removed may have orphaned an extension
+    # table, which aborts the output module (with a segfault alongside).
+    parts.append("process = dropOrphanExtensionTables(process)")
     return "; ".join(parts)
 
 
@@ -250,6 +268,8 @@ def main():
                     help="emit one config per value, identical otherwise (for A/B)")
     ap.add_argument("-o", "--output", required=True,
                     help="output .py path; with --scan, a prefix (_<value>.py appended)")
+    ap.add_argument("--allow-big", action="store_true",
+                    help="permit a large event count on a cluster-carrying tier")
     ap.add_argument("--dry-run", action="store_true",
                     help="print the cmsDriver command instead of running it")
     args = ap.parse_args()
@@ -263,6 +283,12 @@ def main():
     base = dict(parse_kv(s) for s in args.set)
     if args.use_angles:
         base["useAngles"] = args.use_angles
+
+    if args.tier in BIG_TIERS and args.events > 200 and not args.allow_big:
+        raise SystemExit(
+            f"--tier {args.tier} carries the untruncated cluster table (~1 MB/event at "
+            f"PU200); {args.events} events would be ~{args.events/1000:.1f} GB. This tier is "
+            "for small-sample studies. Pass --allow-big if that is really intended.")
 
     jobs = []
     if args.scan:

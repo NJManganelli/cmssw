@@ -716,5 +716,141 @@ def addNGJetTier(process,
     return process
 
 
-# Deprecated pre-rename alias; remove once all drivers use the new name.
-stitchPFTierForPostureC = stitchPFTierForStubRebuild
+# ---------------------------------------------------------------------------
+# Untruncated IT cluster table  (tier: L1PFTrkNanoSmartPixClusters)
+# ---------------------------------------------------------------------------
+# EVERY IT pixel cluster, with no window, no truncation and no truth-pT filter.
+#
+# This is deliberately expensive (~26.5k rows/event at PU200, ~1 MB/event) and
+# belongs ONLY to the Clusters tier, which exists for small-sample tracking and
+# combinatorics studies. The expense is the point: at PU200 the crossed module
+# carries 40.6/32.7/31.6/19.7 clusters on L1-L4 (p95 up to 72), the static window
+# admits about 2 of them, and maxHitsPerWindow truncates at 8. Every question
+# about window sizing or candidate multiplicity is a question about the clusters
+# the current window DISCARDED, so any filtered table is unable to answer it --
+# and a truth-pT filter is actively misleading, since it removes the soft
+# clusters that do the confusing (a >2 GeV cut keeps 2.2% of clusters).
+l1tPh3SmartPixelsClusterTable = cms.EDProducer(
+    "L1SmartPixelsClusterTableProducer",
+    pixelRecHits = cms.InputTag("spixPixelRecHits"),
+    pixelDigiSimLink = cms.InputTag("simSiPixelDigis", "Pixel"),
+    trackingParticles = cms.InputTag("mix", "MergedTrackTruth"),
+    simTracks = cms.InputTag("g4SimHits"),
+    tableName = cms.string("L1TSmartPixelsCluster"),
+    maxLayer = cms.uint32(4),
+    doTruth = cms.bool(True),
+)
+
+
+def addPh3L1SmartPixelsClusters(process, recHitLabel="spixPixelRecHits", doTruth=True):
+    """Add the untruncated IT cluster table (Clusters tier).
+
+    Requires the SmartPixels-owned cluster -> rec-hit chain (spixPixelClusters ->
+    spixPixelRecHits). That chain is created by
+    customizeSmartPixels_cff._addPixelRecHitChain whenever a digiRefit variant is
+    requested; this function does NOT create it, because creating a second,
+    differently-configured clusterizer here is exactly how the cluster table would
+    silently stop describing the clusters the refit actually saw.
+    """
+    # autoNANO --customise functions run BEFORE --customise_commands, so this can
+    # fire before smartPixelsCoexist has built the chain. Build it here if needed:
+    # ensurePixelRecHitChain is idempotent and shared with the digiRefit wiring, so
+    # whichever runs first wins and the other reuses the SAME chain -- which is the
+    # point, since the table must describe the clusters the refit was offered.
+    if recHitLabel == "spixPixelRecHits":
+        from L1Trigger.Phase3SmartPixels.customizeSmartPixels_cff import ensurePixelRecHitChain
+        ensurePixelRecHitChain(process)
+    elif not hasattr(process, recHitLabel):
+        raise RuntimeError(
+            f"addPh3L1SmartPixelsClusters: '{recHitLabel}' is not in the process and is "
+            "not the SmartPixels-owned chain, so it cannot be created here.")
+    # Module label must END in 'Table' (NANOAOD keeps nanoaodFlatTable_*Table_*_*).
+    process.l1tPh3SmartPixelsClusterTable = l1tPh3SmartPixelsClusterTable.clone(
+        pixelRecHits = cms.InputTag(recHitLabel),
+        doTruth = cms.bool(doTruth),
+    )
+    task = cms.Task(process.l1tPh3SmartPixelsClusterTable)
+    process.p3L1SmartPixelsClusterTask = task
+    process.l1tPh2NanoTask.add(task)
+    return process
+
+
+def addPh3L1SmartPixelsReco(process):
+    """RESERVED (tier: L1PFTrkNanoSmartPixReco): full offline RECO quantities for
+    physics studies, plus enough refit information to interpret them, and NO
+    cluster table.
+
+    The name is reserved so the tier can be referred to and scheduled for, but the
+    content is not specified yet. It raises rather than silently producing a tier
+    identical to L1PFTrkNanoSmartPix, which would be indistinguishable downstream
+    from the real thing and would quietly invalidate any study that used it.
+    """
+    raise NotImplementedError(
+        "L1PFTrkNanoSmartPixReco is RESERVED: the tier name exists but its content "
+        "(offline RECO quantities + refit-interpretation columns, no clusters) is not "
+        "defined yet. Use L1PFTrkNanoSmartPix or L1PFTrkNanoSmartPixClusters.")
+
+
+def dropOrphanExtensionTables(process):
+    """Remove FlatTable producers with extension=True whose MAIN table is gone.
+
+    NanoAOD requires an extension table's main table to be written first; if the
+    main was dropped (absent source object on a RelVal) the output module aborts
+    with "Trying to save an extension table for X before having saved the
+    corresponding main table" -- and, worse, it does so with a SEGFAULT alongside
+    the exception, which makes it look like a framework bug rather than a config
+    one. Rather than hand-maintain a parallel list of extensions next to every
+    main in the drop list (which is how this was missed), derive it: any extension
+    whose `name` has no surviving non-extension producer is unusable and goes.
+    """
+    def _val(param):
+        # Some table producers declare `name`/`extension` as _RequiredParameter
+        # (declared but unset). Those carry no value and must be skipped, not
+        # crashed on.
+        try:
+            return param.value()
+        except AttributeError:
+            return None
+
+    def _tables(proc):
+        for label in list(proc.producers_()):
+            mod = getattr(proc, label)
+            if not (hasattr(mod, "name") and hasattr(mod, "extension")):
+                continue
+            nm, ext = _val(mod.name), _val(mod.extension)
+            if nm is None or ext is None:
+                continue
+            yield label, mod, nm, ext
+
+    mains = {nm for _, _, nm, ext in _tables(process) if not ext}
+    dropped = []
+
+    # Link-table producers (L1JetCandLinkTableProducer and friends) also emit an
+    # EXTENSION on the candidate table, but declare it as candTableName +
+    # writeCandExtension rather than name + extension, so the check above is blind
+    # to them. This is how L1ExtPuppiCand survived every explicit drop list.
+    for label in list(process.producers_()):
+        mod = getattr(process, label)
+        if not (hasattr(mod, "candTableName") and hasattr(mod, "writeCandExtension")):
+            continue
+        if not _val(mod.writeCandExtension):
+            continue
+        if _val(mod.candTableName) in mains:
+            continue
+        mod.writeCandExtension = cms.bool(False)
+        print(f"SmartPixels: disabled writeCandExtension on '{label}' (candidate table "
+              f"'{_val(mod.candTableName)}' is not produced)")
+    for label, mod, nm, ext in _tables(process):
+        if ext and nm not in mains:
+            for container in (list(process.tasks.values()) + list(process.sequences.values())
+                              + list(process.paths.values()) + list(process.endpaths.values())):
+                try:
+                    container.remove(mod)
+                except Exception:
+                    pass
+            delattr(process, label)
+            dropped.append((label, nm))
+    for label, name in dropped:
+        print(f"SmartPixels: removed ORPHAN extension table '{label}' (main table "
+              f"'{name}' is not produced)")
+    return process
