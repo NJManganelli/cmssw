@@ -731,17 +731,14 @@ def addNGJetTier(process,
 # clusters that do the confusing (a >2 GeV cut keeps 2.2% of clusters).
 l1tPh3SmartPixelsClusterTable = cms.EDProducer(
     "L1SmartPixelsClusterTableProducer",
-    pixelRecHits = cms.InputTag("spixPixelRecHits"),
-    pixelDigiSimLink = cms.InputTag("simSiPixelDigis", "Pixel"),
-    trackingParticles = cms.InputTag("mix", "MergedTrackTruth"),
-    simTracks = cms.InputTag("g4SimHits"),
+    smartPixelsRecHits = cms.InputTag("spixSmartPixelsRecHits"),
     tableName = cms.string("L1TSmartPixelsCluster"),
     maxLayer = cms.uint32(4),
     doTruth = cms.bool(True),
 )
 
 
-def addPh3L1SmartPixelsClusters(process, recHitLabel="spixPixelRecHits", doTruth=True):
+def addPh3L1SmartPixelsClusters(process, recHitLabel="spixSmartPixelsRecHits", doTruth=True):
     """Add the untruncated IT cluster table (Clusters tier).
 
     Requires the SmartPixels-owned cluster -> rec-hit chain (spixPixelClusters ->
@@ -751,21 +748,16 @@ def addPh3L1SmartPixelsClusters(process, recHitLabel="spixPixelRecHits", doTruth
     differently-configured clusterizer here is exactly how the cluster table would
     silently stop describing the clusters the refit actually saw.
     """
-    # autoNANO --customise functions run BEFORE --customise_commands, so this can
-    # fire before smartPixelsCoexist has built the chain. Build it here if needed:
-    # ensurePixelRecHitChain is idempotent and shared with the digiRefit wiring, so
-    # whichever runs first wins and the other reuses the SAME chain -- which is the
-    # point, since the table must describe the clusters the refit was offered.
-    if recHitLabel == "spixPixelRecHits":
-        from L1Trigger.Phase3SmartPixels.customizeSmartPixels_cff import ensurePixelRecHitChain
-        ensurePixelRecHitChain(process)
-    elif not hasattr(process, recHitLabel):
-        raise RuntimeError(
-            f"addPh3L1SmartPixelsClusters: '{recHitLabel}' is not in the process and is "
-            "not the SmartPixels-owned chain, so it cannot be created here.")
+    # The producer need NOT exist yet: autoNANO --customise functions run BEFORE
+    # --customise_commands, so smartPixelsCoexist -- which builds
+    # spixSmartPixelsRecHits and owns the PixelAV payload -- has not run at this
+    # point. An InputTag is just a label and resolves at run time. This table
+    # deliberately does NOT build its own rec hits: it must describe the SAME ones,
+    # with the SAME angles, that the refit consumed. smartPixelsCoexist asserts
+    # that pairing at the end, where the final process is visible.
     # Module label must END in 'Table' (NANOAOD keeps nanoaodFlatTable_*Table_*_*).
     process.l1tPh3SmartPixelsClusterTable = l1tPh3SmartPixelsClusterTable.clone(
-        pixelRecHits = cms.InputTag(recHitLabel),
+        smartPixelsRecHits = cms.InputTag(recHitLabel),
         doTruth = cms.bool(doTruth),
     )
     task = cms.Task(process.l1tPh3SmartPixelsClusterTable)

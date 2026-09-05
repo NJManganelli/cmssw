@@ -113,8 +113,12 @@ _m = getattr(p_dr, _dr_prompt)
 check(_m.smartPixelsEmulatorMode.value() == "digiRefit", "mode set to digiRefit")
 check(_m.digiRefitSeedNPar.value() == 5, "seedNPar default is 5")
 check(_m.digiRefitUseAngles.value() == "alpha", "useAngles default is alpha")
-check(_m.digiRefitPixelavAngleSet.value() == _DR_CFG["pixelavAngleSet"],
-      "pixelavAngleSet carried onto the module")
+check(_m.smartPixelsRecHitInputTag.value() == "spixSmartPixelsRecHits",
+      "refit reads the SmartPixelsRecHit product, not raw pixel rec hits")
+check(hasattr(p_dr, "spixSmartPixelsRecHits"),
+      "the upstream SmartPixelsRecHitProducer is scheduled")
+check(p_dr.spixSmartPixelsRecHits.angleSet.value() == _DR_CFG["pixelavAngleSet"],
+      "pixelavAngleSet configures the RECHIT producer (single source of the angle)")
 # KF numerical guards (spec §6b) default onto the module and take the
 # investigation-chosen values.
 check(_m.digiRefitJacobianMaxAbs.value() == DIGIREFIT_DEFAULTS["jacobianMaxAbs"] == 1.0e4,
@@ -181,18 +185,12 @@ check(_m_bdt.digiRefitBdtModel.value() == "L1Trigger/Phase3SmartPixels/data/refi
 # (the producer will warn at construction -- cmsRun-gated, DEFERRED).
 check("smarthitTrueSet" in DIGIREFIT_DEFAULTS and DIGIREFIT_DEFAULTS["smarthitTrueSet"] == "",
       "smarthitTrueSet is a RESERVED key defaulting to empty (no shipped path)")
-check(_m.digiRefitSmarthitTrueSet.value() == "",
-      "default recipe passes an EMPTY smarthitTrueSet path (smarthit_true not consumed)")
-_m_true = getattr(
-    addSmartPixelsTrackProducerVariants(
-        cms.Process("TEST"), variants=[("digiRefit", "1100")],
-        digiRefitConfig={"pixelavAngleSet": "dummy/x.json",
-                         "smarthitTrueSet": "dummy/smarthit_true_example.json"})[0],
-    _dr_prompt)
-check(_m_true.digiRefitSmarthitTrueSet.value() == "dummy/smarthit_true_example.json",
-      "setting smarthitTrueSet still validates and carries onto the module (RESERVED, warns at ctor)")
-# The RNG scheme is now producer-side (local per-event engine seeded from
-# hash(label,run,lumi,event)); NO RandomNumberGeneratorService is wired.
+check(not hasattr(_m, "digiRefitSmarthitTrueSet"),
+      "smarthitTrueSet no longer reaches the refit module: the payload surface moved upstream "
+      "to SmartPixelsRecHitProducer with the angle synthesis")
+# No RandomNumberGeneratorService: the refit is now engine-free entirely (its old
+# local engine existed only for the noise-angle draw, which moved upstream with
+# the synthesis).
 check(not hasattr(p_dr, "RandomNumberGeneratorService"),
       "no RandomNumberGeneratorService is added (RNG is per-event, producer-side)")
 # Determinism at config level: two identical builds produce identical module
