@@ -64,17 +64,15 @@ TIERS = {
     "pftrk-truth": ("NANO:@L1PFTrkNanoSmartPixwithGen",    True),
     "pf":         ("NANO:@L1PFNanoSmartPix",               False),
     "pf-truth":   ("NANO:@L1PFNanoSmartPixwithGen",        True),
-    # Payload tiers. "clusters" carries the UNTRUNCATED IT cluster table and is
-    # ~1 MB/event at PU200 -- a small-sample tracking/combinatorics tier, not a
-    # production one. "reco" is RESERVED and raises until its content is defined.
+    # Payload tiers. "clusters" carries the UNTRUNCATED IT cluster table: ~26.5k
+    # rows/event at PU200, measured 0.29 MB/event (88.6 stored bits/cluster).
+    # "reco" is RESERVED and raises until its content is defined.
     "clusters":       ("NANO:@L1PFTrkNanoSmartPixClusters",        False),
     "clusters-truth": ("NANO:@L1PFTrkNanoSmartPixClusterswithGen", True),
     "reco":           ("NANO:@L1PFTrkNanoSmartPixReco",            False),
     "reco-truth":     ("NANO:@L1PFTrkNanoSmartPixRecowithGen",     True),
 }
 
-# Tiers whose per-event size makes a large run a mistake rather than a choice.
-BIG_TIERS = {"clusters", "clusters-truth"}
 
 GEOMETRY, ERA, CONDITIONS = "ExtendedRun4D121", "Phase2C22I13M9", "auto:phase2_realistic_T35"
 
@@ -268,8 +266,6 @@ def main():
                     help="emit one config per value, identical otherwise (for A/B)")
     ap.add_argument("-o", "--output", required=True,
                     help="output .py path; with --scan, a prefix (_<value>.py appended)")
-    ap.add_argument("--allow-big", action="store_true",
-                    help="permit a large event count on a cluster-carrying tier")
     ap.add_argument("--dry-run", action="store_true",
                     help="print the cmsDriver command instead of running it")
     args = ap.parse_args()
@@ -283,12 +279,6 @@ def main():
     base = dict(parse_kv(s) for s in args.set)
     if args.use_angles:
         base["useAngles"] = args.use_angles
-
-    if args.tier in BIG_TIERS and args.events > 200 and not args.allow_big:
-        raise SystemExit(
-            f"--tier {args.tier} carries the untruncated cluster table (~1 MB/event at "
-            f"PU200); {args.events} events would be ~{args.events/1000:.1f} GB. This tier is "
-            "for small-sample studies. Pass --allow-big if that is really intended.")
 
     jobs = []
     if args.scan:

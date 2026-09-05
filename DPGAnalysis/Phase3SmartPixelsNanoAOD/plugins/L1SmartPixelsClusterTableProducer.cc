@@ -11,9 +11,53 @@
 // than useless: it removes precisely the soft clusters that do the confusing,
 // which would make the measured combinatorics optimistic by ~45x.
 //
-// This is consequently a LARGE table (~26.5k rows/event at PU200, ~1 MB/event)
-// and belongs only to the L1PFTrkNanoSmartPixClusters tier, which exists for
-// small-sample tracking studies. It is never added to a physics tier.
+// It is consequently a large table (~26.5k rows/event at PU200) and belongs only
+// to the L1PFTrkNanoSmartPixClusters tier. It is never added to a physics tier.
+// Measured cost is 0.29 MB/event -- see the payload breakdown below.
+//
+// WHAT A "MODULE" IS (D121 geometry, measured by SmartPixelsClusterCensusAnalyzer).
+// One module == one PixelGeomDetUnit == one DetId == the unit this table's detId
+// column identifies and the unit the refit candidate loop scans:
+//
+//   layer  modules  rows x cols  pixels/module  ROCs(x,y)  rows,cols/ROC  pitch [um]
+//     L1     216     672 x 216      145 152        1 x 1     672 x 216     25 x 100
+//     L2     216     672 x 434      291 648        1 x 2     672 x 217     25 x 100
+//     L3     180    1354 x 434      587 636        2 x 2     677 x 217     25 x 100
+//     L4     252    1354 x 434      587 636        2 x 2     677 x 217     25 x 100
+//                                                        (864 TBPX modules total)
+//
+// There is NO separate "sensor" DetId in CMSSW: the sensor and its readout-chip
+// array are a single detUnit addressed as one pixel matrix. The nearest thing to a
+// sensor subdivision is the topology's ROC tiling above (rocsX x rocsY) -- an L1
+// module is one tile, an L3/L4 module is a 2x2 array of tiles ~677x217 pixels each.
+// Treat that tiling as CMSSW's pixel-addressing granularity, NOT as a verified 1:1
+// map to physical RD53 chips; nothing here establishes the latter.
+//
+// Physical extent follows from pitch: an L1 module is 672*25um x 216*100um =
+// 16.8 x 21.6 mm; an L3/L4 module is 33.9 x 43.4 mm.
+//
+// PER-CLUSTER PAYLOAD, measured on a real file (not estimated):
+//
+//   column             stored bits/cluster
+//   localX                  17.8
+//   localY                  17.7
+//   charge                  12.6
+//   truthPt                 12.2   TRUTH-ONLY
+//   detId                    7.5
+//   sizeX                    4.4
+//   sizeY                    4.1
+//   sigY                     3.9
+//   sigX                     3.8
+//   truthChargeFrac          2.2   TRUTH-ONLY
+//   layer                    1.2
+//   truthLinked              1.1   TRUTH-ONLY
+//   TOTAL                   88.6 bits = 11.1 B/cluster stored (37.0 B raw)
+//
+// Floats are written with 10-bit mantissa precision, which is why sigX/sigY (nearly
+// constant per module) cost under 4 bits while localX/localY (genuinely uniform
+// across the module) cost ~18. At the measured PU200 occupancy of 26 479
+// clusters/event that is 0.29 MB/event stored -- 3.4x smaller than a naive
+// 37 B/cluster estimate, which is why it was measured rather than assumed.
 //
 // truthPt is the pT of the PARENT of the cluster's DOMINANT charge contributor,
 // assigned by the SAME charge-share logic L1SmartPixelsTrackProducer uses

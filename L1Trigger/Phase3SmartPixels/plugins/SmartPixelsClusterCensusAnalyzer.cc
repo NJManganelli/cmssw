@@ -34,6 +34,10 @@
 
 #include "DataFormats/Common/interface/DetSetVector.h"
 #include "DataFormats/SiPixelDetId/interface/PixelSubdetector.h"
+#include "Geometry/CommonTopologies/interface/PixelGeomDetUnit.h"
+#include "Geometry/CommonTopologies/interface/PixelTopology.h"
+#include "Geometry/Records/interface/TrackerDigiGeometryRecord.h"
+#include "Geometry/TrackerGeometryBuilder/interface/TrackerGeometry.h"
 #include "DataFormats/SiPixelCluster/interface/SiPixelCluster.h"
 #include "DataFormats/SiPixelDigi/interface/PixelDigi.h"
 #include "DataFormats/TrackerCommon/interface/TrackerTopology.h"
@@ -66,6 +70,7 @@ private:
   const edm::EDGetTokenT<std::vector<TrackingParticle>> tpToken_;
   const edm::EDGetTokenT<edm::SimTrackContainer> simTrackToken_;
   const edm::ESGetToken<TrackerTopology, TrackerTopologyRcd> topoToken_;
+  const edm::ESGetToken<TrackerGeometry, TrackerDigiGeometryRecord> geomToken_;
   const std::vector<double> ptThresholds_;
 
   static constexpr int kNLayers = 4;
@@ -83,6 +88,12 @@ private:
   std::array<long, kNLayers> nClusOnOcc_{};         // clusters on those modules
   std::array<long, kNLayers> nModulesGe4_{};        // modules with >=4 clusters
   std::array<std::vector<int>, kNLayers> perModule_;  // for quantiles
+  // Geometry census (filled once): what a "module" physically is.
+  bool geomDone_ = false;
+  std::array<long, kNLayers> geomModules_{};
+  std::array<int, kNLayers> geomRows_{}, geomCols_{};
+  std::array<int, kNLayers> geomRocsX_{}, geomRocsY_{}, geomRowsPerRoc_{}, geomColsPerRoc_{};
+  std::array<float, kNLayers> geomPitchX_{}, geomPitchY_{};
 };
 
 SmartPixelsClusterCensusAnalyzer::SmartPixelsClusterCensusAnalyzer(const edm::ParameterSet& iConfig)
@@ -92,12 +103,41 @@ SmartPixelsClusterCensusAnalyzer::SmartPixelsClusterCensusAnalyzer(const edm::Pa
       tpToken_(consumes<std::vector<TrackingParticle>>(iConfig.getParameter<edm::InputTag>("trackingParticleInputTag"))),
       simTrackToken_(consumes<edm::SimTrackContainer>(iConfig.getParameter<edm::InputTag>("simTrackInputTag"))),
       topoToken_(esConsumes()),
+      geomToken_(esConsumes()),
       ptThresholds_(iConfig.getParameter<std::vector<double>>("ptThresholds")) {
   nPass_.resize(ptThresholds_.size());
 }
 
 void SmartPixelsClusterCensusAnalyzer::analyze(const edm::Event& iEvent, const edm::EventSetup& iSetup) {
   const auto& topo = iSetup.getData(topoToken_);
+  if (!geomDone_) {
+    geomDone_ = true;
+    // What IS a "module" here: one PixelGeomDetUnit, i.e. one DetId, i.e. the unit
+    // the candidate loop scans. Recorded with hard numbers so "40 clusters per
+    // module" can be turned into an occupancy per pixel and per ROC.
+    const auto& geom = iSetup.getData(geomToken_);
+    for (const auto* det : geom.detUnits()) {
+      const DetId did = det->geographicalId();
+      if (did.subdetId() != PixelSubdetector::PixelBarrel)
+        continue;
+      const unsigned lay = topo.pxbLayer(did);
+      if (lay < 1 || lay > kNLayers)
+        continue;
+      const auto* pdu = dynamic_cast<const PixelGeomDetUnit*>(det);
+      if (pdu == nullptr)
+        continue;
+      const PixelTopology& pt = pdu->specificTopology();
+      ++geomModules_[lay - 1];
+      geomRows_[lay - 1] = pt.nrows();
+      geomCols_[lay - 1] = pt.ncolumns();
+      geomRocsX_[lay - 1] = pt.rocsX();
+      geomRocsY_[lay - 1] = pt.rocsY();
+      geomRowsPerRoc_[lay - 1] = pt.rowsperroc();
+      geomColsPerRoc_[lay - 1] = pt.colsperroc();
+      geomPitchX_[lay - 1] = pt.pitch().first;
+      geomPitchY_[lay - 1] = pt.pitch().second;
+    }
+  }
 
   edm::Handle<SiPixelRecHitCollection> recHits;
   iEvent.getByToken(recHitToken_, recHits);
@@ -238,6 +278,25 @@ void SmartPixelsClusterCensusAnalyzer::endJob() {
        << std::setw(18) << std::setprecision(3)
        << (nModulesOcc_[l] ? double(nModulesGe4_[l]) / double(nModulesOcc_[l]) : 0.0) << "\n";
   }
+  os << "\n  GEOMETRY: what a \"module\" is. One module == one PixelGeomDetUnit == one\n"
+        "  DetId == the unit the refit candidate loop scans. A module is subdivided into\n"
+        "  ROCs (readout chips); there is no separate 'sensor' DetId in CMSSW -- the\n"
+        "  sensor and its ROC array are one detUnit, addressed as a single pixel matrix.\n";
+  os << "  layer  modules   rows x cols     pixels/module   ROCs(x,y)   rows,cols per ROC"
+        "   pitch x,y [um]   occupancy\n";
+  for (int l = 0; l < kNLayers; ++l) {
+    if (geomModules_[l] == 0)
+      continue;
+    const long pix = static_cast<long>(geomRows_[l]) * geomCols_[l];
+    const double occ = (nModulesOcc_[l] && pix)
+                           ? (double(nClusOnOcc_[l]) / double(nModulesOcc_[l])) / double(pix) : 0.0;
+    os << "    L" << (l + 1) << std::setw(9) << geomModules_[l] << std::setw(10) << geomRows_[l] << " x "
+       << geomCols_[l] << std::setw(14) << pix << std::setw(12) << geomRocsX_[l] << "," << geomRocsY_[l]
+       << std::setw(14) << geomRowsPerRoc_[l] << "," << geomColsPerRoc_[l] << std::setw(14)
+       << std::setprecision(1) << geomPitchX_[l] * 1e4 << "," << geomPitchY_[l] * 1e4
+       << std::setw(14) << std::scientific << std::setprecision(2) << occ << std::fixed << "\n";
+  }
+  os << "  (occupancy = clusters per occupied module / pixels per module)\n";
   os << "\nNOTE 'noLink' clusters carry no simlink on any pixel (noise-like) and can\n"
         "never pass a truth-pT cut; 'noParent' are linked but their parent momentum is\n"
         "absent from the TP+SimTrack map. Both are counted in 'all' and excluded from\n"

@@ -118,10 +118,10 @@ autoNANO = {
                                                            'DPGAnalysis/Phase3SmartPixelsNanoAOD/l1tPh3SmartPixelsNano_cff.addPh3L1SmartPixelsTracks']),},
     #  Payload-named SmartPixels study tiers. The suffix names WHAT THE TIER
     #  CARRIES, not what it is for: purpose drifts, content is checkable.
-    #    ...Clusters : + the UNTRUNCATED IT cluster table. Large (~1 MB/event at
-    #                  PU200) and intended for small-sample tracking/combinatorics
-    #                  studies -- the whole point is the clusters the refit window
-    #                  discards, so it is never filtered or truncated.
+    #    ...Clusters : + the UNTRUNCATED IT cluster table (~26.5k rows/event at
+    #                  PU200, measured 0.29 MB/event). The whole point is the
+    #                  clusters the refit window discards, so it is never filtered
+    #                  or truncated.
     #    ...Reco     : RESERVED. + full offline RECO quantities for physics, plus
     #                  enough refit information to interpret them, and NO clusters.
     #                  Raises until its content is specified.

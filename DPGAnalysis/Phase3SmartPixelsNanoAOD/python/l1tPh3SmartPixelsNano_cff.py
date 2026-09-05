@@ -721,9 +721,8 @@ def addNGJetTier(process,
 # ---------------------------------------------------------------------------
 # EVERY IT pixel cluster, with no window, no truncation and no truth-pT filter.
 #
-# This is deliberately expensive (~26.5k rows/event at PU200, ~1 MB/event) and
-# belongs ONLY to the Clusters tier, which exists for small-sample tracking and
-# combinatorics studies. The expense is the point: at PU200 the crossed module
+# ~26.5k rows/event at PU200, measured at 88.6 stored bits/cluster = 0.29 MB/event.
+# Belongs ONLY to the Clusters tier. The size is the point: at PU200 the crossed module
 # carries 40.6/32.7/31.6/19.7 clusters on L1-L4 (p95 up to 72), the static window
 # admits about 2 of them, and maxHitsPerWindow truncates at 8. Every question
 # about window sizing or candidate multiplicity is a question about the clusters
