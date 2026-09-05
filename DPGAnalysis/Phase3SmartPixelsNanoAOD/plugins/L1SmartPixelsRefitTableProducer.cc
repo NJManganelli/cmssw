@@ -204,20 +204,20 @@ public:
 
     // EXTENSION table on the variant track table (extension=true -> merged by name)
     auto trkTable = std::make_unique<nanoaod::FlatTable>(nTracks, trackTableName_, false, true);
-    trkTable->addColumn<uint8_t>("spxStatus", status, "packed refit status (bit0 refitPerformed, bit1 seedCovOK, bit2 RETIRED, bit3 anyWindowTruncated)");
-    trkTable->addColumn<bool>("spxRefitPerformed", refitPerformed, "refit performed (else passthrough copy of input track)");
-    trkTable->addColumn<bool>("spxSeedCovOK", seedCovOK, "seed covariance was usable");
-    trkTable->addColumn<bool>("spxAnyWindowTruncated", anyWindowTruncated, "at least one crossing window hit maxHitsPerWindow");
-    trkTable->addColumn<uint8_t>("spxNCrossings", nCrossings, "valid layer crossings attempted");
-    trkTable->addColumn<uint8_t>("spxNAcceptedHits", nAcceptedHits, "hits accepted into the KF");
-    trkTable->addColumn<uint8_t>("spxNKFUpdates", nKFUpdates, "scalar-update groups applied (layers updated)");
-    trkTable->addColumn<uint8_t>("spxLayerHitMask", layerHitMask, "accepted-hit bitmask bit0=L1..bit3=L4; popcount == nAcceptedHits");
-    trkTable->addColumn<uint16_t>("spxMaxWindowMult", maxWindowMult, "max window multiplicity over this track's crossings");
-    trkTable->addColumn<float>("spxChi2IncXTot", chi2IncXTot, "sum of local-x chi2 increments over crossings");
-    trkTable->addColumn<float>("spxChi2IncYTot", chi2IncYTot, "sum of local-y chi2 increments over crossings");
-    trkTable->addColumn<float>("spxChi2IncAlphaTot", chi2IncAlphaTot, "sum of cotAlpha chi2 increments over crossings (r-phi total = X + Alpha)");
-    trkTable->addColumn<float>("spxChi2IncBetaTot", chi2IncBetaTot, "sum of cotBeta chi2 increments over crossings (r-z total = Y + Beta)");
-    trkTable->addColumn<int32_t>("spxCompactWord", compactWord, "16-bit transmitted-subset compact word (packCompactWord; see SmartPixelsTransmittedSubset.h)");
+    trkTable->addColumn<uint8_t>("spixStatus", status, "packed refit status (bit0 refitPerformed, bit1 seedCovOK, bit2 RETIRED, bit3 anyWindowTruncated)");
+    trkTable->addColumn<bool>("spixRefitPerformed", refitPerformed, "refit performed (else passthrough copy of input track)");
+    trkTable->addColumn<bool>("spixSeedCovOK", seedCovOK, "seed covariance was usable");
+    trkTable->addColumn<bool>("spixAnyWindowTruncated", anyWindowTruncated, "at least one crossing window hit maxHitsPerWindow");
+    trkTable->addColumn<uint8_t>("spixNCrossings", nCrossings, "valid layer crossings attempted");
+    trkTable->addColumn<uint8_t>("spixNAcceptedHits", nAcceptedHits, "hits accepted into the KF");
+    trkTable->addColumn<uint8_t>("spixNKFUpdates", nKFUpdates, "scalar-update groups applied (layers updated)");
+    trkTable->addColumn<uint8_t>("spixLayerHitMask", layerHitMask, "accepted-hit bitmask bit0=L1..bit3=L4; popcount == nAcceptedHits");
+    trkTable->addColumn<uint16_t>("spixMaxWindowMult", maxWindowMult, "max window multiplicity over this track's crossings");
+    trkTable->addColumn<float>("spixChi2IncXTot", chi2IncXTot, "sum of local-x chi2 increments over crossings");
+    trkTable->addColumn<float>("spixChi2IncYTot", chi2IncYTot, "sum of local-y chi2 increments over crossings");
+    trkTable->addColumn<float>("spixChi2IncAlphaTot", chi2IncAlphaTot, "sum of cotAlpha chi2 increments over crossings (r-phi total = X + Alpha)");
+    trkTable->addColumn<float>("spixChi2IncBetaTot", chi2IncBetaTot, "sum of cotBeta chi2 increments over crossings (r-z total = Y + Beta)");
+    trkTable->addColumn<int32_t>("spixCompactWord", compactWord, "16-bit transmitted-subset compact word (packCompactWord; see SmartPixelsTransmittedSubset.h)");
     iEvent.put(std::move(trkTable), "trk");
   }
 

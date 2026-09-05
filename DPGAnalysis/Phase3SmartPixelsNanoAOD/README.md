@@ -36,17 +36,17 @@ producer instance (prompt and extended cloned separately):
   `chi2IncAlpha`, `chi2IncBeta` (float12), and TRUTH-ONLY `selHitClass`,
   `truthCotAlpha`, `truthCotBeta`.
 - **track EXTENSION table** (`extension=True`, SAME name+length as the variant track
-  table `L1TSmartPixelsTrack<Suffix>` / `L1TSmartPixelsExtTrack<Suffix>`): `spxStatus`
-  + unpacked bools (`spxRefitPerformed`, `spxSeedCovOK`,
-  `spxAnyWindowTruncated`; `spxParametrizedSeed` was REMOVED with the
-  `parametrized` seedCovMode, and status bit2 is retired, not reused), `spxNCrossings`, `spxNAcceptedHits`, `spxNKFUpdates`,
-  `spxLayerHitMask`, `spxMaxWindowMult`, `spxChi2IncXTot`, `spxChi2IncYTot`,
-  `spxChi2IncAlphaTot`, `spxChi2IncBetaTot`, and `spxCompactWord`
+  table `L1TSmartPixelsTrack<Suffix>` / `L1TSmartPixelsExtTrack<Suffix>`): `spixStatus`
+  + unpacked bools (`spixRefitPerformed`, `spixSeedCovOK`,
+  `spixAnyWindowTruncated`; `spxParametrizedSeed` was REMOVED with the
+  `parametrized` seedCovMode, and status bit2 is retired, not reused), `spixNCrossings`, `spixNAcceptedHits`, `spixNKFUpdates`,
+  `spixLayerHitMask`, `spixMaxWindowMult`, `spixChi2IncXTot`, `spixChi2IncYTot`,
+  `spixChi2IncAlphaTot`, `spixChi2IncBetaTot`, and `spixCompactWord`
   (= `packCompactWord(trackInfo)`, the 16-bit transmitted-subset word). The r-phi and
   r-z totals are `XTot + AlphaTot` and `YTot + BetaTot`.
 
 Sentinel floats pass through as `-999.f` (consumers test `> -900`); passthrough tracks
-have `spxRefitPerformed=false`, empty per-hit rows, and zeroed chi2 totals.
+have `spixRefitPerformed=false`, empty per-hit rows, and zeroed chi2 totals.
 
 ## Truth index-reuse (withGen tiers)
 

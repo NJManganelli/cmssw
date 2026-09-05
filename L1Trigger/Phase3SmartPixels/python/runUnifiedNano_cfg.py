@@ -37,9 +37,9 @@ options.inputFiles.
 
 Local test (D121 RelVal from the SD mount):
   cmsRun runUnifiedNano_cfg.py maxEvents=2 activeSP=1100 \
-    pixelavAngleSet=/work/spxsmoke/spx_angle_response_Conv1D_Full-2bit_v4fixed.json \
+    pixelavAngleSet=/work/spxsmoke/spix_angle_response_Conv1D_Full-2bit_v4fixed.json \
     inputFiles=file:/host_volumes/NJM256GBSD/smartpixels-cmssw-testfiles/RelValTTbar_14TeV_PU_150X_mcRun4_realistic_v1_STD_D121_RegeneratedGS_PU-v1_file1.root \
-    outputFile=/work/spx_unifiednano_test.root
+    outputFile=/work/spix_unifiednano_test.root
 """
 import os
 
@@ -57,7 +57,7 @@ options.register('activeSP', '1100', VarParsing.multiplicity.singleton,
 options.register('tier', 'L1PFTrkNanowithGen', VarParsing.multiplicity.singleton,
                  VarParsing.varType.string,
                  "autoNANO flavor (fullest); documented, wiring is explicit below")
-options.register('pixelavAngleSet', 'spx_angle_response.json',
+options.register('pixelavAngleSet', 'spix_angle_response.json',
                  VarParsing.multiplicity.singleton, VarParsing.varType.string,
                  "PixelAV angle-response payload (see resolution below)")
 options.register('hasMiniAOD', False, VarParsing.multiplicity.singleton,
@@ -66,7 +66,7 @@ options.register('hasMiniAOD', False, VarParsing.multiplicity.singleton,
                  "D121 RelVals (DIGI-RAW + HLT only), which makes the gen chain's "
                  "puTable unrunnable -- see the omninano TODO above")
 options.setDefault('maxEvents', -1)
-options.setDefault('outputFile', 'file:spx_unifiednano.root')
+options.setDefault('outputFile', 'file:spix_unifiednano.root')
 options.setDefault('inputFiles',
                    'file:/host_volumes/NJM256GBSD/smartpixels-cmssw-testfiles/RelValTTbar_14TeV_PU_150X_mcRun4_realistic_v1_STD_D121_RegeneratedGS_PU-v1_file1.root')
 options.parseArguments()

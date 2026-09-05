@@ -319,7 +319,7 @@ def addSmartPixelsTrackProducerVariants(process, variants=None, correctionSet=DE
 
 
 # SmartPixels-owned IT cluster + rec hit chain. Scheduling notes, all deliberate:
-#  * OUR OWN LABELS (spxPixelClusters / spxPixelRecHits), so we can never collide
+#  * OUR OWN LABELS (spixPixelClusters / spixPixelRecHits), so we can never collide
 #    with a standard siPixelClusters/siPixelRecHits that some other sequence may
 #    schedule, and provenance says plainly that these are ours.
 #  * A cms.Task, never a Path or Sequence: unscheduled, so these run ONLY because
@@ -336,11 +336,11 @@ def addSmartPixelsTrackProducerVariants(process, variants=None, correctionSet=DE
 #    pitch/sqrt(12) error model. It is offline-quality Phase-2 pixel reco, NOT a
 #    model of what a smart-pixel ASIC computes on-chip -- do not quote CPE
 #    resolution as an ASIC capability.
-SPX_PIXEL_DIGI_TAG = cms.InputTag("simSiPixelDigis", "Pixel")
+SPIX_PIXEL_DIGI_TAG = cms.InputTag("simSiPixelDigis", "Pixel")
 
 
-def _addPixelRecHitChain(process, refitModule, digiTag=SPX_PIXEL_DIGI_TAG):
-  """Wire spxPixelClusters -> spxPixelRecHits for a digiRefit producer module.
+def _addPixelRecHitChain(process, refitModule, digiTag=SPIX_PIXEL_DIGI_TAG):
+  """Wire spixPixelClusters -> spixPixelRecHits for a digiRefit producer module.
 
   The digi tag is SET EXPLICITLY on the producer as well as on the clusterizer,
   rather than left to the C++ fillDescriptions default on one side and guessed on
@@ -349,16 +349,16 @@ def _addPixelRecHitChain(process, refitModule, digiTag=SPX_PIXEL_DIGI_TAG):
   a config dump would not show the disagreement.
   """
   refitModule.pixelDigiInputTag = digiTag
-  if not hasattr(process, "spxPixelClusters"):
+  if not hasattr(process, "spixPixelClusters"):
     from RecoLocalTracker.SiPixelClusterizer.SiPixelClusterizer_cfi import siPixelClusters
-    process.spxPixelClusters = siPixelClusters.clone(src=digiTag)
-  if not hasattr(process, "spxPixelRecHits"):
+    process.spixPixelClusters = siPixelClusters.clone(src=digiTag)
+  if not hasattr(process, "spixPixelRecHits"):
     process.load("RecoLocalTracker.SiPixelRecHits.PixelCPEGeneric_cfi")
     from RecoLocalTracker.SiPixelRecHits.SiPixelRecHits_cfi import siPixelRecHits
-    process.spxPixelRecHits = siPixelRecHits.clone(src="spxPixelClusters", CPE="PixelCPEGeneric")
-  if not hasattr(process, "spxPixelRecHitTask"):
-    process.spxPixelRecHitTask = cms.Task(process.spxPixelClusters, process.spxPixelRecHits)
-  refitModule.pixelRecHitInputTag = cms.InputTag("spxPixelRecHits")
+    process.spixPixelRecHits = siPixelRecHits.clone(src="spixPixelClusters", CPE="PixelCPEGeneric")
+  if not hasattr(process, "spixPixelRecHitTask"):
+    process.spixPixelRecHitTask = cms.Task(process.spixPixelClusters, process.spixPixelRecHits)
+  refitModule.pixelRecHitInputTag = cms.InputTag("spixPixelRecHits")
   return process
 
 
@@ -626,8 +626,8 @@ def _scheduleVariantModules(process, modules, taskName):
     # The SmartPixels-owned IT cluster/rec hit chain, when a digiRefit variant
     # created it. Associated (not scheduled) so it runs on demand only, i.e.
     # exactly when a refit producer asks for its rec hits.
-    if hasattr(process, "spxPixelRecHitTask"):
-      path.associate(process.spxPixelRecHitTask)
+    if hasattr(process, "spixPixelRecHitTask"):
+      path.associate(process.spixPixelRecHitTask)
   return process
 
 
