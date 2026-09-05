@@ -250,11 +250,11 @@ def _applyDigiRefitConfig(module, resolved):
   module.digiRefitPredAngleMaxAbs = cms.double(resolved["predAngleMaxAbs"])
   module.digiRefitLayerOrder = cms.string(resolved["layerOrder"])
   module.digiRefitSeedNPar = cms.int32(resolved["seedNPar"])
-  module.digiRefitPixelavAngleSet = cms.string(resolved["pixelavAngleSet"])
-  module.digiRefitSmarthitFakeSet = cms.string(resolved["smarthitFakeSet"])
+  # pixelavAngleSet now configures the UPSTREAM SmartPixelsRecHitProducer (the
+  # single source of the angle); the refit just reads its output.
+  module.smartPixelsRecHitInputTag = cms.InputTag("spixSmartPixelsRecHits")
   # RESERVED, not consumed by Tier-2: passed through so future ASIC-efficiency
   # wiring is drop-in. Non-empty triggers a LogWarning in the producer ctor.
-  module.digiRefitSmarthitTrueSet = cms.string(resolved["smarthitTrueSet"])
   module.digiRefitBdtModel = cms.string(resolved["bdtModel"])
 
 
@@ -309,11 +309,10 @@ def addSmartPixelsTrackProducerVariants(process, variants=None, correctionSet=DE
         module.smartPixelsCorrectionSet = cms.FileInPath(correctionSet)
       if mode == "digiRefit":
         _applyDigiRefitConfig(module, digiRefitResolved)
-        _addPixelRecHitChain(process, module)
-        # No RandomNumberGeneratorService: the digiRefit producer uses a LOCAL
-        # engine seeded per-event from hash(module label, run, lumi, event), so
-        # outputs are event-order-independent and split-job invariant (see
-        # doc/Phase2Acceptance.md §1 and the producer's digiRefitSeed()).
+        # The angle now comes from SmartPixelsRecHitProducer upstream, so the
+        # payload configures THAT and the refit is engine-free (its old local RNG
+        # existed only for the noise-angle draw, which moved with the synthesis).
+        ensureSmartPixelsRecHits(process, digiRefitResolved["pixelavAngleSet"])
 
   return process, modules
 
@@ -339,19 +338,6 @@ def addSmartPixelsTrackProducerVariants(process, variants=None, correctionSet=DE
 SPIX_PIXEL_DIGI_TAG = cms.InputTag("simSiPixelDigis", "Pixel")
 
 
-def _addPixelRecHitChain(process, refitModule, digiTag=SPIX_PIXEL_DIGI_TAG):
-  """Wire spixPixelClusters -> spixPixelRecHits for a digiRefit producer module.
-
-  The digi tag is SET EXPLICITLY on the producer as well as on the clusterizer,
-  rather than left to the C++ fillDescriptions default on one side and guessed on
-  the other. The two must be the same collection or the cluster -> digi channel ->
-  simlink truth chain silently describes different digis than the refit used, and
-  a config dump would not show the disagreement.
-  """
-  refitModule.pixelDigiInputTag = digiTag
-  ensurePixelRecHitChain(process, digiTag)
-  refitModule.pixelRecHitInputTag = cms.InputTag("spixPixelRecHits")
-  return process
 
 
 def ensureSmartPixelsRecHits(process, angleSet, digiTag=SPIX_PIXEL_DIGI_TAG):
@@ -371,6 +357,11 @@ def ensureSmartPixelsRecHits(process, angleSet, digiTag=SPIX_PIXEL_DIGI_TAG):
     process.spixSmartPixelsRecHitTask = cms.Task(process.spixSmartPixelsRecHits)
     if hasattr(process, "spixPixelRecHitTask"):
       process.spixSmartPixelsRecHitTask.add(process.spixPixelRecHitTask)
+  # The Clusters-tier nano table runs UNSCHEDULED off l1tPh2NanoTask, which is a
+  # different task from the refit paths, so the chain has to be visible there too
+  # or the table dies with ProductNotFound at the first event.
+  if hasattr(process, "l1tPh2NanoTask"):
+    process.l1tPh2NanoTask.add(process.spixSmartPixelsRecHitTask)
   return process
 
 
@@ -662,7 +653,11 @@ def _scheduleVariantModules(process, modules, taskName):
     # The SmartPixels-owned IT cluster/rec hit chain, when a digiRefit variant
     # created it. Associated (not scheduled) so it runs on demand only, i.e.
     # exactly when a refit producer asks for its rec hits.
-    if hasattr(process, "spixPixelRecHitTask"):
+    # spixSmartPixelsRecHitTask already CONTAINS spixPixelRecHitTask, so
+    # associating it schedules the whole cluster -> rec hit -> +angle chain.
+    if hasattr(process, "spixSmartPixelsRecHitTask"):
+      path.associate(process.spixSmartPixelsRecHitTask)
+    elif hasattr(process, "spixPixelRecHitTask"):
       path.associate(process.spixPixelRecHitTask)
   return process
 

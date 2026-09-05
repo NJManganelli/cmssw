@@ -79,7 +79,8 @@
 #include "DataFormats/SiPixelDetId/interface/PixelSubdetector.h"
 #include "DataFormats/SiPixelDigi/interface/PixelDigi.h"
 #include "DataFormats/TrackerCommon/interface/TrackerTopology.h"
-#include "DataFormats/TrackerRecHit2D/interface/SiPixelRecHitCollection.h"
+#include "DataFormats/Phase3SmartPixels/interface/SmartPixelsRecHit.h"
+#include "DataFormats/Phase3SmartPixels/interface/SmartPixelsRecHitTruth.h"
 #include "Geometry/CommonTopologies/interface/PixelGeomDetUnit.h"
 #include "Geometry/Records/interface/TrackerDigiGeometryRecord.h"
 #include "Geometry/Records/interface/TrackerTopologyRcd.h"
@@ -98,12 +99,9 @@
 class L1SmartPixelsClusterTableProducer : public edm::stream::EDProducer<> {
 public:
   explicit L1SmartPixelsClusterTableProducer(const edm::ParameterSet& cfg)
-      : recHitToken_(consumes<SiPixelRecHitCollection>(cfg.getParameter<edm::InputTag>("pixelRecHits"))),
-        simLinkToken_(consumes<edm::DetSetVector<PixelDigiSimLink>>(cfg.getParameter<edm::InputTag>("pixelDigiSimLink"))),
-        tpToken_(consumes<std::vector<TrackingParticle>>(cfg.getParameter<edm::InputTag>("trackingParticles"))),
-        simTrackToken_(consumes<edm::SimTrackContainer>(cfg.getParameter<edm::InputTag>("simTracks"))),
+      : recHitToken_(consumes<SmartPixelsRecHitCollection>(cfg.getParameter<edm::InputTag>("smartPixelsRecHits"))),
+        truthToken_(consumes<SmartPixelsRecHitTruthCollection>(cfg.getParameter<edm::InputTag>("smartPixelsRecHits"))),
         topoToken_(esConsumes()),
-        geomToken_(esConsumes()),
         tableName_(cfg.getParameter<std::string>("tableName")),
         maxLayer_(cfg.getParameter<unsigned>("maxLayer")),
         doTruth_(cfg.getParameter<bool>("doTruth")) {
@@ -112,154 +110,101 @@ public:
 
   void produce(edm::Event& iEvent, const edm::EventSetup& iSetup) override {
     const auto& topo = iSetup.getData(topoToken_);
-    const auto& geom = iSetup.getData(geomToken_);
     const auto& recHits = iEvent.get(recHitToken_);
+    const auto& truthColl = iEvent.get(truthToken_);
 
-    smartpixels::ParentMomentumMap parentMom;
-    smartpixels::ParentTpIndexMap parentTpIdx;
-    const edm::DetSetVector<PixelDigiSimLink>* simLinks = nullptr;
-    if (doTruth_) {
-      simLinks = &iEvent.get(simLinkToken_);
-      parentMom = smartpixels::buildParentMomentumMap(iEvent.get(tpToken_), &iEvent.get(simTrackToken_));
-      parentTpIdx = smartpixels::buildParentTpIndexMap(iEvent.get(tpToken_));
-    }
-
-    std::vector<uint8_t> layer, sizeX, sizeY;
+    std::vector<uint8_t> layer, sizeX, sizeY, truthLinked;
+    std::vector<uint16_t> size;
     std::vector<uint32_t> detId;
-    std::vector<float> localX, localY, sigX, sigY, charge, truthPt, truthChargeFrac;
-    std::vector<float> truthCotAlpha, truthCotBeta;
+    std::vector<float> localX, localY, sigX, sigY, charge;
+    std::vector<float> recoCotAlpha, recoCotBeta, sigAlpha, sigBeta;
+    std::vector<uint8_t> hasAlpha, hasBeta;
+    std::vector<float> truthPt, truthChargeFrac, truthCotAlpha, truthCotBeta;
     std::vector<int32_t> truthTpIdx;
-    std::vector<uint8_t> truthLinked;
 
     for (const auto& dsv : recHits) {
       const DetId did(dsv.detId());
-      if (did.subdetId() != PixelSubdetector::PixelBarrel)
-        continue;
       const unsigned lay = topo.pxbLayer(did);
       if (lay < 1 || lay > maxLayer_)
         continue;
-      const auto* pdu = dynamic_cast<const PixelGeomDetUnit*>(geom.idToDet(did));
+      const auto tsv = truthColl.find(dsv.detId());
+      const bool haveTruth = doTruth_ && tsv != truthColl.end() && tsv->size() == dsv.size();
+      if (doTruth_ && !haveTruth)
+        throw cms::Exception("SmartPixelsRecHitTruthMisaligned")
+            << "cluster table: rechit/truth disagree on det " << dsv.detId();
 
-      // channel -> best simlink (highest fraction), as the producer builds it
-      std::map<unsigned int, const PixelDigiSimLink*> linkByChannel;
-      if (simLinks != nullptr) {
-        const auto dsl = simLinks->find(did);
-        if (dsl != simLinks->end())
-          for (const auto& lk : *dsl) {
-            auto it = linkByChannel.find(lk.channel());
-            if (it == linkByChannel.end() || it->second->fraction() < lk.fraction())
-              linkByChannel[lk.channel()] = &lk;
-          }
-      }
-
-      for (const auto& rh : dsv) {
-        const SiPixelCluster* cl = rh.cluster().isNonnull() ? &(*rh.cluster()) : nullptr;
-        if (cl == nullptr)
-          continue;
+      for (size_t j = 0; j < dsv.size(); ++j) {
+        const auto& rh = dsv[j];
         layer.push_back(static_cast<uint8_t>(lay));
         detId.push_back(did.rawId());
         localX.push_back(rh.localPosition().x());
         localY.push_back(rh.localPosition().y());
         sigX.push_back(std::sqrt(std::max(0.f, static_cast<float>(rh.localPositionError().xx()))));
         sigY.push_back(std::sqrt(std::max(0.f, static_cast<float>(rh.localPositionError().yy()))));
-        sizeX.push_back(static_cast<uint8_t>(std::min(cl->sizeX(), 255)));
-        sizeY.push_back(static_cast<uint8_t>(std::min(cl->sizeY(), 255)));
-        charge.push_back(static_cast<float>(cl->charge()));
+        sizeX.push_back(static_cast<uint8_t>(std::min<unsigned>(rh.sizeX(), 255)));
+        sizeY.push_back(static_cast<uint8_t>(std::min<unsigned>(rh.sizeY(), 255)));
+        size.push_back(rh.size());
+        charge.push_back(rh.charge());
+        recoCotAlpha.push_back(rh.cotAlpha());
+        recoCotBeta.push_back(rh.cotBeta());
+        sigAlpha.push_back(rh.sigAlpha());
+        sigBeta.push_back(rh.sigBeta());
+        hasAlpha.push_back(rh.hasAlpha() ? 1 : 0);
+        hasBeta.push_back(rh.hasBeta() ? 1 : 0);
 
-        float tpt = -999.f, tfrac = -999.f, tca = -999.f, tcb = -999.f;
-        int32_t ttp = -1;
-        uint8_t linked = 0;
-        if (simLinks != nullptr) {
-          std::map<std::pair<uint32_t, unsigned int>, double> qByTp;
-          double qTot = 0.;
-          for (const auto& px : cl->pixels()) {
-            qTot += px.adc;
-            const auto lit =
-                linkByChannel.find(PixelDigi::pixelToChannel(static_cast<int>(px.x), static_cast<int>(px.y)));
-            if (lit == linkByChannel.end())
-              continue;
-            qByTp[std::make_pair(lit->second->eventId().rawId(), lit->second->SimTrackId())] += px.adc;
-          }
-          double qDom = 0.;
-          std::pair<uint32_t, unsigned int> domKey;
-          for (const auto& kv : qByTp)
-            if (kv.second > qDom) {
-              qDom = kv.second;
-              domKey = kv.first;
-            }
-          if (qDom > 0.) {
-            linked = 1;
-            if (qTot > 0.)
-              tfrac = static_cast<float>(qDom / qTot);
-            const auto tit = parentTpIdx.find(domKey);
-            if (tit != parentTpIdx.end())
-              ttp = tit->second;
-            const auto mit = parentMom.find(domKey);
-            if (mit != parentMom.end()) {
-              tpt = static_cast<float>(std::hypot(mit->second.px(), mit->second.py()));
-              // Incidence angles of the dominant contributor's PARENT, in this
-              // module's local frame -- the same construction the refit uses before
-              // it applies the PixelAV smear. These are the UNSMEARED truth angles:
-              // they bound how much an alpha/beta cut could ever filter, and are not
-              // what a sensor would report. The smeared reco angle needs the PixelAV
-              // payload and is deliberately left to the refit's own hit records.
-              if (pdu != nullptr) {
-                const auto& pm = mit->second;
-                const LocalVector plv = pdu->toLocal(GlobalVector(pm.px(), pm.py(), pm.pz()));
-                const double ppz = (std::abs(plv.z()) > 1e-9) ? plv.z() : 1e-9;
-                tca = static_cast<float>(plv.x() / ppz);
-                tcb = static_cast<float>(plv.y() / ppz);
-              }
-            }
-          }
+        if (haveTruth) {
+          const auto& tr = (*tsv)[j];
+          truthLinked.push_back(tr.hasTp() ? 1 : 0);
+          truthTpIdx.push_back(tr.hasTp() ? static_cast<int32_t>(tr.dominantTp().key()) : -1);
+          truthPt.push_back(tr.hasTp() ? static_cast<float>(tr.dominantTp()->pt()) : -999.f);
+          truthChargeFrac.push_back(tr.chargeFrac());
+          truthCotAlpha.push_back(tr.trueCotAlpha());
+          truthCotBeta.push_back(tr.trueCotBeta());
         }
-        truthTpIdx.push_back(ttp);
-        truthCotAlpha.push_back(tca);
-        truthCotBeta.push_back(tcb);
-        truthPt.push_back(tpt);
-        truthChargeFrac.push_back(tfrac);
-        truthLinked.push_back(linked);
       }
     }
 
     auto tab = std::make_unique<nanoaod::FlatTable>(layer.size(), tableName_, false, false);
     tab->addColumn<uint8_t>("layer", layer, "TBPX layer 1..4");
-    tab->addColumn<uint32_t>("detId", detId, "module rawId; join key to the refit hit table's detId");
+    tab->addColumn<uint32_t>("detId", detId, "module rawId; join key to the refit hit table detId");
     tab->addColumn<float>("localX", localX, "cluster position, module-local x [cm]", 10);
     tab->addColumn<float>("localY", localY, "cluster position, module-local y [cm]", 10);
     tab->addColumn<float>("sigX", sigX, "CPE position uncertainty, local x [cm]", 10);
     tab->addColumn<float>("sigY", sigY, "CPE position uncertainty, local y [cm]", 10);
-    tab->addColumn<uint8_t>("sizeX", sizeX, "cluster extent in pixels, local x");
-    tab->addColumn<uint8_t>("sizeY", sizeY, "cluster extent in pixels, local y");
+    tab->addColumn<uint8_t>("sizeX", sizeX, "cluster bounding-box extent in pixels, local x");
+    tab->addColumn<uint8_t>("sizeY", sizeY, "cluster bounding-box extent in pixels, local y");
+    tab->addColumn<uint16_t>("size", size, "FIRED-PIXEL COUNT (not the bounding box): charge/size is "
+                                           "the real charge density");
     tab->addColumn<float>("charge", charge, "cluster charge [ADC]", 10);
+    tab->addColumn<float>("recoCotAlpha", recoCotAlpha,
+                          "SENSOR angle estimate, module-local cotAlpha (-999 if none)", 12);
+    tab->addColumn<float>("recoCotBeta", recoCotBeta, "SENSOR angle estimate, cotBeta", 12);
+    tab->addColumn<float>("sigAlpha", sigAlpha, "angle-estimator resolution, alpha", 10);
+    tab->addColumn<float>("sigBeta", sigBeta, "angle-estimator resolution, beta", 10);
+    tab->addColumn<uint8_t>("hasAlpha", hasAlpha,
+                            "sensor reports an alpha at all (payload validity gate / grazing clamp)");
+    tab->addColumn<uint8_t>("hasBeta", hasBeta, "sensor reports a beta at all");
     if (doTruth_) {
-      tab->addColumn<uint8_t>("truthLinked", truthLinked,
-                              "TRUTH-ONLY: >=1 pixel of the cluster carries a simlink");
-      tab->addColumn<float>("truthPt", truthPt,
-                            "TRUTH-ONLY: pT [GeV] of the parent of the DOMINANT charge contributor; "
-                            "-999 if unlinked or the parent is absent from the TP+SimTrack map", 10);
+      tab->addColumn<uint8_t>("truthLinked", truthLinked, "TRUTH-ONLY: cluster has a dominant TP");
       tab->addColumn<int32_t>("truthTpIdx", truthTpIdx,
-                              "TRUTH-ONLY: index of the TrackingParticle owning the DOMINANT charge "
-                              "contributor, or -1. Join key against the refit track table's "
-                              "spixMatchedTpIdx: equality means this cluster came from that track's "
-                              "own particle. A TP owns several SimTracks, so comparing SimTrack ids "
-                              "would give the wrong answer; the TP index is the identity");
+                              "TRUTH-ONLY: TrackingParticle index of the dominant charge contributor, "
+                              "or -1. Join key against spixMatchedTpIdx");
+      tab->addColumn<float>("truthPt", truthPt, "TRUTH-ONLY: pT [GeV] of the dominant TP", 10);
       tab->addColumn<float>("truthCotAlpha", truthCotAlpha,
-                            "TRUTH-ONLY: UNSMEARED local cotAlpha of the dominant contributor's "
-                            "parent; bounds what an angle cut could filter", 12);
-      tab->addColumn<float>("truthCotBeta", truthCotBeta, "TRUTH-ONLY: unsmeared local cotBeta", 12);
+                            "TRUTH-ONLY: TRUE incidence cotAlpha at this module (helix-propagated), "
+                            "i.e. what the sensor is trying to measure", 12);
+      tab->addColumn<float>("truthCotBeta", truthCotBeta, "TRUTH-ONLY: true incidence cotBeta", 12);
       tab->addColumn<float>("truthChargeFrac", truthChargeFrac,
-                            "TRUTH-ONLY: dominant contributor's share of the cluster charge", 10);
+                            "TRUTH-ONLY: dominant contributor share of the cluster charge", 10);
     }
     iEvent.put(std::move(tab));
   }
 
   static void fillDescriptions(edm::ConfigurationDescriptions& descriptions) {
     edm::ParameterSetDescription desc;
-    desc.add<edm::InputTag>("pixelRecHits", edm::InputTag("spixPixelRecHits"));
-    desc.add<edm::InputTag>("pixelDigiSimLink", edm::InputTag("simSiPixelDigis", "Pixel"));
-    desc.add<edm::InputTag>("trackingParticles", edm::InputTag("mix", "MergedTrackTruth"));
-    desc.add<edm::InputTag>("simTracks", edm::InputTag("g4SimHits"));
+    desc.add<edm::InputTag>("smartPixelsRecHits", edm::InputTag("spixSmartPixelsRecHits"))
+        ->setComment("SmartPixelsRecHit + Truth (same label): the single source of the "
+                     "sensor angle, shared with the refit so selClusterIdx is exact");
     desc.add<std::string>("tableName", "L1TSmartPixelsCluster");
     desc.add<unsigned>("maxLayer", 4)->setComment("highest TBPX layer kept (SmartPixels scope is 1..4)");
     desc.add<bool>("doTruth", true)->setComment("attach TRUTH-ONLY truthPt/truthChargeFrac/truthLinked");
@@ -267,12 +212,9 @@ public:
   }
 
 private:
-  const edm::EDGetTokenT<SiPixelRecHitCollection> recHitToken_;
-  const edm::EDGetTokenT<edm::DetSetVector<PixelDigiSimLink>> simLinkToken_;
-  const edm::EDGetTokenT<std::vector<TrackingParticle>> tpToken_;
-  const edm::EDGetTokenT<edm::SimTrackContainer> simTrackToken_;
+  const edm::EDGetTokenT<SmartPixelsRecHitCollection> recHitToken_;
+  const edm::EDGetTokenT<SmartPixelsRecHitTruthCollection> truthToken_;
   const edm::ESGetToken<TrackerTopology, TrackerTopologyRcd> topoToken_;
-  const edm::ESGetToken<TrackerGeometry, TrackerDigiGeometryRecord> geomToken_;
   const std::string tableName_;
   const unsigned maxLayer_;
   const bool doTruth_;
