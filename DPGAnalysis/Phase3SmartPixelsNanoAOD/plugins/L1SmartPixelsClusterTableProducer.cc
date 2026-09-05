@@ -36,30 +36,23 @@
 // Physical extent follows from pitch: an L1 module is 672*25um x 216*100um =
 // 16.8 x 21.6 mm; an L3/L4 module is 33.9 x 43.4 mm.
 //
-// PER-CLUSTER PAYLOAD, measured on a real file (not estimated):
+// PER-CLUSTER PAYLOAD. Measured 88.6 stored bits/cluster (11.1 B) on the original
+// 12-column table; the table has since grown the global-frame geometry block and
+// raised localX/localY from 10 to 16 mantissa bits, so it is now larger and the
+// figure needs re-measuring before being quoted. What has NOT changed is why the
+// precision is what it is: globalPhi and the direction columns are stored at 16
+// mantissa bits (~4.8e-5 rad) because reconstructing phi from lower-precision
+// Cartesian columns would give ~1 mrad, several times the sensor resolution, and
+// would make any angular result an artefact of storage rather than of physics.
 //
-//   column             stored bits/cluster
-//   localX                  17.8
-//   localY                  17.7
-//   charge                  12.6
-//   truthPt                 12.2   TRUTH-ONLY
-//   detId                    7.5
-//   sizeX                    4.4
-//   sizeY                    4.1
-//   sigY                     3.9
-//   sigX                     3.8
-//   truthChargeFrac          2.2   TRUTH-ONLY
-//   layer                    1.2
-//   truthLinked              1.1   TRUTH-ONLY
-//   TOTAL                   88.6 bits = 11.1 B/cluster stored (37.0 B raw)
+// NAMING. Frame prefix only for sensor quantities (localX/localY, localCotAlpha/
+// Beta, globalR/Phi/Z, globalClusterPhi/CotTheta); "reco" is redundant because a
+// cluster carries ONLY reco quantities and truth is reachable solely through the
+// tp link. Truth carries the tp prefix, matching the convention already used on
+// L1TTrack (tpPt, tpEta, tpPdgId). cotAlpha/cotBeta are module-frame BY
+// DEFINITION (PixelAV) and so are named local*, not given a global twin.
 //
-// Floats are written with 10-bit mantissa precision, which is why sigX/sigY (nearly
-// constant per module) cost under 4 bits while localX/localY (genuinely uniform
-// across the module) cost ~18. At the measured PU200 occupancy of 26 479
-// clusters/event that is 0.29 MB/event stored -- 3.4x smaller than a naive
-// 37 B/cluster estimate, which is why it was measured rather than assumed.
-//
-// truthPt is the pT of the PARENT of the cluster's DOMINANT charge contributor,
+// tpPt is the pT of the PARENT of the cluster's DOMINANT charge contributor,
 // assigned by the SAME charge-share logic L1SmartPixelsTrackProducer uses
 // (per-(eventId, SimTrackId) ADC sum over the cluster's pixels via
 // PixelDigi::pixelToChannel). TRUTH-ONLY: it exists to bound what an ideal
@@ -119,18 +112,17 @@ public:
     const auto& geom = iSetup.getData(geomToken_);
     const auto& recHits = iEvent.get(recHitToken_);
     const auto& truthColl = iEvent.get(truthToken_);
-
-    std::vector<uint8_t> layer, sizeX, sizeY, truthLinked;
+    std::vector<uint8_t> layer, sizeX, sizeY;
     std::vector<uint16_t> size;
     std::vector<uint32_t> detId;
     std::vector<float> localX, localY, sigX, sigY, charge;
     std::vector<float> globalR, globalPhi, globalZ;
-    std::vector<float> recoDirPhi, recoDirCotTheta, truthDirPhi, truthDirCotTheta;
+    std::vector<float> globalClusterPhi, globalClusterCotTheta, tpGlobalClusterPhi, tpGlobalClusterCotTheta;
     unsigned closureFail = 0;
-    std::vector<float> recoCotAlpha, recoCotBeta, sigAlpha, sigBeta;
+    std::vector<float> localCotAlpha, localCotBeta, sigAlpha, sigBeta;
     std::vector<uint8_t> hasAlpha, hasBeta;
-    std::vector<float> truthPt, truthChargeFrac, truthCotAlpha, truthCotBeta;
-    std::vector<int32_t> truthTpIdx;
+    std::vector<float> tpPt, tpChargeFrac, tpLocalCotAlpha, tpLocalCotBeta;
+    std::vector<int32_t> tpIdx;
 
     for (const auto& dsv : recHits) {
       const DetId did(dsv.detId());
@@ -165,8 +157,8 @@ public:
           globalPhi.push_back(std::atan2(gp.y(), gp.x()));
           globalZ.push_back(gp.z());
           const auto gr = smartpixels::toGlobalDirection(*pdu, rh.cotAlpha(), rh.cotBeta());
-          recoDirPhi.push_back(gr.valid ? gr.dirPhi : -999.f);
-          recoDirCotTheta.push_back(gr.valid ? gr.dirCotTheta : -999.f);
+          globalClusterPhi.push_back(gr.valid ? gr.dirPhi : -999.f);
+          globalClusterCotTheta.push_back(gr.valid ? gr.dirCotTheta : -999.f);
           // CLOSURE: rotate the global direction back and require the module-frame
           // angles to reappear. A mis-applied rotation on a tilted module would
           // otherwise be a large, silent error.
@@ -175,7 +167,7 @@ public:
             ++closureFail;
         } else {
           globalR.push_back(-999.f); globalPhi.push_back(-999.f); globalZ.push_back(-999.f);
-          recoDirPhi.push_back(-999.f); recoDirCotTheta.push_back(-999.f);
+          globalClusterPhi.push_back(-999.f); globalClusterCotTheta.push_back(-999.f);
         }
         localX.push_back(rh.localPosition().x());
         localY.push_back(rh.localPosition().y());
@@ -185,8 +177,8 @@ public:
         sizeY.push_back(static_cast<uint8_t>(std::min<unsigned>(rh.sizeY(), 255)));
         size.push_back(rh.size());
         charge.push_back(rh.charge());
-        recoCotAlpha.push_back(rh.cotAlpha());
-        recoCotBeta.push_back(rh.cotBeta());
+        localCotAlpha.push_back(rh.cotAlpha());
+        localCotBeta.push_back(rh.cotBeta());
         sigAlpha.push_back(rh.sigAlpha());
         sigBeta.push_back(rh.sigBeta());
         hasAlpha.push_back(rh.hasAlpha() ? 1 : 0);
@@ -194,18 +186,17 @@ public:
 
         if (haveTruth) {
           const auto& tr = (*tsv)[j];
-          truthLinked.push_back(tr.hasTp() ? 1 : 0);
-          truthTpIdx.push_back(tr.hasTp() ? static_cast<int32_t>(tr.dominantTp().key()) : -1);
-          truthPt.push_back(tr.hasTp() ? static_cast<float>(tr.dominantTp()->pt()) : -999.f);
-          truthChargeFrac.push_back(tr.chargeFrac());
-          truthCotAlpha.push_back(tr.trueCotAlpha());
-          truthCotBeta.push_back(tr.trueCotBeta());
+          tpIdx.push_back(tr.hasTp() ? static_cast<int32_t>(tr.dominantTp().key()) : -1);
+          tpPt.push_back(tr.hasTp() ? static_cast<float>(tr.dominantTp()->pt()) : -999.f);
+          tpChargeFrac.push_back(tr.chargeFrac());
+          tpLocalCotAlpha.push_back(tr.trueCotAlpha());
+          tpLocalCotBeta.push_back(tr.trueCotBeta());
           if (pdu != nullptr && tr.trueCotAlpha() > -900.f) {
             const auto gt = smartpixels::toGlobalDirection(*pdu, tr.trueCotAlpha(), tr.trueCotBeta());
-            truthDirPhi.push_back(gt.valid ? gt.dirPhi : -999.f);
-            truthDirCotTheta.push_back(gt.valid ? gt.dirCotTheta : -999.f);
+            tpGlobalClusterPhi.push_back(gt.valid ? gt.dirPhi : -999.f);
+            tpGlobalClusterCotTheta.push_back(gt.valid ? gt.dirCotTheta : -999.f);
           } else {
-            truthDirPhi.push_back(-999.f); truthDirCotTheta.push_back(-999.f);
+            tpGlobalClusterPhi.push_back(-999.f); tpGlobalClusterCotTheta.push_back(-999.f);
           }
         }
       }
@@ -222,12 +213,12 @@ public:
                           "bits (~1e-4 rad); reconstructing it from Cartesian columns at the "
                           "precision localX/localY use would give ~1 mrad", 16);
     tab->addColumn<float>("globalZ", globalZ, "cluster position, CMS global z [cm]", 16);
-    tab->addColumn<float>("recoDirPhi", recoDirPhi,
+    tab->addColumn<float>("globalClusterPhi", globalClusterPhi,
                           "SENSOR-estimated direction, global phi [rad]. The global counterpart of "
-                          "recoCotAlpha/Beta, which are module-frame BY DEFINITION (PixelAV) and "
+                          "localCotAlpha/Beta, which are module-frame BY DEFINITION (PixelAV) and "
                           "have no meaningful global variant. Uses the per-module rotation: TBPX "
                           "tilt reaches 16.5 deg", 16);
-    tab->addColumn<float>("recoDirCotTheta", recoDirCotTheta,
+    tab->addColumn<float>("globalClusterCotTheta", globalClusterCotTheta,
                           "SENSOR-estimated direction, global cot(theta) = pz/pt. Chosen over eta "
                           "because the r-z Hough wants z = z0 + r*cotTheta directly", 16);
     tab->addColumn<float>("sigX", sigX, "CPE position uncertainty, local x [cm]", 10);
@@ -237,29 +228,28 @@ public:
     tab->addColumn<uint16_t>("size", size, "FIRED-PIXEL COUNT (not the bounding box): charge/size is "
                                            "the real charge density");
     tab->addColumn<float>("charge", charge, "cluster charge [ADC]", 10);
-    tab->addColumn<float>("recoCotAlpha", recoCotAlpha,
+    tab->addColumn<float>("localCotAlpha", localCotAlpha,
                           "SENSOR angle estimate, module-local cotAlpha (-999 if none)", 12);
-    tab->addColumn<float>("recoCotBeta", recoCotBeta, "SENSOR angle estimate, cotBeta", 12);
+    tab->addColumn<float>("localCotBeta", localCotBeta, "SENSOR angle estimate, cotBeta", 12);
     tab->addColumn<float>("sigAlpha", sigAlpha, "angle-estimator resolution, alpha", 10);
     tab->addColumn<float>("sigBeta", sigBeta, "angle-estimator resolution, beta", 10);
     tab->addColumn<uint8_t>("hasAlpha", hasAlpha,
                             "sensor reports an alpha at all (payload validity gate / grazing clamp)");
     tab->addColumn<uint8_t>("hasBeta", hasBeta, "sensor reports a beta at all");
     if (doTruth_) {
-      tab->addColumn<uint8_t>("truthLinked", truthLinked, "TRUTH-ONLY: cluster has a dominant TP");
-      tab->addColumn<int32_t>("truthTpIdx", truthTpIdx,
+      tab->addColumn<int32_t>("tpIdx", tpIdx,
                               "TRUTH-ONLY: TrackingParticle index of the dominant charge contributor, "
                               "or -1. Join key against spixMatchedTpIdx");
-      tab->addColumn<float>("truthPt", truthPt, "TRUTH-ONLY: pT [GeV] of the dominant TP", 10);
-      tab->addColumn<float>("truthCotAlpha", truthCotAlpha,
+      tab->addColumn<float>("tpPt", tpPt, "TRUTH-ONLY: pT [GeV] of the dominant TP", 10);
+      tab->addColumn<float>("tpLocalCotAlpha", tpLocalCotAlpha,
                             "TRUTH-ONLY: TRUE incidence cotAlpha at this module (helix-propagated), "
                             "i.e. what the sensor is trying to measure", 12);
-      tab->addColumn<float>("truthCotBeta", truthCotBeta, "TRUTH-ONLY: true incidence cotBeta", 12);
-      tab->addColumn<float>("truthDirPhi", truthDirPhi,
+      tab->addColumn<float>("tpLocalCotBeta", tpLocalCotBeta, "TRUTH-ONLY: true incidence cotBeta", 12);
+      tab->addColumn<float>("tpGlobalClusterPhi", tpGlobalClusterPhi,
                             "TRUTH-ONLY: true direction, global phi [rad]", 16);
-      tab->addColumn<float>("truthDirCotTheta", truthDirCotTheta,
+      tab->addColumn<float>("tpGlobalClusterCotTheta", tpGlobalClusterCotTheta,
                             "TRUTH-ONLY: true direction, global cot(theta)", 16);
-      tab->addColumn<float>("truthChargeFrac", truthChargeFrac,
+      tab->addColumn<float>("tpChargeFrac", tpChargeFrac,
                             "TRUTH-ONLY: dominant contributor share of the cluster charge", 10);
     }
     if (closureFail)
@@ -278,7 +268,9 @@ public:
                      "sensor angle, shared with the refit so selClusterIdx is exact");
     desc.add<std::string>("tableName", "L1TSmartPixelsCluster");
     desc.add<unsigned>("maxLayer", 4)->setComment("highest TBPX layer kept (SmartPixels scope is 1..4)");
-    desc.add<bool>("doTruth", true)->setComment("attach TRUTH-ONLY truthPt/truthChargeFrac/truthLinked");
+    desc.add<bool>("doTruth", true)
+        ->setComment("attach the TRUTH-ONLY tp* block (tpIdx, tpPt, tpChargeFrac, "
+                     "tpLocalCot*, tpGlobalCluster*)");
     descriptions.addWithDefaultLabel(desc);
   }
 
