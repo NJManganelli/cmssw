@@ -72,6 +72,7 @@
 #include "FWCore/ParameterSet/interface/ConfigurationDescriptions.h"
 #include "FWCore/ParameterSet/interface/ParameterSet.h"
 #include "FWCore/ParameterSet/interface/ParameterSetDescription.h"
+#include "FWCore/Utilities/interface/Exception.h"
 
 #include "DataFormats/Common/interface/DetSetVector.h"
 #include "DataFormats/NanoAOD/interface/FlatTable.h"
@@ -79,11 +80,15 @@
 #include "DataFormats/SiPixelDetId/interface/PixelSubdetector.h"
 #include "DataFormats/SiPixelDigi/interface/PixelDigi.h"
 #include "DataFormats/TrackerCommon/interface/TrackerTopology.h"
+#include "DataFormats/Phase3SmartPixels/interface/SmartPixelsFrames.h"
 #include "DataFormats/Phase3SmartPixels/interface/SmartPixelsRecHit.h"
 #include "DataFormats/Phase3SmartPixels/interface/SmartPixelsRecHitTruth.h"
 #include "Geometry/CommonTopologies/interface/PixelGeomDetUnit.h"
 #include "Geometry/Records/interface/TrackerDigiGeometryRecord.h"
+#include "Geometry/CommonTopologies/interface/PixelGeomDetUnit.h"
+#include "Geometry/Records/interface/TrackerDigiGeometryRecord.h"
 #include "Geometry/Records/interface/TrackerTopologyRcd.h"
+#include "Geometry/TrackerGeometryBuilder/interface/TrackerGeometry.h"
 #include "Geometry/TrackerGeometryBuilder/interface/TrackerGeometry.h"
 #include "L1Trigger/Phase3SmartPixels/interface/SmartPixelsParentMap.h"
 #include "SimDataFormats/Track/interface/SimTrackContainer.h"
@@ -102,6 +107,7 @@ public:
       : recHitToken_(consumes<SmartPixelsRecHitCollection>(cfg.getParameter<edm::InputTag>("smartPixelsRecHits"))),
         truthToken_(consumes<SmartPixelsRecHitTruthCollection>(cfg.getParameter<edm::InputTag>("smartPixelsRecHits"))),
         topoToken_(esConsumes()),
+        geomToken_(esConsumes()),
         tableName_(cfg.getParameter<std::string>("tableName")),
         maxLayer_(cfg.getParameter<unsigned>("maxLayer")),
         doTruth_(cfg.getParameter<bool>("doTruth")) {
@@ -110,6 +116,7 @@ public:
 
   void produce(edm::Event& iEvent, const edm::EventSetup& iSetup) override {
     const auto& topo = iSetup.getData(topoToken_);
+    const auto& geom = iSetup.getData(geomToken_);
     const auto& recHits = iEvent.get(recHitToken_);
     const auto& truthColl = iEvent.get(truthToken_);
 
@@ -117,6 +124,9 @@ public:
     std::vector<uint16_t> size;
     std::vector<uint32_t> detId;
     std::vector<float> localX, localY, sigX, sigY, charge;
+    std::vector<float> globalR, globalPhi, globalZ;
+    std::vector<float> recoDirPhi, recoDirCotTheta, truthDirPhi, truthDirCotTheta;
+    unsigned closureFail = 0;
     std::vector<float> recoCotAlpha, recoCotBeta, sigAlpha, sigBeta;
     std::vector<uint8_t> hasAlpha, hasBeta;
     std::vector<float> truthPt, truthChargeFrac, truthCotAlpha, truthCotBeta;
@@ -127,6 +137,7 @@ public:
       const unsigned lay = topo.pxbLayer(did);
       if (lay < 1 || lay > maxLayer_)
         continue;
+      const auto* pdu = dynamic_cast<const PixelGeomDetUnit*>(geom.idToDet(did));
       const auto tsv = truthColl.find(dsv.detId());
       const bool haveTruth = doTruth_ && tsv != truthColl.end() && tsv->size() == dsv.size();
       if (doTruth_ && !haveTruth)
@@ -137,6 +148,35 @@ public:
         const auto& rh = dsv[j];
         layer.push_back(static_cast<uint8_t>(lay));
         detId.push_back(did.rawId());
+        // GLOBAL position and direction, computed HERE because this is where the
+        // geometry is. nano carries none, so without these every analysis would
+        // re-derive them from detId with its own copy of the tracker geometry --
+        // duplicated work and a silent divergence risk on TILTED modules (TBPX
+        // tilt reaches 16.5 deg, so the rotation is per-module, not per-layer).
+        //
+        // CYLINDRICAL, not Cartesian, and deliberately: phi stored directly at 16
+        // mantissa bits gives ~1e-4 rad, whereas phi RECONSTRUCTED from two
+        // Cartesian columns inherits their relative precision -- at the 10 bits
+        // used for localX/localY that is ~1 mrad, several times the sensor
+        // resolution, which would make any angular study an artefact of storage.
+        if (pdu != nullptr) {
+          const auto gp = pdu->toGlobal(rh.localPosition());
+          globalR.push_back(std::hypot(gp.x(), gp.y()));
+          globalPhi.push_back(std::atan2(gp.y(), gp.x()));
+          globalZ.push_back(gp.z());
+          const auto gr = smartpixels::toGlobalDirection(*pdu, rh.cotAlpha(), rh.cotBeta());
+          recoDirPhi.push_back(gr.valid ? gr.dirPhi : -999.f);
+          recoDirCotTheta.push_back(gr.valid ? gr.dirCotTheta : -999.f);
+          // CLOSURE: rotate the global direction back and require the module-frame
+          // angles to reappear. A mis-applied rotation on a tilted module would
+          // otherwise be a large, silent error.
+          if (rh.hasAlpha() && rh.hasBeta() &&
+              !smartpixels::closesBackToModule(*pdu, gr, rh.cotAlpha(), rh.cotBeta()))
+            ++closureFail;
+        } else {
+          globalR.push_back(-999.f); globalPhi.push_back(-999.f); globalZ.push_back(-999.f);
+          recoDirPhi.push_back(-999.f); recoDirCotTheta.push_back(-999.f);
+        }
         localX.push_back(rh.localPosition().x());
         localY.push_back(rh.localPosition().y());
         sigX.push_back(std::sqrt(std::max(0.f, static_cast<float>(rh.localPositionError().xx()))));
@@ -160,6 +200,13 @@ public:
           truthChargeFrac.push_back(tr.chargeFrac());
           truthCotAlpha.push_back(tr.trueCotAlpha());
           truthCotBeta.push_back(tr.trueCotBeta());
+          if (pdu != nullptr && tr.trueCotAlpha() > -900.f) {
+            const auto gt = smartpixels::toGlobalDirection(*pdu, tr.trueCotAlpha(), tr.trueCotBeta());
+            truthDirPhi.push_back(gt.valid ? gt.dirPhi : -999.f);
+            truthDirCotTheta.push_back(gt.valid ? gt.dirCotTheta : -999.f);
+          } else {
+            truthDirPhi.push_back(-999.f); truthDirCotTheta.push_back(-999.f);
+          }
         }
       }
     }
@@ -167,8 +214,22 @@ public:
     auto tab = std::make_unique<nanoaod::FlatTable>(layer.size(), tableName_, false, false);
     tab->addColumn<uint8_t>("layer", layer, "TBPX layer 1..4");
     tab->addColumn<uint32_t>("detId", detId, "module rawId; join key to the refit hit table detId");
-    tab->addColumn<float>("localX", localX, "cluster position, module-local x [cm]", 10);
-    tab->addColumn<float>("localY", localY, "cluster position, module-local y [cm]", 10);
+    tab->addColumn<float>("localX", localX, "cluster position, module-local x [cm]", 16);
+    tab->addColumn<float>("localY", localY, "cluster position, module-local y [cm]", 16);
+    tab->addColumn<float>("globalR", globalR, "cluster position, CMS global cylindrical r [cm]", 16);
+    tab->addColumn<float>("globalPhi", globalPhi,
+                          "cluster position, CMS global phi [rad]. Stored DIRECTLY at 16 mantissa "
+                          "bits (~1e-4 rad); reconstructing it from Cartesian columns at the "
+                          "precision localX/localY use would give ~1 mrad", 16);
+    tab->addColumn<float>("globalZ", globalZ, "cluster position, CMS global z [cm]", 16);
+    tab->addColumn<float>("recoDirPhi", recoDirPhi,
+                          "SENSOR-estimated direction, global phi [rad]. The global counterpart of "
+                          "recoCotAlpha/Beta, which are module-frame BY DEFINITION (PixelAV) and "
+                          "have no meaningful global variant. Uses the per-module rotation: TBPX "
+                          "tilt reaches 16.5 deg", 16);
+    tab->addColumn<float>("recoDirCotTheta", recoDirCotTheta,
+                          "SENSOR-estimated direction, global cot(theta) = pz/pt. Chosen over eta "
+                          "because the r-z Hough wants z = z0 + r*cotTheta directly", 16);
     tab->addColumn<float>("sigX", sigX, "CPE position uncertainty, local x [cm]", 10);
     tab->addColumn<float>("sigY", sigY, "CPE position uncertainty, local y [cm]", 10);
     tab->addColumn<uint8_t>("sizeX", sizeX, "cluster bounding-box extent in pixels, local x");
@@ -194,9 +255,19 @@ public:
                             "TRUTH-ONLY: TRUE incidence cotAlpha at this module (helix-propagated), "
                             "i.e. what the sensor is trying to measure", 12);
       tab->addColumn<float>("truthCotBeta", truthCotBeta, "TRUTH-ONLY: true incidence cotBeta", 12);
+      tab->addColumn<float>("truthDirPhi", truthDirPhi,
+                            "TRUTH-ONLY: true direction, global phi [rad]", 16);
+      tab->addColumn<float>("truthDirCotTheta", truthDirCotTheta,
+                            "TRUTH-ONLY: true direction, global cot(theta)", 16);
       tab->addColumn<float>("truthChargeFrac", truthChargeFrac,
                             "TRUTH-ONLY: dominant contributor share of the cluster charge", 10);
     }
+    if (closureFail)
+        throw cms::Exception("SmartPixelsFrameClosureFailed")
+            << closureFail << " clusters failed the module<->global direction closure test "
+            << "(rotate the stored global direction back, require cotAlpha/cotBeta to reappear). "
+            << "The per-module rotation is being mis-applied; on a 16-degree-tilted TBPX module "
+            << "that is a large silent error, so this refuses to emit the table.";
     iEvent.put(std::move(tab));
   }
 
@@ -215,6 +286,7 @@ private:
   const edm::EDGetTokenT<SmartPixelsRecHitCollection> recHitToken_;
   const edm::EDGetTokenT<SmartPixelsRecHitTruthCollection> truthToken_;
   const edm::ESGetToken<TrackerTopology, TrackerTopologyRcd> topoToken_;
+  const edm::ESGetToken<TrackerGeometry, TrackerDigiGeometryRecord> geomToken_;
   const std::string tableName_;
   const unsigned maxLayer_;
   const bool doTruth_;

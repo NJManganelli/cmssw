@@ -94,6 +94,7 @@ private:
   std::array<int, kNLayers> geomRows_{}, geomCols_{};
   std::array<int, kNLayers> geomRocsX_{}, geomRocsY_{}, geomRowsPerRoc_{}, geomColsPerRoc_{};
   std::array<float, kNLayers> geomPitchX_{}, geomPitchY_{};
+  std::array<double, kNLayers> geomTiltSum_{}, geomTiltMax_{};
 };
 
 SmartPixelsClusterCensusAnalyzer::SmartPixelsClusterCensusAnalyzer(const edm::ParameterSet& iConfig)
@@ -136,6 +137,20 @@ void SmartPixelsClusterCensusAnalyzer::analyze(const edm::Event& iEvent, const e
       geomColsPerRoc_[lay - 1] = pt.colsperroc();
       geomPitchX_[lay - 1] = pt.pitch().first;
       geomPitchY_[lay - 1] = pt.pitch().second;
+      // TILT: angle between the module normal and the radial direction. Zero means
+      // the module faces the beamline and the local->global rotation is a pure phi
+      // rotation (a per-LAYER constant); nonzero means it is genuinely per-module.
+      {
+        const auto n = det->surface().normalVector();
+        const auto c = det->position();
+        const double rn = std::hypot(c.x(), c.y());
+        if (rn > 1e-6) {
+          const double cosw = std::abs((n.x() * c.x() + n.y() * c.y()) / rn);
+          const double tilt = std::acos(std::min(1.0, cosw));
+          geomTiltSum_[lay - 1] += tilt;
+          geomTiltMax_[lay - 1] = std::max(geomTiltMax_[lay - 1], tilt);
+        }
+      }
     }
   }
 
@@ -297,6 +312,14 @@ void SmartPixelsClusterCensusAnalyzer::endJob() {
        << std::setw(14) << std::scientific << std::setprecision(2) << occ << std::fixed << "\n";
   }
   os << "  (occupancy = clusters per occupied module / pixels per module)\n";
+  os << "\n  MODULE TILT (angle between the module normal and the radial direction):\n";
+  for (int l = 0; l < kNLayers; ++l)
+    if (geomModules_[l])
+      os << "    L" << (l + 1) << "  mean " << std::setprecision(2)
+         << geomTiltSum_[l] / geomModules_[l] * 180.0 / M_PI << " deg   max "
+         << geomTiltMax_[l] * 180.0 / M_PI << " deg\n";
+  os << "  Nonzero => the local->global rotation is PER-MODULE, not a per-layer constant,\n"
+        "  so any global-frame angle must use each module surface rotation.\n";
   os << "\nNOTE 'noLink' clusters carry no simlink on any pixel (noise-like) and can\n"
         "never pass a truth-pT cut; 'noParent' are linked but their parent momentum is\n"
         "absent from the TP+SimTrack map. Both are counted in 'all' and excluded from\n"

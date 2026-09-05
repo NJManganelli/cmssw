@@ -93,6 +93,20 @@
 #include <vector>
 
 namespace {
+  // sizeY bucketing for the noise-angle CDF. MUST match SIZEY_BINS in
+  // ngtagger-train/eval_spixel_angles/derive_noise_angle_payload.py, or the draw
+  // is conditioned on a different variable than the one it was binned in.
+  constexpr int kSizeYEdges[] = {1, 2, 3, 4, 5, 6, 8, 12};
+  inline int sizeYBin(unsigned sy) {
+    int b = 0;
+    for (int e : kSizeYEdges) {
+      if (static_cast<int>(sy) <= e)
+        return b;
+      ++b;
+    }
+    return b;
+  }
+
   // splitmix64: deterministic uniform in [0,1) from the cluster's own identity.
   // Chosen over an RNG so the noise angle is reproducible and split-job invariant
   // without needing a seeded per-event engine.
@@ -336,8 +350,13 @@ void SmartPixelsRecHitProducer::produce(edm::Event& iEvent, const edm::EventSetu
         const float lx = rh.localPosition().x(), ly = rh.localPosition().y();
         const double qa = hashUniform(did.rawId(), lx, ly, cl->charge(), 0x5CA1AB1Eull);
         const double qb = hashUniform(did.rawId(), lx, ly, cl->charge(), 0xB16B00B5ull);
-        double cotA = corrNoiseCotAlpha_->evaluate({static_cast<int>(lay), qa});
-        double cotB = corrNoiseCotBeta_->evaluate({static_cast<int>(lay), qb});
+        // Conditioned on cluster LENGTH, not just layer: a real sensor infers the
+        // angle from the charge pattern, so reported angle and shape are physically
+        // linked (mean sizeY rises 1.36 -> 6.51 across |cotBeta| bins for real
+        // clusters). A layer-only draw breaks that link and is itself a tell.
+        const int syb = sizeYBin(rh.cluster()->sizeY());
+        double cotA = corrNoiseCotAlpha_->evaluate({static_cast<int>(lay), syb, qa});
+        double cotB = corrNoiseCotBeta_->evaluate({static_cast<int>(lay), syb, qb});
         const std::vector<std::variant<int, double, std::string>> pin = {
             static_cast<int>(lay), cotA, cotB, bLocalY};
         const double sigA = corrAlphaSigma_->evaluate(pin);
