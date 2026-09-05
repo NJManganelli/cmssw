@@ -34,7 +34,7 @@ producer instance (prompt and extended cloned separately):
   `projResY` (full float), `recoCotAlpha`, `recoCotBeta`, `sigAlpha`, `sigBeta` (float12),
   `pullX`, `pullY`, `pullAlpha`, `pullBeta` (full float), `chi2IncX`, `chi2IncY`,
   `chi2IncAlpha`, `chi2IncBeta` (float12), and TRUTH-ONLY `selHitClass`,
-  `truthCotAlpha`, `truthCotBeta`.
+  `tpLocalCotAlpha`, `tpLocalCotBeta`.
 - **track EXTENSION table** (`extension=True`, SAME name+length as the variant track
   table `L1TSmartPixelsTrack<Suffix>` / `L1TSmartPixelsExtTrack<Suffix>`): `spixStatus`
   + unpacked bools (`spixRefitPerformed`, `spixSeedCovOK`,

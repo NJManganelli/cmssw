@@ -104,11 +104,11 @@ public:
         projSeedCotAlpha, projSeedCotBeta;
     std::vector<uint8_t> recoSizeX, recoSizeY;
     std::vector<bool> clusterMerged;
-    std::vector<float> truthChargeFrac;
+    std::vector<float> tpChargeFrac;
     std::vector<float> pullX, pullY, pullAlpha, pullBeta, selChi2Margin;
     std::vector<float> chi2IncX, chi2IncY, chi2IncAlpha, chi2IncBeta;
     std::vector<int32_t> selHitClass;
-    std::vector<float> truthCotAlpha, truthCotBeta;
+    std::vector<float> tpLocalCotAlpha, tpLocalCotBeta;
 
     for (size_t it = 0; it < nTracks; ++it) {
       const auto& ti = sidecar.trackInfo[it];
@@ -161,7 +161,7 @@ public:
         recoSizeY.push_back(hi.recoSizeY);
         recoCharge.push_back(hi.recoCharge);
         clusterMerged.push_back(hi.flags & smartpixels::hitflag::kClusterMerged);
-        truthChargeFrac.push_back(hi.truthChargeFrac);
+        tpChargeFrac.push_back(hi.tpChargeFrac);
         projResX.push_back(hi.projResX);
         projResY.push_back(hi.projResY);
         recoCotAlpha.push_back(hi.recoCotAlpha);
@@ -178,8 +178,8 @@ public:
         chi2IncBeta.push_back(hi.chi2IncBeta);
         selChi2Margin.push_back(hi.selChi2Margin);
         selHitClass.push_back(hi.selHitClass);
-        truthCotAlpha.push_back(hi.truthCotAlpha);
-        truthCotBeta.push_back(hi.truthCotBeta);
+        tpLocalCotAlpha.push_back(hi.tpLocalCotAlpha);
+        tpLocalCotBeta.push_back(hi.tpLocalCotBeta);
       }
     }
 
@@ -224,7 +224,7 @@ public:
     hitTable->addColumn<uint8_t>("recoSizeY", recoSizeY, "selected cluster extent in pixels along local y");
     hitTable->addColumn<float>("recoCharge", recoCharge, "selected cluster charge [ADC] (-999 if none)", /*mantissaBits=*/12);
     hitTable->addColumn<bool>("clusterMerged", clusterMerged, "TRUTH-ONLY: a second TP contributes more than clusterMergeFrac of the cluster charge");
-    hitTable->addColumn<float>("truthChargeFrac", truthChargeFrac, "TRUTH-ONLY dominant contributor share of the cluster charge (-999 if none)", /*mantissaBits=*/12);
+    hitTable->addColumn<float>("tpChargeFrac", tpChargeFrac, "TRUTH-ONLY dominant contributor share of the cluster charge (-999 if none)", /*mantissaBits=*/12);
     hitTable->addColumn<float>("projResX", projResX, "reco minus projected-crossing local x [cm] (-999 if none)");
     hitTable->addColumn<float>("projResY", projResY, "reco minus projected-crossing local y [cm] (-999 if none)");
     hitTable->addColumn<float>("recoCotAlpha", recoCotAlpha, "reco cotAlpha of the selected hit (-999 if none)", /*mantissaBits=*/12);
@@ -241,8 +241,8 @@ public:
     hitTable->addColumn<float>("chi2IncBeta", chi2IncBeta, "crossing chi2 increment, cotBeta angle term (-999 if none; 0 if not applied)", /*mantissaBits=*/12);
     hitTable->addColumn<float>("selChi2Margin", selChi2Margin, "runner-up minus best selection chi2 (>=0; -999 if <2 candidates or no accepted hit)", /*mantissaBits=*/12);
     hitTable->addColumn<int32_t>("selHitClass", selHitClass, "TRUTH-ONLY simlink class of selected hit: 0 sameTP, 1 otherTP, 2 noise, -1 none");
-    hitTable->addColumn<float>("truthCotAlpha", truthCotAlpha, "TRUTH-ONLY unsmeared parent local cotAlpha of the selected hit (-999 if none)", /*mantissaBits=*/12);
-    hitTable->addColumn<float>("truthCotBeta", truthCotBeta, "TRUTH-ONLY unsmeared parent local cotBeta of the selected hit (-999 if none)", /*mantissaBits=*/12);
+    hitTable->addColumn<float>("tpLocalCotAlpha", tpLocalCotAlpha, "TRUTH-ONLY unsmeared parent local cotAlpha of the selected hit (-999 if none)", /*mantissaBits=*/12);
+    hitTable->addColumn<float>("tpLocalCotBeta", tpLocalCotBeta, "TRUTH-ONLY unsmeared parent local cotBeta of the selected hit (-999 if none)", /*mantissaBits=*/12);
     hitTable->setDoc("SmartPixels refit per-crossing records for the " + trackTableName_ +
                      " tracks (one row per layer crossing; trackIdx links to that track table)");
     iEvent.put(std::move(hitTable), "hit");

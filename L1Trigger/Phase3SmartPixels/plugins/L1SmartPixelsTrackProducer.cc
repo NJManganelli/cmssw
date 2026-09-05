@@ -1971,9 +1971,9 @@ void L1SmartPixelsTrackProducer::produce(edm::Event& iEvent, const edm::EventSet
         hi.chi2IncBeta = static_cast<float>(incBeta);
         hi.selChi2Margin = (drSelChi2Margin > -900.) ? static_cast<float>(drSelChi2Margin) : -999.f;
         hi.selHitClass = best.cls;
-        hi.truthCotAlpha = static_cast<float>(best.parCotA);
-        hi.truthCotBeta = static_cast<float>(best.parCotB);
-        hi.truthChargeFrac = static_cast<float>(best.chargeFrac);
+        hi.tpLocalCotAlpha = static_cast<float>(best.parCotA);
+        hi.tpLocalCotBeta = static_cast<float>(best.parCotB);
+        hi.tpChargeFrac = static_cast<float>(best.chargeFrac);
         if (best.merged)
           hi.flags |= smartpixels::hitflag::kClusterMerged;
         drHitInfo.push_back(hi);

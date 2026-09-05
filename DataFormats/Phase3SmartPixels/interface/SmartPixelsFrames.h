@@ -28,15 +28,35 @@ namespace smartpixels {
   struct GlobalDirection {
     float dirPhi = -999.f;       // azimuth of the direction, global frame [rad]
     float dirCotTheta = -999.f;  // pz/pt of the direction: z = z0 + r*cotTheta
+    float sigDirPhi = -999.f;      // propagated from sigAlpha/sigBeta
+    float sigDirCotTheta = -999.f;
     bool valid = false;
   };
+
+  // Signed phi difference, wrapped to (-pi, pi]. Needed for the numerical
+  // derivatives below: a raw subtraction across the +/-pi seam would give ~2*pi
+  // and a wildly wrong uncertainty for every module near that seam.
+  inline double dPhiWrap(double a, double b) {
+    double d = a - b;
+    while (d > M_PI)
+      d -= 2 * M_PI;
+    while (d <= -M_PI)
+      d += 2 * M_PI;
+    return d;
+  }
 
   // Module-frame (cotAlpha, cotBeta) -> global direction, using the det's own
   // rotation. `toGlobalFn` must be the surface rotation of the SAME module the
   // angles were measured on; passing another module's is the failure this helper
   // exists to prevent.
+  // sigAlpha/sigBeta are propagated to the global variables by a numerical
+  // Jacobian, added in quadrature: the alpha and beta estimates come from separate
+  // payload corrections and are treated as independent, which is the same
+  // assumption the refit makes when it applies them as two independent scalar
+  // Kalman updates. Pass negative sigmas to skip the propagation.
   template <typename Det>
-  inline GlobalDirection toGlobalDirection(const Det& det, double cotAlpha, double cotBeta) {
+  inline GlobalDirection toGlobalDirection(const Det& det, double cotAlpha, double cotBeta,
+                                           double sigAlpha = -1., double sigBeta = -1.) {
     GlobalDirection out;
     if (!(std::isfinite(cotAlpha) && std::isfinite(cotBeta)))
       return out;
@@ -50,6 +70,30 @@ namespace smartpixels {
     out.dirPhi = static_cast<float>(std::atan2(gv.y(), gv.x()));
     out.dirCotTheta = static_cast<float>(gv.z() / pt);
     out.valid = true;
+
+    if (sigAlpha > 0. || sigBeta > 0.) {
+      double vPhi = 0., vCot = 0.;
+      const double base_phi = out.dirPhi, base_cot = out.dirCotTheta;
+      for (int k = 0; k < 2; ++k) {
+        const double sg = (k == 0) ? sigAlpha : sigBeta;
+        if (!(sg > 0.))
+          continue;
+        // Step by the sigma itself rather than an arbitrary epsilon: the map is
+        // smooth here, and this makes the linearization exact at the scale that
+        // actually matters instead of at a scale nobody uses.
+        const LocalVector lp(cotAlpha + (k == 0 ? sg : 0.), cotBeta + (k == 1 ? sg : 0.), 1.0);
+        const GlobalVector gp = det.toGlobal(lp);
+        const double ptp = std::hypot(gp.x(), gp.y());
+        if (!(ptp > 1e-12))
+          continue;
+        const double dphi = dPhiWrap(std::atan2(gp.y(), gp.x()), base_phi);
+        const double dcot = gp.z() / ptp - base_cot;
+        vPhi += dphi * dphi;
+        vCot += dcot * dcot;
+      }
+      out.sigDirPhi = static_cast<float>(std::sqrt(vPhi));
+      out.sigDirCotTheta = static_cast<float>(std::sqrt(vCot));
+    }
     return out;
   }
 
