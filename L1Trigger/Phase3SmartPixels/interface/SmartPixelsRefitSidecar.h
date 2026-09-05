@@ -99,8 +99,13 @@ namespace smartpixels {
     // --- TRUTH-ONLY (never hardware-available; excluded from every transmitted subset) ---
     int8_t selHitClass = -1;                           // selected-cluster class by DOMINANT charge contributor:
                                                        // 0 sameTP, 1 otherTP, 2 noise (no simlink), -1 none
-    float truthCotAlpha = -999.f, truthCotBeta = -999.f;  // selected hit's parent local angles, unsmeared (-999.f if no parent)
-    float truthChargeFrac = -999.f;                    // dominant contributor's share of the cluster charge. < 1 means
+    // TRUE incidence angles of the selected cluster's dominant TrackingParticle,
+    // in the MODULE frame, unsmeared (-999.f if no parent). The tp prefix matches
+    // the convention used everywhere else in this nano (L1TTrack_tpPt, the cluster
+    // table's tpIdx/tpPt/...); "truth" was a second word for the same thing.
+    // local* because cotAlpha/cotBeta are module-frame BY DEFINITION (PixelAV).
+    float tpLocalCotAlpha = -999.f, tpLocalCotBeta = -999.f;
+    float tpChargeFrac = -999.f;                    // dominant contributor's share of the cluster charge. < 1 means
                                                        // the cluster is shared; see hitflag::kClusterMerged. A cluster
                                                        // can be class 0 and still carry another TP's charge, which
                                                        // biases its position and makes its angle ill-defined -- an

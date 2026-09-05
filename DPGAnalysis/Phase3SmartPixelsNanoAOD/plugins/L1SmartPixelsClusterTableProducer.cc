@@ -118,6 +118,7 @@ public:
     std::vector<float> localX, localY, sigX, sigY, charge;
     std::vector<float> globalR, globalPhi, globalZ;
     std::vector<float> globalClusterPhi, globalClusterCotTheta, tpGlobalClusterPhi, tpGlobalClusterCotTheta;
+    std::vector<float> sigGlobalClusterPhi, sigGlobalClusterCotTheta;
     unsigned closureFail = 0;
     std::vector<float> localCotAlpha, localCotBeta, sigAlpha, sigBeta;
     std::vector<uint8_t> hasAlpha, hasBeta;
@@ -156,9 +157,12 @@ public:
           globalR.push_back(std::hypot(gp.x(), gp.y()));
           globalPhi.push_back(std::atan2(gp.y(), gp.x()));
           globalZ.push_back(gp.z());
-          const auto gr = smartpixels::toGlobalDirection(*pdu, rh.cotAlpha(), rh.cotBeta());
+          const auto gr = smartpixels::toGlobalDirection(*pdu, rh.cotAlpha(), rh.cotBeta(),
+                                                         rh.sigAlpha(), rh.sigBeta());
           globalClusterPhi.push_back(gr.valid ? gr.dirPhi : -999.f);
           globalClusterCotTheta.push_back(gr.valid ? gr.dirCotTheta : -999.f);
+          sigGlobalClusterPhi.push_back(gr.valid ? gr.sigDirPhi : -999.f);
+          sigGlobalClusterCotTheta.push_back(gr.valid ? gr.sigDirCotTheta : -999.f);
           // CLOSURE: rotate the global direction back and require the module-frame
           // angles to reappear. A mis-applied rotation on a tilted module would
           // otherwise be a large, silent error.
@@ -168,6 +172,7 @@ public:
         } else {
           globalR.push_back(-999.f); globalPhi.push_back(-999.f); globalZ.push_back(-999.f);
           globalClusterPhi.push_back(-999.f); globalClusterCotTheta.push_back(-999.f);
+          sigGlobalClusterPhi.push_back(-999.f); sigGlobalClusterCotTheta.push_back(-999.f);
         }
         localX.push_back(rh.localPosition().x());
         localY.push_back(rh.localPosition().y());
@@ -207,20 +212,40 @@ public:
     tab->addColumn<uint32_t>("detId", detId, "module rawId; join key to the refit hit table detId");
     tab->addColumn<float>("localX", localX, "cluster position, module-local x [cm]", 16);
     tab->addColumn<float>("localY", localY, "cluster position, module-local y [cm]", 16);
-    tab->addColumn<float>("globalR", globalR, "cluster position, CMS global cylindrical r [cm]", 16);
+    tab->addColumn<float>("globalR", globalR,
+                          "POSITION. Cylindrical radius of WHERE THE CLUSTER IS [cm]", 16);
     tab->addColumn<float>("globalPhi", globalPhi,
-                          "cluster position, CMS global phi [rad]. Stored DIRECTLY at 16 mantissa "
-                          "bits (~1e-4 rad); reconstructing it from Cartesian columns at the "
-                          "precision localX/localY use would give ~1 mrad", 16);
-    tab->addColumn<float>("globalZ", globalZ, "cluster position, CMS global z [cm]", 16);
+                          "POSITION. Azimuth of WHERE THE CLUSTER IS, in CMS global coordinates "
+                          "[rad]. This is a location on the detector surface and has NOTHING to do "
+                          "with any direction or angle estimate: it is atan2(y,x) of the cluster "
+                          "centroid. Pairs with globalR and globalZ to give the full position. "
+                          "Do NOT confuse with globalClusterPhi, which is a DIRECTION. Stored "
+                          "directly at 16 mantissa bits (~5e-5 rad) because reconstructing it from "
+                          "Cartesian columns would inherit their precision (~1 mrad)", 16);
+    tab->addColumn<float>("globalZ", globalZ,
+                          "POSITION. CMS global z of WHERE THE CLUSTER IS [cm]", 16);
     tab->addColumn<float>("globalClusterPhi", globalClusterPhi,
-                          "SENSOR-estimated direction, global phi [rad]. The global counterpart of "
-                          "localCotAlpha/Beta, which are module-frame BY DEFINITION (PixelAV) and "
-                          "have no meaningful global variant. Uses the per-module rotation: TBPX "
-                          "tilt reaches 16.5 deg", 16);
+                          "DIRECTION. Azimuth of the SMART-PIXEL ML ANGLE ESTIMATE for this "
+                          "cluster, rotated into CMS global coordinates [rad]. This is the "
+                          "estimated direction of the PARTICLE that made the cluster -- the ML "
+                          "regressor output, carrying the PixelAV response -- NOT a position. It "
+                          "is the global counterpart of localCotAlpha/localCotBeta, which are "
+                          "module-frame by definition (PixelAV) and have no meaningful global "
+                          "variant. Do NOT confuse with globalPhi, which is WHERE the cluster is. "
+                          "Uses the per-module surface rotation (TBPX tilt reaches 16.5 deg, so it "
+                          "is not a per-layer constant). Uncertainty: sigGlobalClusterPhi", 16);
     tab->addColumn<float>("globalClusterCotTheta", globalClusterCotTheta,
-                          "SENSOR-estimated direction, global cot(theta) = pz/pt. Chosen over eta "
-                          "because the r-z Hough wants z = z0 + r*cotTheta directly", 16);
+                          "DIRECTION. cot(theta) = pz/pt of the SMART-PIXEL ML ANGLE ESTIMATE, CMS "
+                          "global frame. Chosen over eta because the r-z Hough wants "
+                          "z = z0 + r*cotTheta directly. Uncertainty: sigGlobalClusterCotTheta", 16);
+    tab->addColumn<float>("sigGlobalClusterPhi", sigGlobalClusterPhi,
+                          "Uncertainty on globalClusterPhi [rad], propagated from the module-frame "
+                          "sigAlpha/sigBeta through the SAME per-module rotation by a numerical "
+                          "Jacobian, added in quadrature. Alpha and beta are treated as "
+                          "independent, matching how the refit applies them as two independent "
+                          "scalar Kalman updates", 12);
+    tab->addColumn<float>("sigGlobalClusterCotTheta", sigGlobalClusterCotTheta,
+                          "Uncertainty on globalClusterCotTheta, same propagation", 12);
     tab->addColumn<float>("sigX", sigX, "CPE position uncertainty, local x [cm]", 10);
     tab->addColumn<float>("sigY", sigY, "CPE position uncertainty, local y [cm]", 10);
     tab->addColumn<uint8_t>("sizeX", sizeX, "cluster bounding-box extent in pixels, local x");

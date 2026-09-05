@@ -56,7 +56,7 @@ freeze and the next schema change become v2.7. Program of work:
   analyze v2.5 productions with v2.5 software.
   (b) the reco/proj/projRes/truth vocabulary below made normative and applied to
   the field names (resX/Y -> projResX/Y, cotAlphaMeas/cotBetaMeas ->
-  recoCotAlpha/recoCotBeta, parCotAlpha/parCotBeta -> truthCotAlpha/truthCotBeta).
+  recoCotAlpha/recoCotBeta, parCotAlpha/parCotBeta -> tpLocalCotAlpha/tpLocalCotBeta).
   PLANNED, same ClassVersion: per-hit reco position and its sigma;
   per-dimension innovation sigma sqrt(S); per-track projected chi2 of stubs + IT
   hits against the refit track (float approximation); truth-hit and
@@ -189,7 +189,7 @@ struct SmartPixelsRefitHitInfo {   // one entry per LAYER CROSSING attempted (no
                            // from in-window quantities); eligible for transmitted subsets v2+.
   // --- TRUTH-ONLY fields (never hardware-available; excluded from every transmitted subset) ---
   int8_t selHitClass;      // simlink class of the selected hit: 0 sameTP, 1 otherTP, 2 noise, -1 none
-  float  truthCotAlpha, truthCotBeta;  // selected hit's unsmeared parent local angles (-999.f if none)
+  float  tpLocalCotAlpha, tpLocalCotBeta;  // selected hit's unsmeared parent local angles (-999.f if none)
 };
 
 struct SmartPixelsRefitTrackInfo { // one entry per track (refit or passthrough)
