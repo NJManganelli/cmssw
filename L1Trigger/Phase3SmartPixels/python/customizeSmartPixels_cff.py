@@ -349,6 +349,23 @@ def _addPixelRecHitChain(process, refitModule, digiTag=SPIX_PIXEL_DIGI_TAG):
   a config dump would not show the disagreement.
   """
   refitModule.pixelDigiInputTag = digiTag
+  ensurePixelRecHitChain(process, digiTag)
+  refitModule.pixelRecHitInputTag = cms.InputTag("spixPixelRecHits")
+  return process
+
+
+def ensurePixelRecHitChain(process, digiTag=SPIX_PIXEL_DIGI_TAG):
+  """Create spixPixelClusters -> spixPixelRecHits if absent; idempotent.
+
+  Public because two independent callers need it and MUST get the same chain: the
+  digiRefit producer wiring, and the untruncated cluster nano table
+  (addPh3L1SmartPixelsClusters). They run in either order -- autoNANO --customise
+  functions execute BEFORE --customise_commands, so the table's customize can fire
+  first -- and whichever runs first must build a chain the other simply reuses. A
+  second, separately-configured clusterizer is the failure this prevents: the
+  cluster table would then describe different clusters than the refit was offered,
+  with nothing in the config dump showing the disagreement.
+  """
   if not hasattr(process, "spixPixelClusters"):
     from RecoLocalTracker.SiPixelClusterizer.SiPixelClusterizer_cfi import siPixelClusters
     process.spixPixelClusters = siPixelClusters.clone(src=digiTag)
@@ -358,7 +375,6 @@ def _addPixelRecHitChain(process, refitModule, digiTag=SPIX_PIXEL_DIGI_TAG):
     process.spixPixelRecHits = siPixelRecHits.clone(src="spixPixelClusters", CPE="PixelCPEGeneric")
   if not hasattr(process, "spixPixelRecHitTask"):
     process.spixPixelRecHitTask = cms.Task(process.spixPixelClusters, process.spixPixelRecHits)
-  refitModule.pixelRecHitInputTag = cms.InputTag("spixPixelRecHits")
   return process
 
 

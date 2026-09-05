@@ -1,3 +1,13 @@
+<use name="hepmc"/>
+<use name="DataFormats/Common"/>
+<use name="DataFormats/SiPixelCluster"/>
+<use name="DataFormats/SiPixelDetId"/>
+<use name="DataFormats/SiPixelDigi"/>
+<use name="DataFormats/TrackerRecHit2D"/>
+<use name="SimDataFormats/EncodedEventId"/>
+<use name="SimDataFormats/Track"/>
+<use name="SimDataFormats/TrackerDigiSimLink"/>
+<use name="SimDataFormats/TrackingAnalysis"/>
 <use name="DataFormats/L1TrackTrigger"/>
 <use name="DataFormats/NanoAOD"/>
 <use name="DataFormats/TrackerCommon"/>
