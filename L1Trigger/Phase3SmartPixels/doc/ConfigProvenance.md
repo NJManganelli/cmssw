@@ -2,7 +2,7 @@
 
 Development ran for months out of `cmssw/work/` and `cmssw/work/spxsmoke/`, which
 accumulated **163 hand-kept `*_cfg.py` files**. They are being replaced by a
-generator, `test/makeSpxConfig.py`. This document is what has to survive the
+generator, `test/makeSpixConfig.py`. This document is what has to survive the
 deletion: the commands that produced them, and the commit range each command is
 still valid at.
 
@@ -43,7 +43,9 @@ Use these to decide whether an archived command can be replayed. Commits are on
 | hit candidates become `SiPixelRecHit`s | `ca9dc92` | Before: one candidate per fired `PixelDigi`, position a pixel centre, error `pitch/sqrt(12)`. All combinatorics, pull and window numbers measured earlier are **digi-era** and not comparable. |
 | sidecar vocabulary `reco*`/`proj*`/`projRes*`/`truth*` | `1c265e9` | `resX`/`resY` became `projResX`/`projResY`; several nano columns renamed. Analysis scripts targeting v2.6 names reject earlier files outright, by design. |
 | 4-way chi2 split | `c521303` | Before: `chi2RPhi`/`chi2RZ` only. `chi2Inc{X,Y,Alpha,Beta}` do not exist earlier. |
-| `trackInputMode` vocabulary | `9b8c48f`, `0d122f6`, `b890ce3` | `inJob`→`reemulateL1TrackFinding`, `fromFileStubs`→`rebuildTracksFromStubs`, `fromFile`→`useStoredTracks`. Old spellings still honored with a warning. |
+| `trackInputMode` vocabulary | `9b8c48f`, `0d122f6`, `b890ce3` | `inJob`→`reemulateL1TrackFinding`, `fromFileStubs`→`rebuildTracksFromStubs`, `fromFile`→`useStoredTracks`. |
+| old spellings + `truthSource=` **retired** | `b4732d5` | Warned-about before this, a hard error after. 106 of the 222 archived configs use `truthSource=` and therefore cannot run against a current tree at all. `attachFromFileStubsChain`→`attachStubRebuildChain`; Task label `l1tSmartPixelsFromFileStubsTask`→`l1tSmartPixelsStubRebuildTask`. |
+| nano column prefix `spx*` → `spix*` | after `b4732d5` | Every refit nano column renamed (`spxStatus`→`spixStatus`, …). Pre-rename nano is unreadable by current `ngtagger-train` loaders and vice versa. The correctionlib payload keys moved too (`spx_angle_*`→`spix_angle_*`), which means **code and payload must be upgraded together**: the consumer looks them up by exact string, so a pre-rename payload throws on load against a post-rename build and vice versa. `ngtagger-train/eval_spixel_angles/migrate_payload_spx_to_spix.py` converts a stray payload; `--check` reports without writing. Payload FILES were renamed `spx_angle_response_*`→`spix_angle_response_*` as well. |
 | `extendPh2L1DisplacedVertices` rename | upstream, ~2026-08 | Any config generated before this **cannot be imported** under 20_1. Patch with `sed -e 's/addPh2L1DisplacedVertices/extendPh2L1DisplacedVertices/g'`. |
 | input-file staging | n/a | The `NJM256GBSD` SD card is no longer mounted; D121 RelVals live under `/host_volumes/WDMac/smartpixels-cmssw-testfiles/`. Archived commands hardcode the old path. |
 
@@ -81,12 +83,12 @@ still cited in `RefitStudyProgram.md` traces to a shape not listed above.
 
 ```bash
 # the standard PU200 refit-development config (replaces the 21-file CLAMP family)
-test/makeSpxConfig.py --pu 200 --tier trk-truth --variant digiRefit:1111 \
-    --events 100 --needs-truth -o /work/spx_pu200.py
+test/makeSpixConfig.py --pu 200 --tier trk-truth --variant digiRefit:1111 \
+    --events 100 --needs-truth -o /work/spix_pu200.py
 
 # an A/B on one axis: both arms identical except the knob
-test/makeSpxConfig.py --pu 200 --tier trk-truth --variant digiRefit:1111 \
-    --scan layerOrder=outsideIn,insideOut --needs-truth -o /work/spx_order
+test/makeSpixConfig.py --pu 200 --tier trk-truth --variant digiRefit:1111 \
+    --scan layerOrder=outsideIn,insideOut --needs-truth -o /work/spix_order
 ```
 
 `--dry-run` prints the cmsDriver command, so the generator can also be used to

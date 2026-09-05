@@ -422,8 +422,8 @@ private:
 
   // Correctionlib refs for the PixelAV angle response (loaded iff digiRefit).
   // The synthesis throw lives in the payload (spec §3 fused shift compounds):
-  //   cotX_meas = cotX_true + spx_angle_X_shift(layer,cotA,cotB,bLocalY, 1.0)
-  //   accept iff spx_angle_valid_flat(in) < spx_angle_valid_prob(in)
+  //   cotX_meas = cotX_true + spix_angle_X_shift(layer,cotA,cotB,bLocalY, 1.0)
+  //   accept iff spix_angle_valid_flat(in) < spix_angle_valid_prob(in)
   // -> bias + sigma*N(0,1) via HashPRNG, deterministic per input tuple, NO RNG here.
   correction::Correction::Ref corrAlphaSigma_, corrBetaSigma_;
   correction::Correction::Ref corrValidProb_, corrValidFlat_;
@@ -685,18 +685,18 @@ L1SmartPixelsTrackProducer::L1SmartPixelsTrackProducer(edm::ParameterSet const& 
       throw cms::Exception("Configuration")
           << "digiRefit requires a non-empty pixelavAngleSet (PixelAV angle-response payload).";
     auto aset = correction::CorrectionSet::from_file(digiRefitPixelavAngleSet_);
-    corrAlphaSigma_ = aset->at("spx_angle_alpha_sigma");
-    corrBetaSigma_ = aset->at("spx_angle_beta_sigma");
-    corrValidProb_ = aset->at("spx_angle_valid_prob");
+    corrAlphaSigma_ = aset->at("spix_angle_alpha_sigma");
+    corrBetaSigma_ = aset->at("spix_angle_beta_sigma");
+    corrValidProb_ = aset->at("spix_angle_valid_prob");
     try {
-      corrValidFlat_ = aset->at("spx_angle_valid_flat");
-      corrAlphaShift_ = aset->compound().at("spx_angle_alpha_shift");
-      corrBetaShift_ = aset->compound().at("spx_angle_beta_shift");
+      corrValidFlat_ = aset->at("spix_angle_valid_flat");
+      corrAlphaShift_ = aset->compound().at("spix_angle_alpha_shift");
+      corrBetaShift_ = aset->compound().at("spix_angle_beta_shift");
     } catch (const std::out_of_range&) {
       throw cms::Exception("Configuration")
           << "pixelavAngleSet '" << digiRefitPixelavAngleSet_
           << "' predates the HashPRNG synthesis-throw factorization (missing "
-          << "spx_angle_valid_flat / spx_angle_{alpha,beta}_shift). Regenerate it with "
+          << "spix_angle_valid_flat / spix_angle_{alpha,beta}_shift). Regenerate it with "
           << "ngtagger-train/eval_spixel_angles/extract_pixelav_angle_payload.py "
           << "(additions are purely additive; plain corrections stay bit-identical).";
     }
@@ -2340,9 +2340,9 @@ void L1SmartPixelsTrackProducer::fillDescriptions(edm::ConfigurationDescriptions
                    "features of the input track). Empty = keep the input trkMVA1. When set, the score replaces the "
                    "refit track's trkMVA1 ctor slot (+ track-word MVA bits); n_features must be 17 or 24 or it throws.");
   desc.add<edm::InputTag>("pixelDigiInputTag", edm::InputTag("simSiPixelDigis", "Pixel"));
-  desc.add<edm::InputTag>("pixelRecHitInputTag", edm::InputTag("spxPixelRecHits"))
+  desc.add<edm::InputTag>("pixelRecHitInputTag", edm::InputTag("spixPixelRecHits"))
       ->setComment("IT pixel rec hits used as the refit hit candidates. Default is the SmartPixels-owned "
-                   "spxPixelRecHits, clustered from pixelDigiInputTag so that cluster -> digi channel -> "
+                   "spixPixelRecHits, clustered from pixelDigiInputTag so that cluster -> digi channel -> "
                    "simlink truth is consistent by construction; point elsewhere only deliberately.");
   desc.add<edm::InputTag>("pixelDigiSimLinkInputTag", edm::InputTag("simSiPixelDigis", "Pixel"));
   desc.add<edm::InputTag>("simTrackInputTag", edm::InputTag("g4SimHits"));

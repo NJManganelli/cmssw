@@ -35,7 +35,7 @@ options.setDefault('inputFiles',
 options.setDefault('outputFile', 'digirefit_pu.root')
 options.parseArguments()
 
-process = cms.Process("SPXREFIT", Phase2C22I13M9)
+process = cms.Process("SPIXREFIT", Phase2C22I13M9)
 process.load('Configuration.StandardSequences.Services_cff')
 process.load('Configuration.Geometry.GeometryExtendedRun4D121Reco_cff')
 process.load('Configuration.StandardSequences.MagneticField_cff')
@@ -55,14 +55,14 @@ process.MessageLogger = cms.Service("MessageLogger",
                                     cerr=cms.untracked.PSet(FwkReport=cms.untracked.PSet(reportEvery=cms.untracked.int32(10))))
 
 from L1Trigger.Phase3SmartPixels.customizeSmartPixels_cff import addSmartPixelsTrackProducerVariants
-process, spxModules = addSmartPixelsTrackProducerVariants(
+process, spixModules = addSmartPixelsTrackProducerVariants(
     process,
     variants=[("passthrough", None), ("digiRefit", options.activeSP)],
     digiRefitConfig={"pixelavAngleSet": options.pixelavAngleSet,
                      "useAngles": options.useAngles})
 
 process.p = cms.Path()
-for m in spxModules:
+for m in spixModules:
     process.p += getattr(process, m)
 
 process.out = cms.OutputModule("PoolOutputModule",

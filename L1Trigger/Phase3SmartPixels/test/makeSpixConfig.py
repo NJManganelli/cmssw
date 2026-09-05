@@ -14,16 +14,16 @@ staged on a config that silently dropped the TrackingParticle truth columns.
 So configs are GENERATED here, from named axes, and are not kept.
 
     # the standard PU200 refit-development config
-    ./makeSpxConfig.py --pu 200 --tier trk-truth --variant digiRefit:1111 \
-        --events 100 -o /work/spx_pu200.py
+    ./makeSpixConfig.py --pu 200 --tier trk-truth --variant digiRefit:1111 \
+        --events 100 -o /work/spix_pu200.py
 
     # noPU smoke, two inner layers only, alpha-only angles
-    ./makeSpxConfig.py --pu 0 --tier trk --variant digiRefit:1100 \
-        --use-angles alpha --events 3 -o /work/spx_smoke.py
+    ./makeSpixConfig.py --pu 0 --tier trk --variant digiRefit:1100 \
+        --use-angles alpha --events 3 -o /work/spix_smoke.py
 
     # A/B on one axis: emit both arms, identical in every other respect
-    ./makeSpxConfig.py --pu 200 --tier trk-truth --variant digiRefit:1111 \
-        --scan layerOrder=outsideIn,insideOut -o /work/spx_order
+    ./makeSpixConfig.py --pu 200 --tier trk-truth --variant digiRefit:1111 \
+        --scan layerOrder=outsideIn,insideOut -o /work/spix_order
 
 `--dry-run` prints the cmsDriver command instead of running it, which is what
 doc/ConfigProvenance.md records.
@@ -40,6 +40,10 @@ import os
 import shlex
 import subprocess
 import sys
+
+from DPGAnalysis.Phase3SmartPixelsNanoAOD.l1tPh3SmartPixelsNano_cff import (
+    _ABSENT_MENU_TABLES_DEFAULT,
+)
 
 # --- input files, by (pileup, release-compat). See mem:smartpixels-testfile-release-compat.
 #     Paths are the WDMac mount; the NJM256GBSD SD card is no longer attached.
@@ -76,8 +80,33 @@ REFIT_AXES = {
     "bdtModel": str,
 }
 
+# Tables keyed to the BASE (non-variant) SmartPixels producers. smartPixelsCoexist
+# schedules only the requested VARIANT producers, so these resolve to a missing
+# product and abort at the output module. This is a different reason from
+# _ABSENT_MENU_TABLES_DEFAULT (which is about the input's reduced L1 menu), hence a
+# separate list rather than a change upstream.
+BASE_PRODUCER_TABLES = ("l1tPh3SmartPixelsTracksTable", "l1tPh3ExtSmartPixelsTracksTable")
+
+# Tables that are absent on the D121 RelVals, whether from the reduced L1 menu or
+# from objects those samples never persisted. This list is EMPIRICAL: it is the
+# union arrived at over months of archived configs (see doc/ConfigProvenance.md),
+# and it is reproduced here rather than rediscovered because each missing entry
+# costs a full multi-minute job to find -- the failure is a ProductNotFound abort
+# at the output module on the first event, one table at a time.
+# For a PF-carrying tier on a PU sample, stitchPFTierForStubRebuild() un-prunes the
+# Puppi/SC4/SC8 family; pass --keep-table to override individual entries here.
+RELVAL_ABSENT_TABLES = (
+    "gttTracksTable", "gttExtTracksTable",
+    "dispVtxTable", "l1tDisplacedVertexTable",
+    "l1tPuppiCandsTable", "l1tExtPuppiCandsTable", "l1tPFCandsTable",
+    "l1tSC4JetCandsTable", "l1tSC4NGJetCandsTable",
+    "l1tHGCClusterTable",
+    "l1tPuppiCandHGCClusterLink", "l1tExtPuppiCandHGCClusterLink",
+    "l1tPuppiCandTrackTruthTable", "l1tExtPuppiCandTrackTruthTable",
+)
+
 PAYLOAD_DIR = "/work/spxsmoke"
-DEFAULT_ANGLE_SET = f"{PAYLOAD_DIR}/spx_angle_response_Conv1D_Full-2bit_v4fixed.json"
+DEFAULT_ANGLE_SET = f"{PAYLOAD_DIR}/spix_angle_response_Conv1D_Full-2bit_v4fixed.json"
 
 
 def build_customise(args, overrides):
@@ -99,11 +128,52 @@ def build_customise(args, overrides):
         f"trackInputMode='{args.track_input_mode}', extendedTracks={args.extended_tracks}, "
         f"promptHnpar={args.prompt_hnpar}, digiRefitConfig={refit!r})",
     ]
+    # RelVals carry a reduced L1 menu, so some menu tables would resolve to a
+    # missing product and abort with ProductNotFound at the output module. The
+    # curated default (_ABSENT_MENU_TABLES_DEFAULT) covers the ones seen so far;
+    # --drop-tables extends it. Not optional: every archived config that ran on a
+    # RelVal needed this, and omitting it is a run-time abort, not a warning.
+    drop = [t for t in (list(_ABSENT_MENU_TABLES_DEFAULT) + list(BASE_PRODUCER_TABLES)
+                        + list(RELVAL_ABSENT_TABLES) + args.drop_tables)
+            if t not in args.keep_table]
+    parts.append(f"process = dropAbsentMenuTables(process, {tuple(drop)!r})")
+    # AUTO-PRUNE is not optional. A RelVal lacks a long and sample-dependent tail
+    # of menu objects, and each missing one is a ProductNotFound abort at the
+    # output module on the first event -- discovered one table per multi-minute
+    # job. The explicit drop lists above cannot keep up (OMTFpromptMuTable,
+    # gttTracksTable, ... were each found that way), so the branch list is taken
+    # from the INPUT ITSELF via edmDumpEventContent and everything absent is
+    # pruned in one shot.
     if args.labels_file:
         parts.append(
             f"_avail = set(l.strip() for l in open({args.labels_file!r}) if l.strip())")
         parts.append("process = pruneAbsentSimpleTables(process, _avail)")
     return "; ".join(parts)
+
+
+def ensure_labels_file(infile, explicit=None, cache_dir="/work/.spix_labels"):
+    """Branch labels present in `infile`, cached. Mirrors the archived extract_labels.py."""
+    if explicit:
+        return explicit
+    os.makedirs(cache_dir, exist_ok=True)
+    tag = os.path.basename(infile).replace(".root", "")
+    out = os.path.join(cache_dir, f"{tag}.labels.txt")
+    if os.path.exists(out) and os.path.getsize(out) > 0:
+        return out
+    print(f"[labels] edmDumpEventContent {infile} -> {out}", file=sys.stderr)
+    r = subprocess.run(["edmDumpEventContent", f"file:{infile}"],
+                       capture_output=True, text=True, timeout=1800)
+    if r.returncode != 0:
+        print(f"[labels] WARNING: edmDumpEventContent failed; auto-prune disabled. "
+              f"Expect ProductNotFound aborts.\n{r.stderr[-500:]}", file=sys.stderr)
+        return None
+    labels = sorted({p.split('"')[1].strip()
+                     for p in r.stdout.splitlines() if len(p.split('"')) >= 2
+                     if p.split('"')[1].strip()})
+    with open(out, "w") as fh:
+        fh.write("\n".join(labels) + "\n")
+    print(f"[labels] {len(labels)} labels cached", file=sys.stderr)
+    return out
 
 
 def cmsdriver_cmd(args, out_py, overrides):
@@ -117,6 +187,7 @@ def cmsdriver_cmd(args, out_py, overrides):
     if not infile:
         raise SystemExit(f"no known input for pu={args.pu} release={args.release_compat}; "
                          "pass --filein explicitly")
+    args.labels_file = ensure_labels_file(infile, args.labels_file)
     return [
         "cmsDriver.py", os.path.splitext(os.path.basename(out_py))[0],
         "-s", steps,
@@ -160,8 +231,15 @@ def main():
     ap.add_argument("--prompt-hnpar", type=int, default=5, choices=[4, 5])
     ap.add_argument("--use-angles", default=None, choices=["none", "alpha", "alphaBeta"])
     ap.add_argument("--pixelav-angle-set", default=DEFAULT_ANGLE_SET)
+    ap.add_argument("--drop-tables", action="append", default=[], metavar="LABEL",
+                    help="extra nano table module label to drop (repeatable), on top of "
+                         "the curated _ABSENT_MENU_TABLES_DEFAULT")
+    ap.add_argument("--keep-table", action="append", default=[], metavar="LABEL",
+                    help="do NOT drop this table even though it is in the default "
+                         "absent-on-RelVal list (repeatable)")
     ap.add_argument("--labels-file", default=None,
-                    help="newline-separated available-branch list for pruneAbsentSimpleTables")
+                    help="newline-separated available-branch list for pruneAbsentSimpleTables. "
+                         "Derived from the input via edmDumpEventContent and cached if omitted.")
     ap.add_argument("--filein", default=None)
     ap.add_argument("--fileout", default=None)
     ap.add_argument("--needs-truth", action="store_true",

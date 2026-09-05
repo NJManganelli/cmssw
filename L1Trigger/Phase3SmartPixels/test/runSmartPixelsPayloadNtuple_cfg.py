@@ -29,7 +29,7 @@ options.setDefault('inputFiles', 'file:/work/testfiles/RelValTTbar_D121_noPU.roo
 options.setDefault('outputFile', 'payload_ntuple.root')
 options.parseArguments()
 
-process = cms.Process("SPXPAYLOAD", Phase2C22I13M9)
+process = cms.Process("SPIXPAYLOAD", Phase2C22I13M9)
 
 process.load('Configuration.StandardSequences.Services_cff')
 process.load('Configuration.Geometry.GeometryExtendedRun4D121Reco_cff')

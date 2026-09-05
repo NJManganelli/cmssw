@@ -286,7 +286,7 @@ REQUIREMENTS:
   (fitSmartHitPayloads / PixelAV set descriptions); the sidecar itself adds none.
 - Reserved for future versions (do NOT improvise): endcap layers (TEPX/TFPX ids),
   per-hit KF gain snapshots for `gainMode="lut"` studies, PixelAV high-res position
-  fields (`spx_pos_*` era), per-candidate subset words materialized in the track word.
+  fields (`spix_pos_*` era), per-candidate subset words materialized in the track word.
 
 ## 6. In-producer refit-quality BDT and KF numerical guards
 

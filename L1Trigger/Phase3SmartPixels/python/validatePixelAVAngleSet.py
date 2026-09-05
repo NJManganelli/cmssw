@@ -13,34 +13,34 @@ import math
 import sys
 
 CORRECTIONS = {
-    "spx_angle_alpha_sigma": dict(kind="sigma"),
-    "spx_angle_alpha_bias": dict(kind="bias"),
-    "spx_angle_beta_sigma": dict(kind="sigma"),
-    "spx_angle_beta_bias": dict(kind="bias"),
-    "spx_angle_valid_prob": dict(kind="prob"),
+    "spix_angle_alpha_sigma": dict(kind="sigma"),
+    "spix_angle_alpha_bias": dict(kind="bias"),
+    "spix_angle_beta_sigma": dict(kind="sigma"),
+    "spix_angle_beta_bias": dict(kind="bias"),
+    "spix_angle_valid_prob": dict(kind="prob"),
 }
 # HashPRNG nodes (REQUIRED since the synthesis-throw factorization):
 # name -> (distribution, exact entropy hash order). Orders are PAIRWISE DISTINCT --
 # that is the decorrelation mechanism (alpha/beta throws independent; gate independent).
 PRNG_CORRECTIONS = {
-    "spx_angle_prng": ("stdnormal", ["layer", "cotAlpha", "cotBeta", "bLocalY"]),
-    "spx_angle_prng_beta": ("stdnormal", ["cotBeta", "bLocalY", "layer", "cotAlpha"]),
-    "spx_angle_valid_flat": ("stdflat", ["bLocalY", "cotBeta", "cotAlpha", "layer"]),
+    "spix_angle_prng": ("stdnormal", ["layer", "cotAlpha", "cotBeta", "bLocalY"]),
+    "spix_angle_prng_beta": ("stdnormal", ["cotBeta", "bLocalY", "layer", "cotAlpha"]),
+    "spix_angle_valid_flat": ("stdflat", ["bLocalY", "cotBeta", "cotAlpha", "layer"]),
 }
 # Fused-shift terminal corrections (REQUIRED): bias-table structure, Formula cells,
 # 5-input signature (the 4 plain inputs + prngAcc).
-FINAL_CORRECTIONS = ["spx_angle_alpha_final", "spx_angle_beta_final"]
+FINAL_CORRECTIONS = ["spix_angle_alpha_final", "spix_angle_beta_final"]
 # Two-piece smear CompoundCorrections (REQUIRED): name -> exact stack; output_op "*".
 COMPOUNDS = {
-    "spx_angle_alpha_smear": ["spx_angle_alpha_sigma", "spx_angle_prng"],
-    "spx_angle_beta_smear": ["spx_angle_beta_sigma", "spx_angle_prng_beta"],
+    "spix_angle_alpha_smear": ["spix_angle_alpha_sigma", "spix_angle_prng"],
+    "spix_angle_beta_smear": ["spix_angle_beta_sigma", "spix_angle_prng_beta"],
 }
 # Fused shift CompoundCorrections (REQUIRED, the PRIMARY consumer contract):
 # name -> exact stack; inputs_update=["prngAcc"], input_op "*", output_op "last";
 # consumer passes prngAcc=1.0.
 SHIFT_COMPOUNDS = {
-    "spx_angle_alpha_shift": ["spx_angle_alpha_sigma", "spx_angle_prng", "spx_angle_alpha_final"],
-    "spx_angle_beta_shift": ["spx_angle_beta_sigma", "spx_angle_prng_beta", "spx_angle_beta_final"],
+    "spix_angle_alpha_shift": ["spix_angle_alpha_sigma", "spix_angle_prng", "spix_angle_alpha_final"],
+    "spix_angle_beta_shift": ["spix_angle_beta_sigma", "spix_angle_prng_beta", "spix_angle_beta_final"],
 }
 MISSING_PRNG_MSG = (
     "payload predates the HashPRNG synthesis-throw factorization (missing {names}). "
@@ -193,8 +193,8 @@ def write_example(path):
         "description": (
             "EXAMPLE PixelAV SmartPixels angle-response payload; see "
             "doc/PixelAVAngleResponseSpec.md. NOT physics — structural reference only. "
-            "CONSUMER CONTRACT: cotX_meas = cotX_true + spx_angle_X_bias(inputs) + "
-            "spx_angle_X_smear(inputs); accept iff spx_angle_valid_flat < spx_angle_valid_prob."
+            "CONSUMER CONTRACT: cotX_meas = cotX_true + spix_angle_X_bias(inputs) + "
+            "spix_angle_X_smear(inputs); accept iff spix_angle_valid_flat < spix_angle_valid_prob."
         ),
         "corrections": corrections,
         "compound_corrections": compound_corrections,
@@ -309,9 +309,9 @@ def validate(path):
     probes = [(l, ca, cb, by) for l in LAYERS for ca in (-0.15, 0.02, 0.31)
               for cb in (-2.0, 0.6) for by in BLOCALY_GRID]
     for pr in probes:
-        u = cset["spx_angle_valid_flat"].evaluate(*pr)
+        u = cset["spix_angle_valid_flat"].evaluate(*pr)
         if not (0.0 <= u <= 1.0):
-            errors.append(f"spx_angle_valid_flat{pr}={u} not in [0,1]")
+            errors.append(f"spix_angle_valid_flat{pr}={u} not in [0,1]")
         for cname, stack in COMPOUNDS.items():
             z = cset[stack[1]].evaluate(*pr)
             if not math.isfinite(z):
@@ -324,21 +324,21 @@ def validate(path):
                 errors.append(f"{cname}{pr} non-deterministic across repeated evals")
         # fused == two-piece: shift(in, 1.0) == bias(in) + smear(in), to 1e-12
         for x in ("alpha", "beta"):
-            fused = cset.compound[f"spx_angle_{x}_shift"].evaluate(*pr, 1.0)
-            two = (cset[f"spx_angle_{x}_bias"].evaluate(*pr)
-                   + cset.compound[f"spx_angle_{x}_smear"].evaluate(*pr))
+            fused = cset.compound[f"spix_angle_{x}_shift"].evaluate(*pr, 1.0)
+            two = (cset[f"spix_angle_{x}_bias"].evaluate(*pr)
+                   + cset.compound[f"spix_angle_{x}_smear"].evaluate(*pr))
             if abs(fused - two) > 1e-12 * max(1.0, abs(two)):
-                errors.append(f"spx_angle_{x}_shift{pr} fused={fused} != bias+smear={two}")
+                errors.append(f"spix_angle_{x}_shift{pr} fused={fused} != bias+smear={two}")
     # alpha/beta throws must NOT be identical (independent entropy permutations)
     pr0 = probes[0]
-    if cset["spx_angle_prng"].evaluate(*pr0) == cset["spx_angle_prng_beta"].evaluate(*pr0):
-        errors.append("spx_angle_prng and spx_angle_prng_beta return identical deviates "
+    if cset["spix_angle_prng"].evaluate(*pr0) == cset["spix_angle_prng_beta"].evaluate(*pr0):
+        errors.append("spix_angle_prng and spix_angle_prng_beta return identical deviates "
                       "(throws must be independent)")
     cset2 = correctionlib.CorrectionSet.from_file(path)
-    for cname in ("spx_angle_alpha_smear", "spx_angle_beta_smear"):
+    for cname in ("spix_angle_alpha_smear", "spix_angle_beta_smear"):
         if cset.compound[cname].evaluate(*pr0) != cset2.compound[cname].evaluate(*pr0):
             errors.append(f"{cname} non-deterministic across fresh loads")
-    for cname in ("spx_angle_alpha_shift", "spx_angle_beta_shift"):
+    for cname in ("spix_angle_alpha_shift", "spix_angle_beta_shift"):
         if cset.compound[cname].evaluate(*pr0, 1.0) != cset2.compound[cname].evaluate(*pr0, 1.0):
             errors.append(f"{cname} non-deterministic across fresh loads")
     if not errors:
