@@ -60,10 +60,32 @@ namespace smartpixels {
     GlobalDirection out;
     if (!(std::isfinite(cotAlpha) && std::isfinite(cotBeta)))
       return out;
-    // Local direction with p_z_local = 1 by construction; magnitude is irrelevant
-    // because only the direction is wanted.
-    const LocalVector lv(cotAlpha, cotBeta, 1.0);
-    const GlobalVector gv = det.toGlobal(lv);
+    // THE MODULE FRAME CARRIES NO DIRECTION SENSE, and this is the subtle part.
+    // cotAlpha = lx/lz and cotBeta = ly/lz are BOTH invariant under v -> -v, so
+    // (cotAlpha, cotBeta, 1) fixes a LINE, not a direction. Whether local +z (the
+    // module NORMAL) points inward or outward is a placement detail that differs
+    // module to module, so taking +1 blindly reversed the direction on roughly half
+    // of all modules. Because a reversal flips phi by pi and negates cotTheta at the
+    // same time, the symptom was: correct MAGNITUDES with scrambled SIGNS. Measured
+    // before the fix -- 84.5% of tracks had sign-mixed cotTheta across their own
+    // clusters, |cotTheta| spread within a track was only 0.0435 (magnitude fine),
+    // and z - r*cotTheta gave 6.24 cm RMS against 3.47 cm for using z alone, i.e.
+    // the correction was worse than doing nothing. Forcing the sign consistent took
+    // it to 2.62 cm.
+    //
+    // Supply the sense from PHYSICS: a track crossing TBPX travels AWAY from the
+    // beam axis, so the global direction must have a positive radial component at
+    // the module. A very low-pT track curling back inward genuinely violates this,
+    // and no rule can recover its sense from cotAlpha/cotBeta alone -- that
+    // ambiguity is in the measurement, not in this code.
+    const auto pos = det.position();
+    const auto oriented = [&](double ca, double cb) {
+      GlobalVector g = det.toGlobal(LocalVector(ca, cb, 1.0));
+      if (g.x() * pos.x() + g.y() * pos.y() < 0.)
+        g = GlobalVector(-g.x(), -g.y(), -g.z());
+      return g;
+    };
+    const GlobalVector gv = oriented(cotAlpha, cotBeta);
     const double pt = std::hypot(gv.x(), gv.y());
     if (!(pt > 1e-12))
       return out;
@@ -81,8 +103,10 @@ namespace smartpixels {
         // Step by the sigma itself rather than an arbitrary epsilon: the map is
         // smooth here, and this makes the linearization exact at the scale that
         // actually matters instead of at a scale nobody uses.
-        const LocalVector lp(cotAlpha + (k == 0 ? sg : 0.), cotBeta + (k == 1 ? sg : 0.), 1.0);
-        const GlobalVector gp = det.toGlobal(lp);
+        // Must go through the SAME orientation rule as the nominal, or a module
+        // whose normal points inward would give a perturbed vector pointing the
+        // opposite way and a spurious ~pi difference in the numerical derivative.
+        const GlobalVector gp = oriented(cotAlpha + (k == 0 ? sg : 0.), cotBeta + (k == 1 ? sg : 0.));
         const double ptp = std::hypot(gp.x(), gp.y());
         if (!(ptp > 1e-12))
           continue;
@@ -98,9 +122,18 @@ namespace smartpixels {
   }
 
   // Inverse, used ONLY as a closure check: rotate the global direction back and
-  // confirm the module-frame angles come out again. This is what catches a
-  // mis-applied rotation, which on a 16-degree-tilted module would otherwise be a
-  // large silent error.
+  // confirm the module-frame angles come out again. This catches a mis-applied
+  // rotation, which on a 16-degree-tilted module would otherwise be a large silent
+  // error.
+  //
+  // WHAT A ROUND-TRIP TEST CANNOT CATCH, learned the hard way. The angle test below
+  // compares RATIOS -- lx/lz and ly/lz -- and both are invariant under v -> -v. A
+  // direction that has been REVERSED therefore closes back perfectly. The earlier
+  // version of this helper returned true on every module whose normal points inward
+  // while the published phi was off by pi and cotTheta had the wrong sign. So the
+  // orientation is now asserted SEPARATELY and FIRST. General lesson: "the inverse
+  // transform reproduces the input" is evidence that the transform is invertible,
+  // never that the convention is correct.
   template <typename Det>
   inline bool closesBackToModule(const Det& det, const GlobalDirection& g,
                                  double cotAlpha, double cotBeta, double tol = 1e-3) {
@@ -110,6 +143,9 @@ namespace smartpixels {
     const GlobalVector gv(std::cos(g.dirPhi) * st,
                           std::sin(g.dirPhi) * st,
                           g.dirCotTheta * st);
+    const auto pos = det.position();
+    if (gv.x() * pos.x() + gv.y() * pos.y() < 0.)
+      return false;  // reversed: invisible to the ratio test below, so checked here
     const LocalVector lv = det.toLocal(gv);
     if (!(std::abs(lv.z()) > 1e-12))
       return true;  // grazing in the module frame: the ratio is ill-conditioned
