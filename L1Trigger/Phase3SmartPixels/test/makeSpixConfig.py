@@ -122,13 +122,29 @@ DEFAULT_ANGLE_SET = f"{PAYLOAD_DIR}/spix_angle_response_Conv1D_Full-2bit_v4fixed
 
 def build_customise(args, overrides):
     """The --customise_commands payload: one smartPixelsCoexist call plus pruning."""
-    mode, _, activeSP = args.variant.partition(":")
-    if mode == "digiRefit" and not activeSP:
-        raise SystemExit("--variant digiRefit requires an activeSP, e.g. digiRefit:1111")
+    # --variant is repeatable. smartPixelsCoexist takes a LIST of variants and gives
+    # each its own producers and its own nano tables, so N configurations cost one
+    # pass over the input instead of N: the expensive upstream work (unpacking,
+    # track finding) is shared and only the refit is repeated. Needed for the
+    # activeSP sweep, where 15 non-trivial masks as 15 separate jobs would be
+    # 15 full reconstructions to vary one cheap downstream step.
+    specs = args.variant if isinstance(args.variant, list) else [args.variant]
+    variants = []
+    seen = set()
+    for spec in specs:
+        mode, _, activeSP = spec.partition(":")
+        if mode == "digiRefit" and not activeSP:
+            raise SystemExit(f"--variant digiRefit requires an activeSP, e.g. digiRefit:1111 (got '{spec}')")
+        key = (mode, activeSP)
+        if key in seen:
+            raise SystemExit(f"--variant {spec} given more than once; each variant makes an "
+                             "identically-named set of tables and the duplicate would collide")
+        seen.add(key)
+        variants.append(f'("{mode}", "{activeSP}")' if activeSP else f'("{mode}", None)')
 
     refit = {"pixelavAngleSet": args.pixelav_angle_set}
     refit.update(overrides)
-    variant = f'("{mode}", "{activeSP}")' if activeSP else f'("{mode}", None)'
+    variant = ", ".join(variants)
 
     parts = [
         "import FWCore.ParameterSet.Config as cms",
@@ -233,8 +249,10 @@ def main():
                     help="which release the input must be readable by "
                          "(see mem:smartpixels-testfile-release-compat)")
     ap.add_argument("--tier", choices=sorted(TIERS), default="trk-truth")
-    ap.add_argument("--variant", default="digiRefit:1111",
-                    help="mode[:activeSP], e.g. digiRefit:1111, passthrough")
+    ap.add_argument("--variant", action="append", default=None,
+                    help="mode[:activeSP], e.g. digiRefit:1111, passthrough. REPEATABLE: give it "
+                         "several times to emit one table set per variant from a single pass over "
+                         "the input, which is how the activeSP sweep avoids 15 reconstructions")
     ap.add_argument("--events", type=int, default=100)
     ap.add_argument("--threads", type=int, default=4,
                     help="NOTE multi-threaded runs write events in COMPLETION order, so two "
@@ -272,6 +290,8 @@ def main():
     ap.add_argument("--dry-run", action="store_true",
                     help="print the cmsDriver command instead of running it")
     args = ap.parse_args()
+    if not args.variant:
+        args.variant = ["digiRefit:1111"]
 
     def _tobool(v):
         # bool("False") is True in Python, so --set applyProcessNoise=False would
