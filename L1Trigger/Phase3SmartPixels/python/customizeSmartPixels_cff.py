@@ -104,6 +104,10 @@ DIGIREFIT_DEFAULTS = {
     # r-phi window (L1) first. Both arguments are real; this is the knob that
     # lets them be measured against each other.
     "layerOrder": "outsideIn",  # "outsideIn" (L4->L1) | "insideOut" (L1->L4)
+    # Multiple-scattering process noise. Without it C never grows and correct-hit
+    # pulls follow VISIT ORDER rather than layer identity.
+    "applyProcessNoise": True,
+    "multScattTerm": 0.00075,   # TMTT KalmanMultiScattTerm convention [rad*GeV]
     # --- Kalman seed (the seed COVARIANCE is always the track's helixCovMat) ---
     "seedNPar": 5,            # 4 | 5: seed-track parametrization entering the KF
     # --- correctionlib payload paths (empty defaults acceptable for Phase 0) ---
@@ -249,6 +253,8 @@ def _applyDigiRefitConfig(module, resolved):
   module.digiRefitMeasAngleMaxAbs = cms.double(resolved["measAngleMaxAbs"])
   module.digiRefitPredAngleMaxAbs = cms.double(resolved["predAngleMaxAbs"])
   module.digiRefitLayerOrder = cms.string(resolved["layerOrder"])
+  module.digiRefitApplyProcessNoise = cms.bool(bool(resolved["applyProcessNoise"]))
+  module.digiRefitMultScattTerm = cms.double(float(resolved["multScattTerm"]))
   module.digiRefitSeedNPar = cms.int32(resolved["seedNPar"])
   # pixelavAngleSet now configures the UPSTREAM SmartPixelsRecHitProducer (the
   # single source of the angle); the refit just reads its output.

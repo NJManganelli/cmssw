@@ -378,6 +378,10 @@ private:
   // release, and a default-off knob that every study config must remember to set
   // is precisely the silent-misconfiguration failure mode this package keeps
   // hitting. Turn it off for timing runs.
+  // Multiple-scattering process noise. TMTT's KalmanMultiScattTerm convention and
+  // default: projected scattering angle = term / pT [rad] per traversed layer.
+  bool digiRefitApplyProcessNoise_ = true;
+  double digiRefitMultScattTerm_ = 0.00075;
   bool digiRefitStoreSeedProjection_ = true;
   std::string digiRefitLayerOrder_ = "outsideIn";  // "outsideIn" (L4->L1, default) | "insideOut" (L1->L4)
   int digiRefitSeedNPar_ = 5;           // 4 (prompt) | 5 (extended + covariance seed)
@@ -419,6 +423,7 @@ private:
   // KF numerical-guard activation counters (spec §6b), reported at endStream.
   mutable unsigned long long digiRefitGatedJacCols_ = 0;   // Jacobian columns zeroed by jacobianMaxAbs
   mutable unsigned long long digiRefitGatedUpdates_ = 0;   // scalar updates skipped by chi2UpdateGate
+  mutable unsigned long long digiRefitProcessNoiseApplied_ = 0;  // crossings that received MS process noise
   mutable unsigned long long digiRefitClampedMeasAngles_ = 0;  // synthesized measured angles cleared by measAngleMaxAbs (spec §6b)
   mutable unsigned long long digiRefitClampedPredCross_ = 0;   // predicted crossings rejected by predAngleMaxAbs (spec §6b)
 
@@ -548,6 +553,8 @@ L1SmartPixelsTrackProducer::L1SmartPixelsTrackProducer(edm::ParameterSet const& 
     digiRefitChi2UpdateGate_ = iConfig.getParameter<double>("digiRefitChi2UpdateGate");
     digiRefitMeasAngleMaxAbs_ = iConfig.getParameter<double>("digiRefitMeasAngleMaxAbs");
     digiRefitPredAngleMaxAbs_ = iConfig.getParameter<double>("digiRefitPredAngleMaxAbs");
+    digiRefitApplyProcessNoise_ = iConfig.getParameter<bool>("digiRefitApplyProcessNoise");
+    digiRefitMultScattTerm_ = iConfig.getParameter<double>("digiRefitMultScattTerm");
     digiRefitStoreSeedProjection_ = iConfig.getParameter<bool>("digiRefitStoreSeedProjection");
     digiRefitLayerOrder_ = iConfig.getParameter<std::string>("digiRefitLayerOrder");
     digiRefitSeedNPar_ = iConfig.getParameter<int>("digiRefitSeedNPar");
@@ -1616,6 +1623,11 @@ void L1SmartPixelsTrackProducer::produce(edm::Event& iEvent, const edm::EventSet
 
       int nAcceptedHits = 0;
       int nUpdates = 0;
+      // Last layer that actually constrained the state, and its radius: the
+      // process-noise lever arm is measured from there, not from the previous
+      // loop iteration (layers can be skipped, inactive, or yield no hit).
+      int drPrevLayer = 0;
+      double drPrevLayerR = -1.;
 
       // Visit order per digiRefitLayerOrder_. Sidecar hitInfo records are pushed
       // in VISIT order, so their sequence documents how the fit actually
@@ -1628,6 +1640,56 @@ void L1SmartPixelsTrackProducer::produce(edm::Event& iEvent, const edm::EventSet
           break;
         if (!drActiveLayer[layer - 1])
           continue;
+
+        // ---- MULTIPLE-SCATTERING PROCESS NOISE -------------------------------
+        // Inflate C for the material traversed since the last constraint, BEFORE
+        // projecting, so it is visible to both S = H C H^T + sigma^2 and the gain.
+        //
+        // WHY IT IS NEEDED. C is filled from the seed, shrunk by every update
+        // (C -= K v^T) and never grows: there is no propagation step at all,
+        // because the state IS the 5 helix parameters and "propagating" is
+        // crossLayer re-evaluating the same helix at another radius. The measured
+        // consequence is that correct-hit pull widths follow VISIT ORDER, not layer
+        // identity -- the first-visited layer sits at ~1.0 because it is projected
+        // with the honest seed covariance, and everything after it degrades (4.1,
+        // 5.4, 7.8 under the old inside-out order).
+        //
+        // MATERIAL IS KEYED TO GEOMETRY, NOT TO MEASUREMENTS. The particle scatters
+        // in every layer it crosses, including uninstrumented ones and ones that
+        // happened to yield no hit, so the budget is accrued over the layers
+        // TRAVERSED between the two constraint points rather than per update.
+        //
+        // STRUCTURE FROM PHYSICS, SCALE FROM DATA. A kink of projected angle theta
+        // at radius r_s leaves the momentum magnitude alone, so rInv is untouched;
+        // it rotates the direction and shifts the impact parameters that keep the
+        // trajectory passing through r_s:
+        //     transverse:   d(phi0) = theta,              d(d0) = -r_s * theta
+        //     longitudinal: d(tanL) = theta * sec^2(lam), d(z0) = -r_s * d(tanL)
+        // so Q = theta0^2 * (J_T J_T^T + J_L J_L^T), rank 2, with theta0 the
+        // per-layer projected scattering angle multScattTerm / pT [rad] -- the same
+        // parametrisation and default constant TMTT uses (0.00075 rad*GeV), except
+        // applied to the STATE covariance rather than by inflating the measurement
+        // error. Inflating sigma_meas instead would fix S but leave the emitted
+        // outCov optimistic for downstream vertexing and tagging.
+        if (digiRefitApplyProcessNoise_ && nUpdates > 0 && drPrevLayerR > 0.) {
+          const double ptNow = std::abs(MagConstant * b_field / (a[0] * 100.0));
+          const int nCross = std::max(1, std::abs(layer - drPrevLayer));
+          if (ptNow > 1e-3) {
+            const double theta0 = digiRefitMultScattTerm_ / ptNow;
+            const double var = theta0 * theta0 * static_cast<double>(nCross);
+            const double rs = drPrevLayerR;  // kink sits at the material, i.e. the
+                                             // last layer crossed, giving the lever
+                                             // arm to the layer now being predicted
+            const double sec2 = 1.0 + a[2] * a[2];
+            ROOT::Math::SVector<double, 5> jT, jL;
+            jT[0] = 0.; jT[1] = 1.; jT[2] = 0.; jT[3] = 0.; jT[4] = -rs;
+            jL[0] = 0.; jL[1] = 0.; jL[2] = sec2; jL[3] = -rs * sec2; jL[4] = 0.;
+            for (int i = 0; i < 5; ++i)
+              for (int j = 0; j <= i; ++j)
+                C(i, j) += var * (jT[i] * jT[j] + jL[i] * jL[j]);
+            ++digiRefitProcessNoiseApplied_;
+          }
+        }
 
         const smartpixels::Crossing cx =
             projector_.crossLayer(makeHelix(a), layer, drField, digiRefitPredAngleMaxAbs_);
@@ -1924,6 +1986,8 @@ void L1SmartPixelsTrackProducer::produce(edm::Event& iEvent, const edm::EventSet
             for (int j = 0; j <= i; ++j)
               C(i, j) -= K[i] * v[j];  // K = v/S -> K_i v_j symmetric
         };
+        drPrevLayer = layer;
+        drPrevLayerR = std::hypot(cx.global.x(), cx.global.y());
         scalarUpdate(0, best.x, best.ex);
         scalarUpdate(1, best.y, best.ey);
         if (useAlpha && best.hasA)
@@ -2319,6 +2383,15 @@ void L1SmartPixelsTrackProducer::fillDescriptions(edm::ConfigurationDescriptions
       ->setComment("secondary hygiene grazing clamp (spec §6b): a predicted crossing |cotAlpha|/|cotBeta| "
                    "above this bound invalidates the crossing at the projector (no window, no sidecar record). "
                    "Rejects the ~18 non-physical predicted crossings (up to |cotAlpha| 51.8); NOT the gate driver.");
+  desc.add<bool>("digiRefitApplyProcessNoise", true)
+      ->setComment("inflate the state covariance for multiple scattering between constraint "
+                   "points. Without it C never grows and correct-hit pulls follow VISIT ORDER "
+                   "rather than layer identity (first-visited ~1.0, later layers 4-8).");
+  desc.add<double>("digiRefitMultScattTerm", 0.00075)
+      ->setComment("projected multiple-scattering angle per traversed layer = term / pT [rad*GeV]. "
+                   "TMTT's KalmanMultiScattTerm convention and default value, but applied to the "
+                   "STATE covariance rather than by inflating the measurement error, so the "
+                   "emitted outCov is honest for downstream vertexing and tagging.");
   desc.add<bool>("digiRefitStoreSeedProjection", true)
       ->setComment("store projSeedLocalX/Y, projSeedSigX/Y and projSeedCotAlpha/Beta per crossing: "
                    "the UNMODIFIED OT-seed projection and its covariance-derived cone. Costs one "
