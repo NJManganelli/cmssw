@@ -100,6 +100,7 @@ public:
     std::vector<float> recoLocalX, recoLocalY, sigX, sigY, recoCharge;
     std::vector<int32_t> selClusterIdx;
     std::vector<float> projLocalX, projLocalY, projCotAlpha, projCotBeta,
+        projSigX, projSigY,
         projSeedLocalX, projSeedLocalY, projSeedSigX, projSeedSigY,
         projSeedCotAlpha, projSeedCotBeta;
     std::vector<uint8_t> recoSizeX, recoSizeY;
@@ -149,6 +150,8 @@ public:
         projCotBeta.push_back(hi.projCotBeta);
         projSeedLocalX.push_back(hi.projSeedLocalX);
         projSeedLocalY.push_back(hi.projSeedLocalY);
+        projSigX.push_back(hi.projSigX);
+        projSigY.push_back(hi.projSigY);
         projSeedSigX.push_back(hi.projSeedSigX);
         projSeedSigY.push_back(hi.projSeedSigY);
         projSeedCotAlpha.push_back(hi.projSeedCotAlpha);
@@ -210,6 +213,12 @@ public:
     hitTable->addColumn<float>("projSeedLocalX", projSeedLocalX,
         "SEED-ONLY projection (no Kalman updates), local x [cm]");
     hitTable->addColumn<float>("projSeedLocalY", projSeedLocalY, "SEED-ONLY projection, local y [cm]");
+    hitTable->addColumn<float>("projSigX", projSigX,
+        "sqrt((H C H^T)_xx) [cm]: REFIT-ORDER projection cone from the RUNNING covariance, "
+        "recorded after multiple-scattering Q and before this layer's update, EXCLUDING the "
+        "measurement term. Compare against projSeedSigX to isolate what the refit buys. "
+        "Present on every crossing, including the ~10% whose window is empty");
+    hitTable->addColumn<float>("projSigY", projSigY, "sqrt((H C H^T)_yy) [cm]");
     hitTable->addColumn<float>("projSeedSigX", projSeedSigX,
         "sqrt((H C_seed H^T)_xx) [cm]: single-shot projection cone from the OT covariance, "
         "EXCLUDING the measurement term");

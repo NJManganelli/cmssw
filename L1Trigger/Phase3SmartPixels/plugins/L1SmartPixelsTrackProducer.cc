@@ -1774,6 +1774,79 @@ void L1SmartPixelsTrackProducer::produce(edm::Event& iEvent, const edm::EventSet
           }
         }
 
+        // ---- linearized measurement model h(a) = (localx, localy, cotAlpha, cotBeta) ----
+        // Numerical Jacobian against the SAME shared projector (consistency by
+        // construction). One-sided differences; if a perturbation falls off the
+        // nominal module, try the other side; else the column stays zero
+        // (parameter locally unobservable).
+        //
+        // COMPUTED HERE, ABOVE THE WINDOW COLLECT, rather than after the hit is
+        // chosen. H is a property of the CROSSING -- state, layer, module -- and has
+        // no dependence on which cluster wins, so its old position was incidental.
+        // Hoisting it is what lets projSig* below be recorded on the ~10% of
+        // crossings whose window comes up empty and which `continue` out before any
+        // update. Those are precisely the SPARSE crossings, so measuring the cone
+        // only where a hit exists would bias occupancy HIGH -- the direction that
+        // flatters the combinatorics answer.
+        const double h0[4] = {cx.local.x(), cx.local.y(), cx.cotAlpha, cx.cotBeta};
+        double H[4][5] = {{0.}};
+        constexpr std::array<double, 5> kEps{{1e-6, 1e-5, 1e-5, 1e-3, 1e-3}};
+        for (int j = 0; j < 5; ++j) {
+          for (const double sgn : {+1., -1.}) {
+            ROOT::Math::SVector<double, 5> ap = a;
+            ap[j] += sgn * kEps[j];
+            const smartpixels::Crossing cp =
+                projector_.crossLayer(makeHelix(ap), layer, drField, digiRefitPredAngleMaxAbs_);
+            if (!cp.valid || cp.detId != cx.detId)
+              continue;
+            const double inv = 1.0 / (sgn * kEps[j]);
+            H[0][j] = (cp.local.x() - h0[0]) * inv;
+            H[1][j] = (cp.local.y() - h0[1]) * inv;
+            H[2][j] = (cp.cotAlpha - h0[2]) * inv;
+            H[3][j] = (cp.cotBeta - h0[3]) * inv;
+            break;
+          }
+        }
+        // jacobianMaxAbs (spec §6b): any Jacobian entry above the bound (or
+        // non-finite) makes that PARAMETER column locally unobservable -- zero it
+        // exactly like the same-module guard above. Physical |H| stays <~200 on the
+        // PU study; near-grazing crossings blow a column up (observed to ~900) or
+        // yield NaN/Inf. Column-zeroing keeps the update well-posed for the other
+        // parameters. FPGA-fidelity handle: finite-precision hardware bounds |H|.
+        for (int j = 0; j < 5; ++j) {
+          bool bad = false;
+          for (int k = 0; k < 4; ++k)
+            if (!std::isfinite(H[k][j]) || std::abs(H[k][j]) > digiRefitJacobianMaxAbs_) {
+              bad = true;
+              break;
+            }
+          if (bad) {
+            ++digiRefitGatedJacCols_;
+            for (int k = 0; k < 4; ++k)
+              H[k][j] = 0.;
+          }
+        }
+
+        // Running projected track uncertainty at this crossing, sqrt(H C H^T), taken
+        // BEFORE any update on this layer but AFTER the multiple-scattering Q has
+        // been added. Identical construction to projSeedSig* above except that it
+        // uses the CURRENT covariance instead of CSeed, so the two together bracket
+        // exactly what the refit buys: naive seed cone vs outsideIn refit-order cone.
+        // Track-only, with no cluster CPE term, matching projSeedSig* semantics --
+        // any consumer comparing against a cluster must add the cluster error itself.
+        for (int k = 0; k < 2; ++k) {
+          ROOT::Math::SVector<double, 5> Hrow;
+          for (int j = 0; j < 5; ++j)
+            Hrow[j] = H[k][j];
+          const double var = ROOT::Math::Dot(Hrow, C * Hrow);
+          if (var > 0.) {
+            if (k == 0)
+              hi.projSigX = static_cast<float>(std::sqrt(var));
+            else
+              hi.projSigY = static_cast<float>(std::sqrt(var));
+          }
+        }
+
         // ---- window-collect + classify CLUSTERS (readout order, FPGA truncation) ----
         // One candidate per reconstructed cluster, not per fired pixel: a pixel is
         // not a measurement, and one inclined particle fires several of them. The
@@ -1903,50 +1976,6 @@ void L1SmartPixelsTrackProducer::produce(edm::Event& iEvent, const edm::EventSet
             if (it != bestIt && it->sel < runnerUp)
               runnerUp = it->sel;
           drSelChi2Margin = runnerUp - best.sel;  // >= 0 by construction
-        }
-
-        // ---- linearized measurement model h(a) = (localx, localy, cotAlpha, cotBeta) ----
-        // Numerical Jacobian against the SAME shared projector (consistency by
-        // construction). One-sided differences; if a perturbation falls off the
-        // nominal module, try the other side; else the column stays zero
-        // (parameter locally unobservable).
-        const double h0[4] = {cx.local.x(), cx.local.y(), cx.cotAlpha, cx.cotBeta};
-        double H[4][5] = {{0.}};
-        constexpr std::array<double, 5> kEps{{1e-6, 1e-5, 1e-5, 1e-3, 1e-3}};
-        for (int j = 0; j < 5; ++j) {
-          for (const double sgn : {+1., -1.}) {
-            ROOT::Math::SVector<double, 5> ap = a;
-            ap[j] += sgn * kEps[j];
-            const smartpixels::Crossing cp =
-                projector_.crossLayer(makeHelix(ap), layer, drField, digiRefitPredAngleMaxAbs_);
-            if (!cp.valid || cp.detId != cx.detId)
-              continue;
-            const double inv = 1.0 / (sgn * kEps[j]);
-            H[0][j] = (cp.local.x() - h0[0]) * inv;
-            H[1][j] = (cp.local.y() - h0[1]) * inv;
-            H[2][j] = (cp.cotAlpha - h0[2]) * inv;
-            H[3][j] = (cp.cotBeta - h0[3]) * inv;
-            break;
-          }
-        }
-        // jacobianMaxAbs (spec §6b): any Jacobian entry above the bound (or
-        // non-finite) makes that PARAMETER column locally unobservable -- zero it
-        // exactly like the same-module guard above. Physical |H| stays <~200 on the
-        // PU study; near-grazing crossings blow a column up (observed to ~900) or
-        // yield NaN/Inf. Column-zeroing keeps the update well-posed for the other
-        // parameters. FPGA-fidelity handle: finite-precision hardware bounds |H|.
-        for (int j = 0; j < 5; ++j) {
-          bool bad = false;
-          for (int k = 0; k < 4; ++k)
-            if (!std::isfinite(H[k][j]) || std::abs(H[k][j]) > digiRefitJacobianMaxAbs_) {
-              bad = true;
-              break;
-            }
-          if (bad) {
-            ++digiRefitGatedJacCols_;
-            for (int k = 0; k < 4; ++k)
-              H[k][j] = 0.;
-          }
         }
 
         // ---- sequential scalar Kalman updates (diagonal R; FPGA-friendly form) ----

@@ -78,6 +78,10 @@ namespace smartpixels {
     // measurement term, so it is the TRACK's uncertainty, not an innovation sigma.
     float projLocalX = -999.f, projLocalY = -999.f;
     float projCotAlpha = -999.f, projCotBeta = -999.f;
+    // Running counterpart of projSeedSig*: sqrt(H C H^T) with the CURRENT
+    // covariance, recorded after Q and before this layer's update. The pair
+    // brackets what the refit buys -- naive seed cone vs refit-order cone.
+    float projSigX = -999.f, projSigY = -999.f;
     float projSeedLocalX = -999.f, projSeedLocalY = -999.f;
     float projSeedSigX = -999.f, projSeedSigY = -999.f;
     float projSeedCotAlpha = -999.f, projSeedCotBeta = -999.f;
