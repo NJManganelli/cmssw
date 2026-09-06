@@ -122,7 +122,7 @@ public:
     unsigned closureFail = 0;
     std::vector<float> localCotAlpha, localCotBeta, sigAlpha, sigBeta;
     std::vector<uint8_t> hasAlpha, hasBeta;
-    std::vector<float> tpPt, tpChargeFrac, tpLocalCotAlpha, tpLocalCotBeta;
+    std::vector<float> tpPt, tpVx, tpVy, tpVz, tpEta, tpPhi, tpChargeFrac, tpLocalCotAlpha, tpLocalCotBeta;
     std::vector<int32_t> tpIdx;
 
     for (const auto& dsv : recHits) {
@@ -193,6 +193,11 @@ public:
           const auto& tr = (*tsv)[j];
           tpIdx.push_back(tr.hasTp() ? static_cast<int32_t>(tr.dominantTp().key()) : -1);
           tpPt.push_back(tr.hasTp() ? static_cast<float>(tr.dominantTp()->pt()) : -999.f);
+          tpVx.push_back(tr.hasTp() ? static_cast<float>(tr.dominantTp()->vx()) : -999.f);
+          tpVy.push_back(tr.hasTp() ? static_cast<float>(tr.dominantTp()->vy()) : -999.f);
+          tpVz.push_back(tr.hasTp() ? static_cast<float>(tr.dominantTp()->vz()) : -999.f);
+          tpEta.push_back(tr.hasTp() ? static_cast<float>(tr.dominantTp()->eta()) : -999.f);
+          tpPhi.push_back(tr.hasTp() ? static_cast<float>(tr.dominantTp()->phi()) : -999.f);
           tpChargeFrac.push_back(tr.chargeFrac());
           tpLocalCotAlpha.push_back(tr.trueCotAlpha());
           tpLocalCotBeta.push_back(tr.trueCotBeta());
@@ -237,7 +242,14 @@ public:
     tab->addColumn<float>("globalClusterCotTheta", globalClusterCotTheta,
                           "DIRECTION. cot(theta) = pz/pt of the SMART-PIXEL ML ANGLE ESTIMATE, CMS "
                           "global frame. Chosen over eta because the r-z Hough wants "
-                          "z = z0 + r*cotTheta directly. Uncertainty: sigGlobalClusterCotTheta", 16);
+                          "z = z0 + r*cotTheta directly; measured median RMS of z - r*cotTheta "
+                          "along one track is 0.20 cm, against 3.47 cm for using z alone. SENSE is "
+                          "supplied by physics, not by the module frame: cotAlpha/cotBeta are ratios "
+                          "and so are blind to direction reversal, and the sign is fixed by requiring "
+                          "the direction to point AWAY from the beam axis. Tracks that curl back "
+                          "inward violate that and keep an irrecoverable sign ambiguity -- 15% of "
+                          "tracks below 0.5 GeV, falling to 2% above 5 GeV. "
+                          "Uncertainty: sigGlobalClusterCotTheta", 16);
     tab->addColumn<float>("sigGlobalClusterPhi", sigGlobalClusterPhi,
                           "Uncertainty on globalClusterPhi [rad], propagated from the module-frame "
                           "sigAlpha/sigBeta through the SAME per-module rotation by a numerical "
@@ -266,6 +278,18 @@ public:
                               "TRUTH-ONLY: TrackingParticle index of the dominant charge contributor, "
                               "or -1. Join key against spixMatchedTpIdx");
       tab->addColumn<float>("tpPt", tpPt, "TRUTH-ONLY: pT [GeV] of the dominant TP", 10);
+      // Full PRODUCTION STATE of the dominant TP. tpLocalCot{Alpha,Beta} are
+      // helix-propagated from this vertex+direction and therefore IGNORE multiple
+      // scattering, which is exactly what makes them the MS-free reference. Carrying
+      // the inputs as well as the result lets an analysis RECOMPUTE that projection
+      // instead of trusting it, vary it, and tell a genuinely displaced TP apart from
+      // one that merely scattered. NOTE these are at the PRODUCTION VERTEX, not at the
+      // module -- do not use them as an incidence angle.
+      tab->addColumn<float>("tpVx", tpVx, "TRUTH-ONLY: dominant TP production vertex x [cm]", 16);
+      tab->addColumn<float>("tpVy", tpVy, "TRUTH-ONLY: dominant TP production vertex y [cm]", 16);
+      tab->addColumn<float>("tpVz", tpVz, "TRUTH-ONLY: dominant TP production vertex z [cm]", 16);
+      tab->addColumn<float>("tpEta", tpEta, "TRUTH-ONLY: dominant TP eta AT PRODUCTION", 12);
+      tab->addColumn<float>("tpPhi", tpPhi, "TRUTH-ONLY: dominant TP phi AT PRODUCTION", 12);
       tab->addColumn<float>("tpLocalCotAlpha", tpLocalCotAlpha,
                             "TRUTH-ONLY: TRUE incidence cotAlpha at this module (helix-propagated), "
                             "i.e. what the sensor is trying to measure", 12);
