@@ -78,6 +78,8 @@ GEOMETRY, ERA, CONDITIONS = "ExtendedRun4D121", "Phase2C22I13M9", "auto:phase2_r
 
 # digiRefitConfig keys this CLI exposes. Everything else takes DIGIREFIT_DEFAULTS.
 REFIT_AXES = {
+    "applyProcessNoise": bool,   # MS state-covariance inflation
+    "multScattTerm": float,      # projected scattering angle per layer = term/pT [rad*GeV]
     "smarthitFakeSet": str,   # noise-angle inverse CDF; without it "has an angle" is a truth proxy
     "layerOrder": str,
     "useAngles": str,
@@ -271,11 +273,21 @@ def main():
                     help="print the cmsDriver command instead of running it")
     args = ap.parse_args()
 
+    def _tobool(v):
+        # bool("False") is True in Python, so --set applyProcessNoise=False would
+        # silently pass True and make an A/B degenerate. Parse the WORD.
+        if v.lower() in ("false", "0", "no", "off"):
+            return False
+        if v.lower() in ("true", "1", "yes", "on"):
+            return True
+        raise SystemExit(f"cannot parse {v!r} as a boolean; use true/false")
+
     def parse_kv(s):
         k, _, v = s.partition("=")
         if k not in REFIT_AXES:
             raise SystemExit(f"unknown digiRefit axis {k!r}; known: {sorted(REFIT_AXES)}")
-        return k, REFIT_AXES[k](v)
+        conv = REFIT_AXES[k]
+        return k, (_tobool(v) if conv is bool else conv(v))
 
     base = dict(parse_kv(s) for s in args.set)
     if args.use_angles:
