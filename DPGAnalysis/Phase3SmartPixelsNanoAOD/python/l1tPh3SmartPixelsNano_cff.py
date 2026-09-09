@@ -738,8 +738,26 @@ l1tPh3SmartPixelsClusterTable = cms.EDProducer(
 )
 
 
+# The COMPLETE OT stub collection, part of the Clusters tier (not a separate
+# variant). ~15k rows/event at PU200 expected, roughly doubling the tier payload.
+#
+# It belongs here rather than in a tier of its own because the questions this tier
+# exists to answer are comparative: an IT seeding design is only interesting
+# relative to what the OT tracklet already does, and that comparison needs the OT
+# INPUT multiplicity. The existing stub tables (L1TTrackStub, L1TExtTrackStub) are
+# on-track only -- 1004 rows/event at PU200 against ~190 tracks -- so they cannot
+# supply it, and the persisted edmNew::DetSetVector is unreadable by uproot. Any
+# study wanting both halves would otherwise have to splice two data tiers.
+l1tPh3SmartPixelsAllStubTable = cms.EDProducer(
+    "L1SmartPixelsAllStubTableProducer",
+    stubs = cms.InputTag("TTStubsFromPhase2TrackerDigis", "StubAccepted"),
+    tableName = cms.string("L1TOTStub"),
+    barrelOnly = cms.bool(False),
+)
+
+
 def addPh3L1SmartPixelsClusters(process, recHitLabel="spixSmartPixelsRecHits", doTruth=True):
-    """Add the untruncated IT cluster table (Clusters tier).
+    """Add the untruncated IT cluster table + the complete OT stub table (Clusters tier).
 
     Requires the SmartPixels-owned cluster -> rec-hit chain (spixPixelClusters ->
     spixPixelRecHits). That chain is created by
@@ -760,7 +778,13 @@ def addPh3L1SmartPixelsClusters(process, recHitLabel="spixSmartPixelsRecHits", d
         smartPixelsRecHits = cms.InputTag(recHitLabel),
         doTruth = cms.bool(doTruth),
     )
-    task = cms.Task(process.l1tPh3SmartPixelsClusterTable)
+    # The OT stub table reads TTStubsFromPhase2TrackerDigis:StubAccepted straight
+    # from the input file with NO process name, so it resolves whether the stubs
+    # were persisted by the RelVal or rebuilt in-job -- the same reason the
+    # associator labels are left process-less in customizeSmartPixels_cff.
+    process.l1tPh3SmartPixelsAllStubTable = l1tPh3SmartPixelsAllStubTable.clone()
+    task = cms.Task(process.l1tPh3SmartPixelsClusterTable,
+                    process.l1tPh3SmartPixelsAllStubTable)
     process.p3L1SmartPixelsClusterTask = task
     process.l1tPh2NanoTask.add(task)
     return process
