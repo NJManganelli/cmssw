@@ -322,13 +322,33 @@ void SmartPixelsRecHitProducer::produce(edm::Event& iEvent, const edm::EventSetu
         const std::vector<std::variant<int, double, std::string>> pin = {
             static_cast<int>(lay), static_cast<double>(trueCotA), static_cast<double>(trueCotB), bLocalY};
         if (corrValidFlat_->evaluate(pin) < corrValidProb_->evaluate(pin)) {
-          const double sigA = corrAlphaSigma_->evaluate(pin);
-          const double sigB = corrBetaSigma_->evaluate(pin);
           const std::vector<std::variant<int, double, std::string>> pinAcc = {
               static_cast<int>(lay), static_cast<double>(trueCotA), static_cast<double>(trueCotB),
               bLocalY, 1.0};
           double cotA = trueCotA + corrAlphaShift_->evaluate(pinAcc);
           double cotB = trueCotB + corrBetaShift_->evaluate(pinAcc);
+          // SIGMA IS LOOKED UP AT THE RECONSTRUCTED ANGLES, not the true ones.
+          // The validity gate and the shift above must key on truth: they model
+          // what a sensor does to a real incident track, and the reco angle does
+          // not exist until the shift has been applied. But this sigma is
+          // PUBLISHED, and every consumer treats it as a measurement uncertainty
+          // -- the refit weights hits by it, and the seeding study derives its z0
+          // search window from it as sigma(z0) = r * sigDirCotTheta. Keying it on
+          // truth made a published uncertainty depend on information no trigger
+          // can ever have, which is exactly the kind of presumption that cannot
+          // be put into hardware. A lookup on (layer, cotAlpha, cotBeta, bLocalY)
+          // CAN be: the payload tables are 60 values per layer, 240 in total.
+          //
+          // The noise-cluster branch below already keyed on its drawn angles, so
+          // the two paths in this producer previously disagreed about which angle
+          // the sigma belonged to.
+          //
+          // The payload's flow is 'clamp', so a reco angle pushed outside the
+          // parametrised range by the shift lands in the edge bin, not a throw.
+          const std::vector<std::variant<int, double, std::string>> pinReco = {
+              static_cast<int>(lay), cotA, cotB, bLocalY};
+          const double sigA = corrAlphaSigma_->evaluate(pinReco);
+          const double sigB = corrBetaSigma_->evaluate(pinReco);
           bool hasA = sigA > 0., hasB = sigB > 0.;
           // Grazing clamp lives HERE, not in the fit: a sensor physically cannot
           // report an angle beyond the bound, so it is a property of the hit.
