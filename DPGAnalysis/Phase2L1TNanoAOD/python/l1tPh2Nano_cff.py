@@ -65,6 +65,14 @@ def addPh2L1TrackingParticles(process):
     process.l1tPh2NanoTask.add(l1tTrackingParticleTable)
     return process
 
+def addPh2L1TrackingParticlesWithGen(process):
+    """addPh2L1TrackingParticles plus the generator link: genPartIdx (into GenPart; negative
+    codes for pileup / pruned / indirect-ancestor links, see the producer) and genFromB /
+    genFromC hadron ancestry. Needs the gen chain (addGenObjects; finalGenParticles)."""
+    process.l1tTrackingParticleTable = l1tTrackingParticleTable.clone(doGen = True)
+    process.l1tPh2NanoTask.add(process.l1tTrackingParticleTable)
+    return process
+
 def addPh2L1PFCandTrackTruth(process):
     """Track genuine/fake truth propagated onto the Puppi candidate tables
     (for candidate-only tiers without the track tables)."""

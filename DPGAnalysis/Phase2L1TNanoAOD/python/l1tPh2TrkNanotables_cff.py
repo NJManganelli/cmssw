@@ -110,6 +110,8 @@ l1tTrackingParticleTable = cms.EDProducer(
     trackingParticles = cms.InputTag("mix", "MergedTrackTruth"),
     name = cms.string("L1TTP"),
     minPt = cms.double(1.0),
+    doGen = cms.bool(False),
+    genParticlePruningMap = cms.InputTag("finalGenParticles"),
 )
 
 p2L1TrackTruthTask = cms.Task(
