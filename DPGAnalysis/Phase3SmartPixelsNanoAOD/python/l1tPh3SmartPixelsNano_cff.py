@@ -751,8 +751,10 @@ l1tPh3SmartPixelsClusterTable = cms.EDProducer(
 l1tPh3SmartPixelsAllStubTable = cms.EDProducer(
     "L1SmartPixelsAllStubTableProducer",
     stubs = cms.InputTag("TTStubsFromPhase2TrackerDigis", "StubAccepted"),
+    stubTruth = cms.InputTag("TTStubAssociatorFromPixelDigis", "StubAccepted"),
     tableName = cms.string("L1TOTStub"),
     barrelOnly = cms.bool(False),
+    doTruth = cms.bool(True),
 )
 
 
@@ -782,7 +784,12 @@ def addPh3L1SmartPixelsClusters(process, recHitLabel="spixSmartPixelsRecHits", d
     # from the input file with NO process name, so it resolves whether the stubs
     # were persisted by the RelVal or rebuilt in-job -- the same reason the
     # associator labels are left process-less in customizeSmartPixels_cff.
-    process.l1tPh3SmartPixelsAllStubTable = l1tPh3SmartPixelsAllStubTable.clone()
+    # doTruth follows the cluster table: an OT side without truth could only be
+    # compared on combinatorics while the IT side has efficiency and fake rate,
+    # and that asymmetry silently biases any comparison drawn from it.
+    process.l1tPh3SmartPixelsAllStubTable = l1tPh3SmartPixelsAllStubTable.clone(
+        doTruth = cms.bool(doTruth),
+    )
     task = cms.Task(process.l1tPh3SmartPixelsClusterTable,
                     process.l1tPh3SmartPixelsAllStubTable)
     process.p3L1SmartPixelsClusterTask = task
