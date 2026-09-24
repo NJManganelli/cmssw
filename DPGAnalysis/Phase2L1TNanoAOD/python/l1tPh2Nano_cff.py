@@ -58,6 +58,13 @@ def addPh2L1TrackTruth(process):
     process.l1tPh2NanoTask.add(p2L1TrackTruthTask)
     return process
 
+def addPh2L1TrackingParticles(process):
+    """TrackingParticle table L1TTP (charged, pT >= 1 GeV): the denominator for
+    efficiency studies, joinable to track/stub/cluster truth by TP index.
+    Opt-in: it is ~15k rows/event at PU200, about half of an L1 track nano."""
+    process.l1tPh2NanoTask.add(l1tTrackingParticleTable)
+    return process
+
 def addPh2L1PFCandTrackTruth(process):
     """Track genuine/fake truth propagated onto the Puppi candidate tables
     (for candidate-only tiers without the track tables)."""
