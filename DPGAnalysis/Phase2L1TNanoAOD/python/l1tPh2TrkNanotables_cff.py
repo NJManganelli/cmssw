@@ -70,6 +70,20 @@ gttExtTracksTable = l1tExtTracksTable.clone(
 )
 
 
+#### track-fit helix covariance (TTTrack::helixCovMat), as extension tables of the
+#### main track tables: 15 upper-triangle elements cov_<p>_<q> over
+#### (rInv, phi, tanL, z0, d0), same units and conventions as those columns
+l1tTracksHelixCovTable = cms.EDProducer(
+    "L1TrackHelixCovTableProducer",
+    tracks = cms.InputTag("l1tTTTracksFromTrackletEmulation", "Level1TTTracks"),
+    trackTableName = cms.string("L1TTrack"),
+)
+
+l1tExtTracksHelixCovTable = l1tTracksHelixCovTable.clone(
+    tracks = cms.InputTag("l1tTTTracksFromExtendedTrackletEmulation", "Level1TTTracks"),
+    trackTableName = cms.string("L1TExtTrack"),
+)
+
 #### MC truth extension (nStubs always; genuine/fake + TrackingParticle info
 #### when the TTTrackAssociator ran in the workflow) -- inputs for the
 #### track-quality GBDT training
@@ -113,6 +127,8 @@ p2L1DisplacedVertexTask = cms.Task(
 p2L1TracksTask = cms.Task(
     l1tTracksTable,
     gttTracksTable,
+    l1tTracksHelixCovTable,
     l1tExtTracksTable,
     gttExtTracksTable,
+    l1tExtTracksHelixCovTable,
 )
