@@ -8,6 +8,7 @@
 <use name="SimDataFormats/Track"/>
 <use name="SimDataFormats/TrackerDigiSimLink"/>
 <use name="SimDataFormats/TrackingAnalysis"/>
+<use name="SimDataFormats/Associations"/>
 <use name="DataFormats/L1TrackTrigger"/>
 <use name="DataFormats/NanoAOD"/>
 <use name="DataFormats/TrackerCommon"/>

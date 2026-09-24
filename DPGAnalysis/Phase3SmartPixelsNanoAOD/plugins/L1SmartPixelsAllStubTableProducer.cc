@@ -48,9 +48,12 @@
 #include "FWCore/ParameterSet/interface/ParameterSet.h"
 #include "FWCore/ParameterSet/interface/ParameterSetDescription.h"
 
+#include "DataFormats/Common/interface/DetSetVectorNew.h"
 #include "DataFormats/L1TrackTrigger/interface/TTStub.h"
 #include "DataFormats/L1TrackTrigger/interface/TTTypes.h"
 #include "DataFormats/NanoAOD/interface/FlatTable.h"
+#include "SimDataFormats/Associations/interface/TTStubAssociationMap.h"
+#include "SimDataFormats/TrackingAnalysis/interface/TrackingParticle.h"
 
 #include "DataFormats/TrackerCommon/interface/TrackerTopology.h"
 #include "Geometry/TrackerGeometryBuilder/interface/TrackerGeometry.h"
@@ -73,14 +76,35 @@ public:
         geomToken_(esConsumes<TrackerGeometry, TrackerDigiGeometryRecord>()),
         topoToken_(esConsumes<TrackerTopology, TrackerTopologyRcd>()),
         tableName_(cfg.getParameter<std::string>("tableName")),
-        barrelOnly_(cfg.getParameter<bool>("barrelOnly")) {
+        barrelOnly_(cfg.getParameter<bool>("barrelOnly")),
+        doTruth_(cfg.getParameter<bool>("doTruth")) {
+    if (doTruth_)
+      truthToken_ = consumes<TTStubAssociationMap<Ref_Phase2TrackerDigi_>>(
+          cfg.getParameter<edm::InputTag>("stubTruth"));
     produces<nanoaod::FlatTable>();
   }
 
   void produce(edm::Event& iEvent, const edm::EventSetup& iSetup) override {
-    const auto& stubs = iEvent.get(stubsToken_);
+    // Handle, not iEvent.get: forming a TTStubRef via edmNew::makeRefTo is the
+    // only way to query the association map, and that needs the handle.
+    edm::Handle<TTStubDetSetVec> stubHandle;
+    iEvent.getByToken(stubsToken_, stubHandle);
+    const auto& stubs = *stubHandle;
     const TrackerGeometry& geom = iSetup.getData(geomToken_);
     const TrackerTopology& topo = iSetup.getData(topoToken_);
+
+    edm::Handle<TTStubAssociationMap<Ref_Phase2TrackerDigi_>> truth;
+    if (doTruth_)
+      iEvent.getByToken(truthToken_, truth);
+
+    // TRUTH-ONLY, and deliberately mirroring the IT cluster table's tp* block so
+    // an IT-vs-OT comparison can use the same quantities on both sides: tpIdx is
+    // the TrackingParticle collection index (.key()), exactly as the cluster
+    // table derives it from dominantTp(). The three quality flags have no IT
+    // analogue and come free from the association map.
+    std::vector<int32_t> tpIdx;
+    std::vector<float> tpPt;
+    std::vector<bool> tpGenuine, tpCombinatoric, tpUnknown;
 
     std::vector<uint8_t> layer;
     std::vector<bool> isBarrel;
@@ -110,6 +134,16 @@ public:
         r.push_back(std::hypot(pos.x(), pos.y()));
         phi.push_back(std::atan2(pos.y(), pos.x()));
         bend.push_back(static_cast<float>(st->bendFE()));
+
+        if (doTruth_) {
+          const TTStubRef ref = edmNew::makeRefTo(stubHandle, st);
+          const edm::Ptr<TrackingParticle> tp = truth->findTrackingParticlePtr(ref);
+          tpIdx.push_back(tp.isNull() ? -1 : static_cast<int32_t>(tp.key()));
+          tpPt.push_back(tp.isNull() ? -999.f : static_cast<float>(tp->pt()));
+          tpGenuine.push_back(truth->isGenuine(ref));
+          tpCombinatoric.push_back(truth->isCombinatoric(ref));
+          tpUnknown.push_back(truth->isUnknown(ref));
+        }
       }
     }
 
@@ -127,6 +161,19 @@ public:
                           "stub FE bend (full-strip units); the local r-phi angle, i.e. the OT's "
                           "analogue of the SmartPixels cotAlpha",
                           /*mantissaBits=*/12);
+    if (doTruth_) {
+      tab->addColumn<int32_t>("tpIdx", tpIdx,
+                              "TRUTH-ONLY: TrackingParticle collection index of the associated TP, "
+                              "or -1. Same meaning as L1TSmartPixelsCluster_tpIdx, so the two "
+                              "tables join on it");
+      tab->addColumn<float>("tpPt", tpPt, "TRUTH-ONLY: pT [GeV] of the associated TP", 10);
+      tab->addColumn<bool>("tpGenuine", tpGenuine,
+                           "TRUTH-ONLY: both clusters from the same TP");
+      tab->addColumn<bool>("tpCombinatoric", tpCombinatoric,
+                           "TRUTH-ONLY: clusters from DIFFERENT TPs -- a genuinely fake stub");
+      tab->addColumn<bool>("tpUnknown", tpUnknown,
+                           "TRUTH-ONLY: no TP association (noise, or out-of-time pileup)");
+    }
     tab->setDoc(
         "EVERY Outer-Tracker stub offered to the L1 track finder (no trackIdx: most of these "
         "are on no track, which is the point). Post front-end pT gate, so already the reduced "
@@ -141,6 +188,14 @@ public:
         ->setComment("the SAME stub collection the tracklet chain consumes; do not point this at a "
                      "second stub producer or the table stops describing what the finder saw");
     desc.add<std::string>("tableName", "L1TOTStub");
+    desc.add<bool>("doTruth", true)
+        ->setComment("attach the TRUTH-ONLY tp* block. Needed for any efficiency or fake-rate "
+                     "statement; without it the OT side can only be compared on combinatorics "
+                     "while the IT side has truth, which is an asymmetry that biases conclusions");
+    desc.add<edm::InputTag>("stubTruth",
+                            edm::InputTag("TTStubAssociatorFromPixelDigis", "StubAccepted"))
+        ->setComment("NO process name, so it resolves whether the associator ran in-job or its "
+                     "output was persisted -- the same convention customizeSmartPixels_cff uses");
     desc.add<bool>("barrelOnly", false)
         ->setComment("keep only TOB stubs. Default false: the endcap rows are what make the "
                      "|eta| dependence of any OT-side cost visible");
@@ -151,8 +206,10 @@ private:
   const edm::EDGetTokenT<TTStubDetSetVec> stubsToken_;
   const edm::ESGetToken<TrackerGeometry, TrackerDigiGeometryRecord> geomToken_;
   const edm::ESGetToken<TrackerTopology, TrackerTopologyRcd> topoToken_;
+  edm::EDGetTokenT<TTStubAssociationMap<Ref_Phase2TrackerDigi_>> truthToken_;
   const std::string tableName_;
   const bool barrelOnly_;
+  const bool doTruth_;
 };
 
 DEFINE_FWK_MODULE(L1SmartPixelsAllStubTableProducer);
