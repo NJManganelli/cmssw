@@ -127,6 +127,8 @@ public:
 
     for (const auto& dsv : recHits) {
       const DetId did(dsv.detId());
+      if (did.subdetId() != PixelSubdetector::PixelBarrel)
+        continue;
       const unsigned lay = topo.pxbLayer(did);
       if (lay < 1 || lay > maxLayer_)
         continue;

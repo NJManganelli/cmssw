@@ -138,6 +138,7 @@ private:
   const edm::ESGetToken<MagneticField, IdealMagneticFieldRecord> fieldToken_;
 
   const unsigned maxLayer_;
+  const bool includeDiscs_;
   const double clusterMergeFrac_;
   const double measAngleMaxAbs_;
   std::string angleSetPath_;
@@ -159,6 +160,7 @@ SmartPixelsRecHitProducer::SmartPixelsRecHitProducer(const edm::ParameterSet& cf
       topoToken_(esConsumes()),
       fieldToken_(esConsumes()),
       maxLayer_(cfg.getParameter<unsigned>("maxLayer")),
+      includeDiscs_(cfg.getParameter<bool>("includeDiscs")),
       clusterMergeFrac_(cfg.getParameter<double>("clusterMergeFrac")),
       measAngleMaxAbs_(cfg.getParameter<double>("measAngleMaxAbs")) {
   const std::string p = cfg.getParameter<std::string>("angleSet");
@@ -211,10 +213,12 @@ void SmartPixelsRecHitProducer::produce(edm::Event& iEvent, const edm::EventSetu
 
   for (const auto& dsv : recHits) {
     const DetId did(dsv.detId());
-    if (did.subdetId() != PixelSubdetector::PixelBarrel)
+    const bool isDisc = did.subdetId() == PixelSubdetector::PixelEndcap;
+    if (!(did.subdetId() == PixelSubdetector::PixelBarrel || (isDisc && includeDiscs_)))
       continue;
-    const unsigned lay = topo.pxbLayer(did);
-    if (lay < 1 || lay > maxLayer_)
+    // lay = 0 marks a disc: the PixelAV payload and the noise CDF are TBPX-layer tables.
+    const unsigned lay = isDisc ? 0 : topo.pxbLayer(did);
+    if (!isDisc && (lay < 1 || lay > maxLayer_))
       continue;
     const auto* pdu = dynamic_cast<const PixelGeomDetUnit*>(geom.idToDet(did));
     if (pdu == nullptr)
@@ -321,7 +325,7 @@ void SmartPixelsRecHitProducer::produce(edm::Event& iEvent, const edm::EventSetu
         // ---- sensor response: PixelAV validity gate + one shift per angle ---
         const std::vector<std::variant<int, double, std::string>> pin = {
             static_cast<int>(lay), static_cast<double>(trueCotA), static_cast<double>(trueCotB), bLocalY};
-        if (corrValidFlat_->evaluate(pin) < corrValidProb_->evaluate(pin)) {
+        if (!isDisc && corrValidFlat_->evaluate(pin) < corrValidProb_->evaluate(pin)) {
           const std::vector<std::variant<int, double, std::string>> pinAcc = {
               static_cast<int>(lay), static_cast<double>(trueCotA), static_cast<double>(trueCotB),
               bLocalY, 1.0};
@@ -361,7 +365,7 @@ void SmartPixelsRecHitProducer::produce(edm::Event& iEvent, const edm::EventSetu
         }
       }
 
-      if (domTp < 0 && corrNoiseCotAlpha_ && corrNoiseCotBeta_) {
+      if (domTp < 0 && !isDisc && corrNoiseCotAlpha_ && corrNoiseCotBeta_) {
         // No simlink on any pixel: the sensor still sees charge and still emits an
         // angle. Draw from the inclusive per-layer distribution so an unlinked
         // cluster looks like an arbitrary cluster rather than a flagged special
@@ -419,6 +423,9 @@ void SmartPixelsRecHitProducer::fillDescriptions(edm::ConfigurationDescriptions&
   desc.add<edm::InputTag>("pixelDigiSimLink", edm::InputTag("simSiPixelDigis", "Pixel"));
   desc.add<edm::InputTag>("trackingParticles", edm::InputTag("mix", "MergedTrackTruth"));
   desc.add<unsigned>("maxLayer", 4)->setComment("highest TBPX layer processed (SmartPixels scope is 1..4)");
+  desc.add<bool>("includeDiscs", false)
+      ->setComment("also emit TFPX/TEPX disc clusters (with truth). The PixelAV payload and the "
+                   "noise CDF are TBPX-only, so disc hits carry no payload angle");
   desc.add<double>("clusterMergeFrac", 0.1)
       ->setComment("runner-up charge share above which the cluster is flagged merged (TRUTH-ONLY)");
   desc.add<double>("measAngleMaxAbs", 12.0)
