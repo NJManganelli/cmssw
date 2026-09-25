@@ -77,7 +77,7 @@ public:
     // tracks without a genuine TP match; consumers gate on genuine / tp_pt>0).
     constexpr float kSentinel = -999.f;
     std::vector<float> tpPhi(nTracks, kSentinel), tpTanL(nTracks, kSentinel), tpCharge(nTracks, kSentinel);
-    std::vector<float> tpD0(nTracks, kSentinel), tpZ0(nTracks, kSentinel);
+    std::vector<float> tpPhi0(nTracks, kSentinel), tpD0(nTracks, kSentinel), tpZ0(nTracks, kSentinel);
     std::vector<float> tpVx(nTracks, kSentinel), tpVy(nTracks, kSentinel), tpVz(nTracks, kSentinel);
 
     for (size_t i = 0; i < nTracks; ++i) {
@@ -118,7 +118,10 @@ public:
             const float y0p = dely + (1.f / (2.f * r2_inv) * std::cos(phi));
             const float rp = std::sqrt(x0p * x0p + y0p * y0p);
             tpD0[i] = charge * rp - (1.f / (2.f * r2_inv));
-            const float delphi = reco::deltaPhi(phi, std::atan2(-r2_inv * x0p, r2_inv * y0p));
+            // tp_phi is the momentum phi at the production vertex; a helix built from
+            // (phi, d0, z0) needs the phi at the same POCA as d0/z0.
+            tpPhi0[i] = std::atan2(-r2_inv * x0p, r2_inv * y0p);
+            const float delphi = reco::deltaPhi(phi, tpPhi0[i]);
             tpZ0[i] = vz + std::sinh(tp->eta()) * delphi / (2.0f * r2_inv);
           }
         }
@@ -140,6 +143,10 @@ public:
     table->addColumn<float>("tp_pt", tpPt, "matched TP pt (=tpPt; -999 if unmatched via tp_d0 gate)");
     table->addColumn<float>("tp_eta", tpEta, "matched TP eta (=tpEta)");
     table->addColumn<float>("tp_phi", tpPhi, "matched TP phi at production (rad); -999 if unmatched");
+    table->addColumn<float>("tp_phi0",
+                            tpPhi0,
+                            "matched TP phi (rad) at the POCA to the beamline, the helix phi0 that goes with "
+                            "tp_d0/tp_z0 (compare to L1TTrack_phi); -999 if unmatched");
     table->addColumn<float>("tp_tanL", tpTanL, "matched TP tanLambda = sinh(eta); -999 if unmatched");
     table->addColumn<float>("tp_charge", tpCharge, "matched TP charge; -999 if unmatched");
     table->addColumn<float>(
