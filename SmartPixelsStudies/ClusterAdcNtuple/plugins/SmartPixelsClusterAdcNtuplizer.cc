@@ -1,4 +1,5 @@
-// SmartPixelsClusterAdcNtuplizer: one TTree row per TBPX (L1-L4) pixel cluster, carrying
+// SmartPixelsClusterAdcNtuplizer: one TTree row per IT pixel cluster (TBPX L1-L4, and the
+// TFPX/TEPX discs when the rec-hit producer runs with includeDiscs), carrying
 // the SPARSE pixel map plus everything needed to interpret it and to train a
 // per-cluster angle/position regressor on TrackingParticle truth.
 //
@@ -7,8 +8,11 @@
 // L1TSmartPixelsCluster nano table, iterated in the same order, so row k of an event
 // here is row k of that table (clIdx), and (event, detId, localX, localY) agree.
 //
-// ROWS: every cluster on TBPX layers 1..maxLayer -- TP-linked, simlinked-without-TP
-// and simlink-free, any pT. No truncation of the pixel list.
+// ROWS: every cluster on TBPX layers 1..maxLayer and every disc cluster the producer
+// emitted -- TP-linked, simlinked-without-TP and simlink-free, any pT. No truncation of
+// the pixel list. Disc rows have layer = 0 and subdet = 2, and carry disk/side/ring; disc
+// hits have no payload angle (pHas* = 0). clIdx counts barrel and disc rows separately,
+// so a barrel clIdx is still the L1TSmartPixelsCluster row.
 //
 // TRUTH.
 //  * tpLocalCotAlpha/Beta: copied from SmartPixelsRecHitTruth, i.e. the producer's
@@ -143,7 +147,7 @@ private:
   unsigned long long event_;
   int clIdx_, idxInDet_;
   unsigned detId_;
-  int layer_, ladder_, module_;
+  int subdet_, layer_, ladder_, module_, disk_, side_, ring_, panel_;
   // --- reco
   float localX_, localY_, sigX_, sigY_, gX_, gY_, gZ_, gR_, gPhi_;
   int sizeX_, sizeY_, size_;
@@ -207,7 +211,7 @@ SmartPixelsClusterAdcNtuplizer::SmartPixelsClusterAdcNtuplizer(const edm::Parame
 
 void SmartPixelsClusterAdcNtuplizer::book() {
   edm::Service<TFileService> fs;
-  tree_ = fs->make<TTree>("clusters", "one row per TBPX pixel cluster");
+  tree_ = fs->make<TTree>("clusters", "one row per IT pixel cluster (TBPX, and discs if produced)");
   auto I = [&](const char* n, int* v) { tree_->Branch(n, v, (std::string(n) + "/I").c_str()); };
   auto F = [&](const char* n, float* v) { tree_->Branch(n, v, (std::string(n) + "/F").c_str()); };
   tree_->Branch("run", &run_, "run/i");
@@ -216,9 +220,14 @@ void SmartPixelsClusterAdcNtuplizer::book() {
   I("clIdx", &clIdx_);
   I("idxInDet", &idxInDet_);
   tree_->Branch("detId", &detId_, "detId/i");
+  I("subdet", &subdet_);
   I("layer", &layer_);
   I("ladder", &ladder_);
   I("module", &module_);
+  I("disk", &disk_);
+  I("side", &side_);
+  I("ring", &ring_);
+  I("panel", &panel_);
   F("localX", &localX_);
   F("localY", &localY_);
   F("sigX", &sigX_);
@@ -367,14 +376,15 @@ void SmartPixelsClusterAdcNtuplizer::analyze(const edm::Event& iEvent, const edm
   run_ = iEvent.id().run();
   lumi_ = iEvent.id().luminosityBlock();
   event_ = iEvent.id().event();
-  int clIdx = 0;
+  int clIdx = 0, discIdx = 0;
 
   for (const auto& dsv : hits) {
     const DetId did(dsv.detId());
-    if (did.subdetId() != PixelSubdetector::PixelBarrel)
+    const bool isDisc = did.subdetId() == PixelSubdetector::PixelEndcap;
+    if (!isDisc && did.subdetId() != PixelSubdetector::PixelBarrel)
       continue;
-    const unsigned lay = topo.pxbLayer(did);
-    if (lay < 1 || lay > maxLayer_)
+    const unsigned lay = isDisc ? 0 : topo.pxbLayer(did);
+    if (!isDisc && (lay < 1 || lay > maxLayer_))
       continue;
     const auto* pdu = dynamic_cast<const PixelGeomDetUnit*>(geom.idToDet(did));
     if (pdu == nullptr)
@@ -389,9 +399,15 @@ void SmartPixelsClusterAdcNtuplizer::analyze(const edm::Event& iEvent, const edm
     const auto& surf = pdu->surface();
     const auto pitch = ptopo.pitch();
     detId_ = did.rawId();
+    subdet_ = did.subdetId();
     layer_ = lay;
-    ladder_ = topo.pxbLadder(did);
-    module_ = topo.pxbModule(did);
+    // Phase-2 PXF: pxfBlade is the RING, pxfDisk runs 1-8 TFPX then 9-12 TEPX
+    ladder_ = isDisc ? -1 : topo.pxbLadder(did);
+    module_ = isDisc ? topo.pxfModule(did) : topo.pxbModule(did);
+    disk_ = isDisc ? topo.pxfDisk(did) : 0;
+    side_ = isDisc ? topo.pxfSide(did) : 0;
+    ring_ = isDisc ? topo.pxfBlade(did) : 0;
+    panel_ = isDisc ? topo.pxfPanel(did) : 0;
     pitchX_ = pitch.first;
     pitchY_ = pitch.second;
     thickness_ = surf.bounds().thickness();
@@ -406,9 +422,11 @@ void SmartPixelsClusterAdcNtuplizer::analyze(const edm::Event& iEvent, const edm
     axXx_ = ex.x(); axXy_ = ex.y(); axXz_ = ex.z();
     axYx_ = ey.x(); axYy_ = ey.y(); axYz_ = ey.z();
     axZx_ = ez.x(); axZy_ = ez.y(); axZz_ = ez.z();
-    zOutward_ = (ez.x() * mc.x() + ez.y() * mc.y()) > 0 ? 1 : -1;
+    // barrel: local z points away from the beam line; disc: away from z = 0
+    zOutward_ = (isDisc ? ez.z() * mc.z() : ez.x() * mc.x() + ez.y() * mc.y()) > 0 ? 1 : -1;
     // 3D sensor => Pixel3DDigitizerAlgorithm (usePseudoPixel3DAlgo = False by default)
-    is3D_ = geom.getDetectorType(did) == TrackerGeometry::ModuleType::Ph2PXB3D ? 1 : 0;
+    const auto mtype = geom.getDetectorType(did);
+    is3D_ = (mtype == TrackerGeometry::ModuleType::Ph2PXB3D || mtype == TrackerGeometry::ModuleType::Ph2PXF3D) ? 1 : 0;
     // Field at the MODULE CENTRE: the point both the Phase-2 digitizer
     // (Phase2TrackerDigitizer::accumulate) and the CPE (PixelCPEBase) evaluate it at.
     const LocalVector bl = surf.toLocal(field.inTesla(mc));
@@ -451,12 +469,13 @@ void SmartPixelsClusterAdcNtuplizer::analyze(const edm::Event& iEvent, const edm
         adcByChannel[d.channel()] = d.adc();
     const auto shIt = simHitsByDet.find(did.rawId());
 
-    for (size_t j = 0; j < dsv.size(); ++j, ++clIdx) {
+    for (size_t j = 0; j < dsv.size(); ++j) {
       const auto& rh = dsv[j];
       const auto& tr = truthSet[j];
       const SiPixelCluster& cl = *rh.cluster();
       ++nClusters_;
-      clIdx_ = clIdx;
+      // barrel: row in the L1TSmartPixelsCluster table; discs: a separate running index
+      clIdx_ = isDisc ? discIdx++ : clIdx++;
       idxInDet_ = tr.idxInDet();
 
       localX_ = rh.localPosition().x();
@@ -687,7 +706,9 @@ void SmartPixelsClusterAdcNtuplizer::fillDescriptions(edm::ConfigurationDescript
   desc.add<edm::InputTag>("simTracks", edm::InputTag("g4SimHits"));
   desc.add<std::vector<edm::InputTag>>("simHits",
                                        {edm::InputTag("g4SimHits", "TrackerHitsPixelBarrelLowTof"),
-                                        edm::InputTag("g4SimHits", "TrackerHitsPixelBarrelHighTof")});
+                                        edm::InputTag("g4SimHits", "TrackerHitsPixelBarrelHighTof"),
+                                        edm::InputTag("g4SimHits", "TrackerHitsPixelEndcapLowTof"),
+                                        edm::InputTag("g4SimHits", "TrackerHitsPixelEndcapHighTof")});
   desc.add<unsigned>("maxLayer", 4);
   desc.add<bool>("doLorentz", true);
   desc.add<std::string>("lorentzAngleLabel", "");
