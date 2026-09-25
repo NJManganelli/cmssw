@@ -737,6 +737,14 @@ l1tPh3SmartPixelsClusterTable = cms.EDProducer(
     doTruth = cms.bool(True),
 )
 
+# TFPX/TEPX disc clusters, same columns with disk/side/ring in place of layer. Only
+# the CNN angle source puts disc clusters into spixSmartPixelsRecHits, so this table
+# is added by customizeSmartPixels_cff.ensureSmartPixelsRecHits in that mode alone.
+l1tPh3SmartPixelsDiscClusterTable = l1tPh3SmartPixelsClusterTable.clone(
+    tableName = cms.string("L1TSmartPixelsDiscCluster"),
+    subdetector = cms.string("endcap"),
+)
+
 
 # The COMPLETE OT stub collection, part of the Clusters tier (not a separate
 # variant). ~15k rows/event at PU200 expected, roughly doubling the tier payload.
@@ -794,6 +802,23 @@ def addPh3L1SmartPixelsClusters(process, recHitLabel="spixSmartPixelsRecHits", d
                     process.l1tPh3SmartPixelsAllStubTable)
     process.p3L1SmartPixelsClusterTask = task
     process.l1tPh2NanoTask.add(task)
+    return process
+
+
+def addPh3L1SmartPixelsDiscClusters(process):
+    """Add the disc cluster table next to an existing TBPX cluster table; idempotent.
+
+    Follows the TBPX table's rec-hit label and truth setting, so both describe the same
+    rec hits. No-op without a TBPX cluster table (the Clusters tier was not requested).
+    """
+    if not hasattr(process, "l1tPh3SmartPixelsClusterTable") or hasattr(process, "l1tPh3SmartPixelsDiscClusterTable"):
+        return process
+    barrel = process.l1tPh3SmartPixelsClusterTable
+    process.l1tPh3SmartPixelsDiscClusterTable = l1tPh3SmartPixelsDiscClusterTable.clone(
+        smartPixelsRecHits = barrel.smartPixelsRecHits,
+        doTruth = barrel.doTruth,
+    )
+    process.p3L1SmartPixelsClusterTask.add(process.l1tPh3SmartPixelsDiscClusterTable)
     return process
 
 

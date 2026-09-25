@@ -45,6 +45,11 @@
 // Cartesian columns would give ~1 mrad, several times the sensor resolution, and
 // would make any angular result an artefact of storage rather than of physics.
 //
+// DISCS. subdetector = "endcap" makes a SEPARATE table of the TFPX/TEPX clusters
+// (L1TSmartPixelsDiscCluster), with disk/side/ring in place of layer and otherwise
+// the same columns, so the TBPX table schema is untouched. Disc clusters exist only
+// when the rec-hit producer runs with includeDiscs (the CNN angle source).
+//
 // NAMING. Frame prefix only for sensor quantities (localX/localY, localCotAlpha/
 // Beta, globalR/Phi/Z, globalClusterPhi/CotTheta); "reco" is redundant because a
 // cluster carries ONLY reco quantities and truth is reachable solely through the
@@ -102,6 +107,7 @@ public:
         topoToken_(esConsumes()),
         geomToken_(esConsumes()),
         tableName_(cfg.getParameter<std::string>("tableName")),
+        discs_(cfg.getParameter<std::string>("subdetector") == "endcap"),
         maxLayer_(cfg.getParameter<unsigned>("maxLayer")),
         doTruth_(cfg.getParameter<bool>("doTruth")) {
     produces<nanoaod::FlatTable>();
@@ -112,7 +118,7 @@ public:
     const auto& geom = iSetup.getData(geomToken_);
     const auto& recHits = iEvent.get(recHitToken_);
     const auto& truthColl = iEvent.get(truthToken_);
-    std::vector<uint8_t> layer, sizeX, sizeY;
+    std::vector<uint8_t> layer, disk, side, ring, sizeX, sizeY;
     std::vector<uint16_t> size;
     std::vector<uint32_t> detId;
     std::vector<float> localX, localY, sigX, sigY, charge;
@@ -127,10 +133,10 @@ public:
 
     for (const auto& dsv : recHits) {
       const DetId did(dsv.detId());
-      if (did.subdetId() != PixelSubdetector::PixelBarrel)
+      if (did.subdetId() != (discs_ ? PixelSubdetector::PixelEndcap : PixelSubdetector::PixelBarrel))
         continue;
-      const unsigned lay = topo.pxbLayer(did);
-      if (lay < 1 || lay > maxLayer_)
+      const unsigned lay = discs_ ? 0 : topo.pxbLayer(did);
+      if (!discs_ && (lay < 1 || lay > maxLayer_))
         continue;
       const auto* pdu = dynamic_cast<const PixelGeomDetUnit*>(geom.idToDet(did));
       const auto tsv = truthColl.find(dsv.detId());
@@ -141,7 +147,13 @@ public:
 
       for (size_t j = 0; j < dsv.size(); ++j) {
         const auto& rh = dsv[j];
-        layer.push_back(static_cast<uint8_t>(lay));
+        if (discs_) {
+          disk.push_back(static_cast<uint8_t>(topo.pxfDisk(did)));
+          side.push_back(static_cast<uint8_t>(topo.pxfSide(did)));
+          ring.push_back(static_cast<uint8_t>(topo.pxfBlade(did)));
+        } else {
+          layer.push_back(static_cast<uint8_t>(lay));
+        }
         detId.push_back(did.rawId());
         // GLOBAL position and direction, computed HERE because this is where the
         // geometry is. nano carries none, so without these every analysis would
@@ -214,8 +226,14 @@ public:
       }
     }
 
-    auto tab = std::make_unique<nanoaod::FlatTable>(layer.size(), tableName_, false, false);
-    tab->addColumn<uint8_t>("layer", layer, "TBPX layer 1..4");
+    auto tab = std::make_unique<nanoaod::FlatTable>(detId.size(), tableName_, false, false);
+    if (discs_) {
+      tab->addColumn<uint8_t>("disk", disk, "pxfDisk: 1-8 TFPX, 9-12 TEPX");
+      tab->addColumn<uint8_t>("side", side, "pxfSide: 1 = -z, 2 = +z");
+      tab->addColumn<uint8_t>("ring", ring, "ring (pxfBlade in the Phase-2 numbering)");
+    } else {
+      tab->addColumn<uint8_t>("layer", layer, "TBPX layer 1..4");
+    }
     tab->addColumn<uint32_t>("detId", detId, "module rawId; join key to the refit hit table detId");
     tab->addColumn<float>("localX", localX, "cluster position, module-local x [cm]", 16);
     tab->addColumn<float>("localY", localY, "cluster position, module-local y [cm]", 16);
@@ -318,6 +336,8 @@ public:
         ->setComment("SmartPixelsRecHit + Truth (same label): the single source of the "
                      "sensor angle, shared with the refit so selClusterIdx is exact");
     desc.add<std::string>("tableName", "L1TSmartPixelsCluster");
+    desc.add<std::string>("subdetector", "barrel")
+        ->setComment("'barrel' (TBPX, layer column) or 'endcap' (TFPX/TEPX, disk/side/ring columns)");
     desc.add<unsigned>("maxLayer", 4)->setComment("highest TBPX layer kept (SmartPixels scope is 1..4)");
     desc.add<bool>("doTruth", true)
         ->setComment("attach the TRUTH-ONLY tp* block (tpIdx, tpPt, tpChargeFrac, "
@@ -331,6 +351,7 @@ private:
   const edm::ESGetToken<TrackerTopology, TrackerTopologyRcd> topoToken_;
   const edm::ESGetToken<TrackerGeometry, TrackerDigiGeometryRecord> geomToken_;
   const std::string tableName_;
+  const bool discs_;
   const unsigned maxLayer_;
   const bool doTruth_;
 };

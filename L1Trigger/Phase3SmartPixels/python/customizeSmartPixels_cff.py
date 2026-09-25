@@ -64,6 +64,19 @@ DEFAULT_CORRECTION_SET = "L1Trigger/Phase3SmartPixels/data/spixel_smear_all_conf
 DIGIREFIT_USEANGLES_CHOICES = ("none", "alpha", "alphaBeta")
 DIGIREFIT_GAINMODE_CHOICES = ("full", "lut")
 DIGIREFIT_LAYERORDER_CHOICES = ("outsideIn", "insideOut")
+DIGIREFIT_ANGLESOURCE_CHOICES = ("payload", "cnn")
+
+# Angle source "cnn": the cluster CNN (ngtagger-train eval_spixel_angles/cluster_cnn),
+# exported to ONNX, plus its static resolution table. Scalar lists are the models'
+# norm.json "cols", in order (export_onnx.py prints them).
+SPIX_CNN_ANGLE_SOURCE = dict(
+    cnnBarrelModel="L1Trigger/Phase3SmartPixels/data/cluster_cnn/spix_cnn_barrel_v1.onnx",
+    cnnBarrelScalars=["l1", "l2", "l3", "l4", "sizeX", "sizeY", "size", "logq", "adcSum", "truncX", "truncY", "nPxLost"],
+    cnnDiscModel="L1Trigger/Phase3SmartPixels/data/cluster_cnn/spix_cnn_disc_v1.onnx",
+    cnnDiscScalars=["d%d" % d for d in range(1, 13)] + ["sizeX", "sizeY", "size", "logq", "adcSum", "truncX",
+                                                          "truncY", "nPxLost"],
+    cnnSigmaSet="L1Trigger/Phase3SmartPixels/data/cluster_cnn/spix_cnn_angle_sigma_v1.json",
+)
 
 DIGIREFIT_DEFAULTS = {
     # --- search windows (module-local frame, PER-LAYER TBPX L1-L4) ---
@@ -120,6 +133,12 @@ DIGIREFIT_DEFAULTS = {
     "smarthitTrueSet": "",    # RESERVED (see note above) -- do not ship a real path
     "smarthitFakeSet": "",    # "smarthit_fake" payload (inclusive noise-angle model)
     "pixelavAngleSet": "",    # PixelAV angle sigma/bias response payload
+    # --- where the rec-hit angle comes from ---
+    # "payload": PixelAV draw keyed on the TP truth angle (+ smarthitFakeSet for unlinked).
+    # "cnn": the cluster CNN on the digi ADC map, identical for every cluster and with no
+    # truth input; also emits TFPX/TEPX clusters (and their nano table). Takes no
+    # pixelavAngleSet/smarthitFakeSet.
+    "angleSource": "payload",
     # --- optional refit-aware TkQuality BDT ---
     "bdtModel": "",           # optional path to the refit TkQuality BDT model (empty = none)
 }
@@ -156,6 +175,14 @@ def _resolveDigiRefitConfig(digiRefitConfig=None):
     raise ValueError(
         f"digiRefitConfig['layerOrder']={resolved['layerOrder']!r} invalid; "
         f"must be one of {DIGIREFIT_LAYERORDER_CHOICES}")
+  if resolved["angleSource"] not in DIGIREFIT_ANGLESOURCE_CHOICES:
+    raise ValueError(
+        f"digiRefitConfig['angleSource']={resolved['angleSource']!r} invalid; "
+        f"must be one of {DIGIREFIT_ANGLESOURCE_CHOICES}")
+  if resolved["angleSource"] == "cnn" and (resolved["pixelavAngleSet"] or resolved["smarthitFakeSet"]):
+    raise ValueError(
+        "digiRefitConfig['angleSource']='cnn' takes no pixelavAngleSet/smarthitFakeSet: "
+        "every cluster gets the CNN angle, so a payload would silently go unused")
   if resolved["seedNPar"] not in (4, 5):
     raise ValueError(
         f"digiRefitConfig['seedNPar']={resolved['seedNPar']!r} invalid; must be 4 or 5")
@@ -296,7 +323,7 @@ def addSmartPixelsTrackProducerVariants(process, variants=None, correctionSet=DE
     # and raises the RESERVED (Tier 3 'refit') NotImplementedError here.
     prompt, extended = smartPixelsVariantLabels(mode, activeSP)
 
-    if mode == "digiRefit" and not digiRefitResolved["pixelavAngleSet"]:
+    if mode == "digiRefit" and digiRefitResolved["angleSource"] == "payload" and not digiRefitResolved["pixelavAngleSet"]:
       raise ValueError(
           "digiRefit variant requested but digiRefitConfig['pixelavAngleSet'] is empty; "
           "the PixelAV angle-response payload is REQUIRED (see doc/PixelAVAngleResponseSpec.md; "
@@ -319,7 +346,8 @@ def addSmartPixelsTrackProducerVariants(process, variants=None, correctionSet=DE
         # payload configures THAT and the refit is engine-free (its old local RNG
         # existed only for the noise-angle draw, which moved with the synthesis).
         ensureSmartPixelsRecHits(process, digiRefitResolved["pixelavAngleSet"],
-                                 digiRefitResolved["smarthitFakeSet"])
+                                 digiRefitResolved["smarthitFakeSet"],
+                                 angleSource=digiRefitResolved["angleSource"])
 
   return process, modules
 
@@ -347,21 +375,42 @@ SPIX_PIXEL_DIGI_TAG = cms.InputTag("simSiPixelDigis", "Pixel")
 
 
 
-def ensureSmartPixelsRecHits(process, angleSet, noiseSet="", digiTag=SPIX_PIXEL_DIGI_TAG):
+def ensureSmartPixelsRecHits(process, angleSet, noiseSet="", digiTag=SPIX_PIXEL_DIGI_TAG, angleSource="payload"):
   """Create spixSmartPixelsRecHits (cluster -> rec hit -> +angle) if absent; idempotent.
 
   Downstream of the cluster chain, upstream of any refit. Single source of the
   sensor angle estimate: before this existed the synthesis lived inside the refit
   producer's event loop and could only be reused by copying it.
+
+  angleSource="cnn" configures the cluster-CNN angle (SPIX_CNN_ANGLE_SOURCE; angleSet and
+  noiseSet must be empty), includes the disc clusters, and adds the disc cluster nano
+  table next to an existing TBPX cluster table.
   """
+  if angleSource not in DIGIREFIT_ANGLESOURCE_CHOICES:
+    raise ValueError(f"angleSource={angleSource!r} invalid; must be one of {DIGIREFIT_ANGLESOURCE_CHOICES}")
   ensurePixelRecHitChain(process, digiTag)
-  if not hasattr(process, "spixSmartPixelsRecHits"):
+  if hasattr(process, "spixSmartPixelsRecHits"):
+    if process.spixSmartPixelsRecHits.angleSource.value() != angleSource:
+      raise ValueError(
+          f"spixSmartPixelsRecHits already exists with angleSource="
+          f"{process.spixSmartPixelsRecHits.angleSource.value()!r}; refusing to reuse it for {angleSource!r}")
+  else:
     from L1Trigger.Phase3SmartPixels.smartPixelsRecHits_cfi import smartPixelsRecHits
     process.spixSmartPixelsRecHits = smartPixelsRecHits.clone(
         pixelRecHits=cms.InputTag("spixPixelRecHits"),
         pixelDigiSimLink=digiTag,
+        pixelDigis=digiTag,
         angleSet=cms.string(angleSet),
-        noiseSet=cms.string(noiseSet))
+        noiseSet=cms.string(noiseSet),
+        angleSource=cms.string(angleSource))
+    if angleSource == "cnn":
+      src = SPIX_CNN_ANGLE_SOURCE
+      process.spixSmartPixelsRecHits.includeDiscs = True
+      process.spixSmartPixelsRecHits.cnnBarrelModel = cms.string(src["cnnBarrelModel"])
+      process.spixSmartPixelsRecHits.cnnBarrelScalars = cms.vstring(*src["cnnBarrelScalars"])
+      process.spixSmartPixelsRecHits.cnnDiscModel = cms.string(src["cnnDiscModel"])
+      process.spixSmartPixelsRecHits.cnnDiscScalars = cms.vstring(*src["cnnDiscScalars"])
+      process.spixSmartPixelsRecHits.cnnSigmaSet = cms.string(src["cnnSigmaSet"])
     process.spixSmartPixelsRecHitTask = cms.Task(process.spixSmartPixelsRecHits)
     if hasattr(process, "spixPixelRecHitTask"):
       process.spixSmartPixelsRecHitTask.add(process.spixPixelRecHitTask)
@@ -370,6 +419,9 @@ def ensureSmartPixelsRecHits(process, angleSet, noiseSet="", digiTag=SPIX_PIXEL_
   # or the table dies with ProductNotFound at the first event.
   if hasattr(process, "l1tPh2NanoTask"):
     process.l1tPh2NanoTask.add(process.spixSmartPixelsRecHitTask)
+  if angleSource == "cnn":
+    from DPGAnalysis.Phase3SmartPixelsNanoAOD.l1tPh3SmartPixelsNano_cff import addPh3L1SmartPixelsDiscClusters
+    addPh3L1SmartPixelsDiscClusters(process)
   return process
 
 
