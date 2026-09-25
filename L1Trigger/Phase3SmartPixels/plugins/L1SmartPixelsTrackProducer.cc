@@ -1659,30 +1659,42 @@ void L1SmartPixelsTrackProducer::produce(edm::Event& iEvent, const edm::EventSet
         // happened to yield no hit, so the budget is accrued over the layers
         // TRAVERSED between the two constraint points rather than per update.
         //
-        // STRUCTURE FROM PHYSICS, SCALE FROM DATA. A kink of projected angle theta
-        // at radius r_s leaves the momentum magnitude alone, so rInv is untouched;
-        // it rotates the direction and shifts the impact parameters that keep the
-        // trajectory passing through r_s:
-        //     transverse:   d(phi0) = theta,              d(d0) = -r_s * theta
-        //     longitudinal: d(tanL) = theta * sec^2(lam), d(z0) = -r_s * d(tanL)
-        // so Q = theta0^2 * (J_T J_T^T + J_L J_L^T), rank 2, with theta0 the
-        // per-layer projected scattering angle multScattTerm / pT [rad] -- the same
-        // parametrisation and default constant TMTT uses (0.00075 rad*GeV), except
-        // applied to the STATE covariance rather than by inflating the measurement
-        // error. Inflating sigma_meas instead would fix S but leave the emitted
-        // outCov optimistic for downstream vertexing and tagging.
+        // STRUCTURE FROM PHYSICS, SCALE FROM DATA. A kink of projected SPACE angle
+        // theta at radius r_s leaves the momentum magnitude alone, so rInv is
+        // untouched; it rotates the direction and shifts the impact parameters that
+        // keep the trajectory passing through r_s. In TTTrack's own conventions
+        // (POCA = (d0 sin phi0, -d0 cos phi0), so d0 = x0 sin phi0 - y0 cos phi0):
+        //     azimuthal:    d(phi0) = theta sec(lam),     d(d0) = +r_s * d(phi0)
+        //     dip:          d(tanL) = theta sec^2(lam),   d(z0) = -r_s * d(tanL)
+        // (the transverse momentum is p cos(lam), so an azimuthal kink theta turns
+        // phi by theta / cos(lam); d(tanL) = sec^2 d(lam)). Q = theta^2 (J_T J_T^T +
+        // J_L J_L^T), rank 2, with theta = multScattTerm / p per traversed layer.
+        // multScattTerm keeps TMTT's KalmanMultiScattTerm value (0.00075 rad*GeV):
+        // TMTT uses it as the TRANSVERSE deflection per pT, and multScattTerm / p *
+        // sec(lam) is exactly that, so the azimuthal term is unchanged in magnitude.
+        // Applied to the STATE covariance rather than by inflating the measurement
+        // error, so the emitted outCov stays honest for downstream vertexing and
+        // tagging.
+        //
+        // HISTORY (2026-09-23): the first version (f629627) had d(d0) = -r_s theta,
+        // which is the reco::TrackBase::dxy convention (dxy = -d0 here): it moved the
+        // crossing AT the kink by a median 33 um and inflated the lever arm to
+        // ~(r + r_s). It also used theta = multScattTerm / pT with d(tanL) = theta
+        // sec^2, overstating the dip term by sec(lam).
         if (digiRefitApplyProcessNoise_ && nUpdates > 0 && drPrevLayerR > 0.) {
           const double ptNow = std::abs(MagConstant * b_field / (a[0] * 100.0));
           const int nCross = std::max(1, std::abs(layer - drPrevLayer));
           if (ptNow > 1e-3) {
-            const double theta0 = digiRefitMultScattTerm_ / ptNow;
+            const double sec2 = 1.0 + a[2] * a[2];
+            const double sec = std::sqrt(sec2);
+            const double pNow = ptNow * sec;
+            const double theta0 = digiRefitMultScattTerm_ / pNow;  // projected space angle
             const double var = theta0 * theta0 * static_cast<double>(nCross);
             const double rs = drPrevLayerR;  // kink sits at the material, i.e. the
                                              // last layer crossed, giving the lever
                                              // arm to the layer now being predicted
-            const double sec2 = 1.0 + a[2] * a[2];
             ROOT::Math::SVector<double, 5> jT, jL;
-            jT[0] = 0.; jT[1] = 1.; jT[2] = 0.; jT[3] = 0.; jT[4] = -rs;
+            jT[0] = 0.; jT[1] = sec; jT[2] = 0.; jT[3] = 0.; jT[4] = +rs * sec;
             jL[0] = 0.; jL[1] = 0.; jL[2] = sec2; jL[3] = -rs * sec2; jL[4] = 0.;
             for (int i = 0; i < 5; ++i)
               for (int j = 0; j <= i; ++j)
