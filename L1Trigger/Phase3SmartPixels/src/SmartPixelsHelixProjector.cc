@@ -55,20 +55,16 @@ namespace smartpixels {
     if (Rl <= 0.)
       return out;
 
-    // SIGN FIX: the analytic parametrization below (centre = (x0 - R sinPhi0,
-    // y0 + R cosPhi0); x = x0 + (sin(phi0+psi) - sinPhi0)/rInv) curls the OPPOSITE
-    // way to the CMSSW TTTrack rInv convention that seeds this projector. With the
-    // raw stored rInv it places the crossing on the mirror-image azimuthal side, so
-    // the predicted IT hit position drifts from the real digi as r^2/R: ~0 at L1
-    // but ~2 mm at L4 (r=16 cm), i.e. O(100 sigma) position pulls at the outer
-    // layers. Verified three ways on RelVal PU200: (a) the drawn seed helix only
-    // lands on its own OT stubs with negated curvature (<0.1 mm vs up to 25 cm),
-    // (b) the real per-hit resX/pullX grow monotonically L1->L4 (0.023->0.23 cm,
-    // pull 0.7->142) with resY flat, (c) the matched-TP truth helix (its own charge)
-    // hits the OT stubs only when negated. Negating the signed curvature once here
-    // flips the centre, turning direction, crossing point AND momentum direction
-    // consistently; z0/tanL and the arc length (sTransverse >= 0) are untouched.
-    const double rInv = -h.rInv;
+    // TTTrack CONVENTIONS, used as they are (no sign flips anywhere below):
+    // rInv > 0 is a positive charge, which turns CLOCKWISE in +Bz, so the
+    // direction angle along the transverse arc s is phi(s) = phi0 - rInv * s; the
+    // POCA is (d0 sin phi0, -d0 cos phi0); the circle centre sits at
+    // (x0 + sin(phi0)/rInv, y0 - cos(phi0)/rInv). An earlier version wrote the
+    // helix in the counter-clockwise maths convention and negated rInv on entry
+    // ("SIGN FIX", validated on RelVal PU200: seed helix lands on its own OT
+    // stubs, per-hit pulls flat L1->L4, matched-TP helix hits the OT stubs); this
+    // form is the same helix, bit for bit.
+    const double rInv = h.rInv;
     const double phi0 = h.phi0;
     const double x0 = h.x0;
     const double y0 = h.y0;
@@ -90,10 +86,11 @@ namespace smartpixels {
       if (sTransverse < 0)
         return out;
     } else {
-      // Circle center is offset by 1/rInv perpendicular to the momentum.
+      // Circle center is offset by 1/rInv perpendicular to the momentum, on the
+      // right of the direction for a positive (clockwise) track.
       const double R = 1.0 / rInv;  // signed
-      const double cx = x0 - R * sinPhi0;
-      const double cy = y0 + R * cosPhi0;
+      const double cx = x0 + R * sinPhi0;
+      const double cy = y0 - R * cosPhi0;
       const double dcenter = std::hypot(cx, cy);
       const double absR = std::abs(R);
       if (Rl > dcenter + absR || Rl < std::abs(dcenter - absR))
@@ -105,8 +102,7 @@ namespace smartpixels {
       if (cosArg < -1.0 || cosArg > 1.0)
         return out;
       const double delta = std::acos(std::max(-1.0, std::min(1.0, cosArg)));
-      const double dpsi = (rInv > 0) ? delta : -delta;  // turning direction from charge sign
-      sTransverse = std::abs(dpsi) * absR;
+      sTransverse = delta * absR;  // arc length; the turning SENSE lives in rInv's sign
     }
 
     // Global crossing point via helix stepping in transverse arc length.
@@ -115,9 +111,9 @@ namespace smartpixels {
       gx = x0 + sTransverse * cosPhi0;
       gy = y0 + sTransverse * sinPhi0;
     } else {
-      const double psi = rInv * sTransverse;  // turning angle
-      gx = x0 + (std::sin(phi0 + psi) - sinPhi0) / rInv;
-      gy = y0 - (std::cos(phi0 + psi) - cosPhi0) / rInv;
+      const double psi = -rInv * sTransverse;  // turning angle (clockwise for rInv > 0)
+      gx = x0 - (std::sin(phi0 + psi) - sinPhi0) / rInv;
+      gy = y0 + (std::cos(phi0 + psi) - cosPhi0) / rInv;
     }
     const double gz = z0 + tanL * sTransverse;
     const GlobalPoint gp(gx, gy, gz);
@@ -146,9 +142,9 @@ namespace smartpixels {
         dx = cosPhi0;
         dy = sinPhi0;
       } else {
-        const double ps = rInv * s;
-        px = x0 + (std::sin(phi0 + ps) - sinPhi0) / rInv;
-        py = y0 - (std::cos(phi0 + ps) - cosPhi0) / rInv;
+        const double ps = -rInv * s;
+        px = x0 - (std::sin(phi0 + ps) - sinPhi0) / rInv;
+        py = y0 + (std::cos(phi0 + ps) - cosPhi0) / rInv;
         dx = std::cos(phi0 + ps);
         dy = std::sin(phi0 + ps);
       }
@@ -204,7 +200,7 @@ namespace smartpixels {
       return out;
 
     // Momentum direction at the ACCEPTED (on-plane) crossing point.
-    const double psi = rInv * bestS;
+    const double psi = -rInv * bestS;
     const double pt = h.pt;
     const GlobalVector gmom(pt * std::cos(phi0 + psi), pt * std::sin(phi0 + psi), pt * tanL);
 
