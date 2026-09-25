@@ -21,6 +21,8 @@ o.register("fileIdx", "1", VarParsing.multiplicity.singleton, VarParsing.varType
 o.register("nThreads", 4, VarParsing.multiplicity.singleton, VarParsing.varType.int, "threads")
 o.register("includeDiscs", 1, VarParsing.multiplicity.singleton, VarParsing.varType.int,
            "also ntuple the disc clusters (rec-hit producer includeDiscs)")
+o.register("angleSource", "payload", VarParsing.multiplicity.singleton, VarParsing.varType.string,
+           "rec-hit angle source: payload (pCot* = PixelAV draw) or cnn (pCot* = CMSSW CNN inference)")
 o.register("skip", 0, VarParsing.multiplicity.singleton, VarParsing.varType.int, "skipEvents")
 o.setDefault("maxEvents", 5)
 o.setDefault("outputFile", "/work/clusterntuple/test5.root")
@@ -44,9 +46,12 @@ process.options.numberOfStreams = 0
 process.MessageLogger.cerr.FwkReport.reportEvery = 10
 
 from L1Trigger.Phase3SmartPixels.customizeSmartPixels_cff import ensureSmartPixelsRecHits
-ensureSmartPixelsRecHits(process,
-                         "/work/spxsmoke/spix_angle_response_Conv1D_Full-2bit_v4fixed.json",
-                         "/work/spxsmoke/smarthit_noise_v6.json")
+if o.angleSource == "cnn":
+    ensureSmartPixelsRecHits(process, "", "", angleSource="cnn")
+else:
+    ensureSmartPixelsRecHits(process,
+                             "/work/spxsmoke/spix_angle_response_Conv1D_Full-2bit_v4fixed.json",
+                             "/work/spxsmoke/smarthit_noise_v6.json")
 process.spixSmartPixelsRecHits.includeDiscs = bool(o.includeDiscs)
 
 process.clusterAdcNtuple = cms.EDAnalyzer("SmartPixelsClusterAdcNtuplizer")
