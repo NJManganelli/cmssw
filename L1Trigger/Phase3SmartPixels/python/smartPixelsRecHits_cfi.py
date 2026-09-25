@@ -10,6 +10,7 @@ smartPixelsRecHits = cms.EDProducer(
     pixelDigiSimLink=cms.InputTag("simSiPixelDigis", "Pixel"),
     trackingParticles=cms.InputTag("mix", "MergedTrackTruth"),
     maxLayer=cms.uint32(4),
+    includeDiscs=cms.bool(False),  # TFPX/TEPX hits too (no payload angle there)
     clusterMergeFrac=cms.double(0.1),
     measAngleMaxAbs=cms.double(12.0),
     angleSet=cms.string(""),   # REQUIRED: PixelAV angle-response payload
