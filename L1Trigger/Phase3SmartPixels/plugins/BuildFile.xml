@@ -31,6 +31,7 @@
   <use name="L1Trigger/TrackerDTC"/>
   <use name="MagneticField/Engine"/>
   <use name="MagneticField/Records"/>
+  <use name="PhysicsTools/ONNXRuntime"/>
   <use name="SimDataFormats/Associations"/>
   <use name="SimDataFormats/EncodedEventId"/>
   <use name="SimDataFormats/Track"/>

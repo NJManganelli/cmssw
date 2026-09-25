@@ -54,6 +54,23 @@
 // splitting -- properties the old CLHEP-engine draw needed a carefully seeded
 // per-event engine to achieve. Two salts give alpha and beta independent draws,
 // matching the previous behaviour.
+//
+// ANGLE SOURCE "cnn" (opt-in; the default "payload" is everything above). The
+// angle is INFERRED from the cluster's own digi ADC map by a CNN trained on
+// TP-linked clusters (ngtagger-train eval_spixel_angles/cluster_cnn), run through
+// ONNX. No truth enters: linked, unlinked, barrel and disc clusters take the same
+// path, so "has an angle" and the angle distribution carry no link information
+// (the payload's truth-keyed draw and the noise CDF are not used in this mode).
+// The input window is built exactly as prep.py builds it: 24 x 16 pixels (local
+// x rows, local y columns) centred on the bounding box with FLOOR division, value
+// = digi ADC + 1 (0 = empty), plus the raw scalars named in cnn*Scalars; the
+// ONNX graph applies the training normalisation itself. The sign/magnitude heads
+// are decoded as cot = sign(logit) * tan(magnitude) - c, with c the fold offset
+// (digitizer tan(theta_L), 0.202 on TBPX L2-L4, 0 on L1 and the discs).
+// sigAlpha/sigBeta come from a STATIC table (cnnSigmaSet): the measured
+// test-set residual width (q84 - q16)/2 in cot, per layer/disk and |reported cot|
+// bin -- a resolution model keyed only on what the sensor reports, like the
+// payload's sigma, not a per-cluster network output.
 
 #include "FWCore/Framework/interface/Event.h"
 #include "FWCore/Framework/interface/EventSetup.h"
@@ -82,14 +99,17 @@
 #include "MagneticField/Records/interface/IdealMagneticFieldRecord.h"
 #include "SimDataFormats/TrackerDigiSimLink/interface/PixelDigiSimLink.h"
 #include "SimDataFormats/TrackingAnalysis/interface/TrackingParticle.h"
+#include "PhysicsTools/ONNXRuntime/interface/ONNXRuntime.h"
 
 #include "correction.h"
 
+#include <algorithm>
 #include <cmath>
 #include <cstdint>
 #include <map>
 #include <memory>
 #include <string>
+#include <unordered_map>
 #include <vector>
 
 namespace {
@@ -121,15 +141,51 @@ namespace {
     z = z ^ (z >> 31);
     return static_cast<double>(z >> 11) * (1.0 / 9007199254740992.0);  // [0,1)
   }
+
+  // CNN input window, MUST match WX, WY in cluster_cnn/prep.py
+  constexpr int kWX = 24, kWY = 16;
+  inline int floorDiv2(int a) { return a >= 0 ? a / 2 : -((1 - a) / 2); }
+
+  // One CNN scalar input, parsed once from its norm.json column name.
+  struct CnnScalar {
+    enum Kind { Layer, Disk, SizeX, SizeY, Size, LogQ, AdcSum, TruncX, TruncY, NPxLost } kind;
+    unsigned k = 0;
+  };
+  std::vector<CnnScalar> parseCnnScalars(const std::vector<std::string>& names) {
+    static const std::map<std::string, CnnScalar::Kind> fixed = {
+        {"sizeX", CnnScalar::SizeX}, {"sizeY", CnnScalar::SizeY}, {"size", CnnScalar::Size},
+        {"logq", CnnScalar::LogQ}, {"adcSum", CnnScalar::AdcSum}, {"truncX", CnnScalar::TruncX},
+        {"truncY", CnnScalar::TruncY}, {"nPxLost", CnnScalar::NPxLost}};
+    std::vector<CnnScalar> out;
+    for (const auto& n : names) {
+      const auto it = fixed.find(n);
+      if (it != fixed.end())
+        out.push_back({it->second, 0});
+      else if (n.size() > 1 && (n[0] == 'l' || n[0] == 'd') && n.find_first_not_of("0123456789", 1) == std::string::npos)
+        out.push_back({n[0] == 'l' ? CnnScalar::Layer : CnnScalar::Disk, static_cast<unsigned>(std::stoul(n.substr(1)))});
+      else
+        throw cms::Exception("Configuration") << "unknown CNN scalar input '" << n << "'";
+    }
+    return out;
+  }
 }  // namespace
 
-class SmartPixelsRecHitProducer : public edm::stream::EDProducer<> {
+// the ONNX sessions, shared by all streams (external linkage: it is a framework member type)
+struct SmartPixelsCnnModels {
+  std::unique_ptr<cms::Ort::ONNXRuntime> barrel, disc;
+};
+
+class SmartPixelsRecHitProducer : public edm::stream::EDProducer<edm::GlobalCache<SmartPixelsCnnModels>> {
 public:
-  explicit SmartPixelsRecHitProducer(const edm::ParameterSet&);
+  SmartPixelsRecHitProducer(const edm::ParameterSet&, const SmartPixelsCnnModels*);
+  static std::unique_ptr<SmartPixelsCnnModels> initializeGlobalCache(const edm::ParameterSet&);
+  static void globalEndJob(const SmartPixelsCnnModels*) {}
   static void fillDescriptions(edm::ConfigurationDescriptions&);
   void produce(edm::Event&, const edm::EventSetup&) override;
 
 private:
+  void setCnnAngles(std::vector<SmartPixelsRecHit>&, const edm::DetSet<PixelDigi>*, unsigned lay, unsigned disk) const;
+
   const edm::EDGetTokenT<SiPixelRecHitCollection> recHitToken_;
   const edm::EDGetTokenT<edm::DetSetVector<PixelDigiSimLink>> simLinkToken_;
   const edm::EDGetTokenT<std::vector<TrackingParticle>> tpToken_;
@@ -141,7 +197,14 @@ private:
   const bool includeDiscs_;
   const double clusterMergeFrac_;
   const double measAngleMaxAbs_;
+  const bool useCnn_;
   std::string angleSetPath_;
+
+  edm::EDGetTokenT<edm::DetSetVector<PixelDigi>> digiToken_;
+  std::vector<CnnScalar> cnnBarrelScalars_, cnnDiscScalars_;
+  std::vector<float> cnnFoldOffset_;
+  std::unique_ptr<correction::CorrectionSet> cnnSigmaSet_;
+  correction::Correction::Ref corrCnnAlphaSigma_, corrCnnBetaSigma_;
 
   std::unique_ptr<correction::CorrectionSet> angleSet_;
   correction::Correction::Ref corrAlphaSigma_, corrBetaSigma_;
@@ -151,7 +214,19 @@ private:
   correction::Correction::Ref corrNoiseCotAlpha_, corrNoiseCotBeta_;
 };
 
-SmartPixelsRecHitProducer::SmartPixelsRecHitProducer(const edm::ParameterSet& cfg)
+std::unique_ptr<SmartPixelsCnnModels> SmartPixelsRecHitProducer::initializeGlobalCache(const edm::ParameterSet& cfg) {
+  auto models = std::make_unique<SmartPixelsCnnModels>();
+  if (cfg.getParameter<std::string>("angleSource") == "cnn") {
+    models->barrel = std::make_unique<cms::Ort::ONNXRuntime>(
+        edm::FileInPath(cfg.getParameter<std::string>("cnnBarrelModel")).fullPath());
+    if (cfg.getParameter<bool>("includeDiscs"))
+      models->disc = std::make_unique<cms::Ort::ONNXRuntime>(
+          edm::FileInPath(cfg.getParameter<std::string>("cnnDiscModel")).fullPath());
+  }
+  return models;
+}
+
+SmartPixelsRecHitProducer::SmartPixelsRecHitProducer(const edm::ParameterSet& cfg, const SmartPixelsCnnModels*)
     : recHitToken_(consumes<SiPixelRecHitCollection>(cfg.getParameter<edm::InputTag>("pixelRecHits"))),
       simLinkToken_(
           consumes<edm::DetSetVector<PixelDigiSimLink>>(cfg.getParameter<edm::InputTag>("pixelDigiSimLink"))),
@@ -162,27 +237,48 @@ SmartPixelsRecHitProducer::SmartPixelsRecHitProducer(const edm::ParameterSet& cf
       maxLayer_(cfg.getParameter<unsigned>("maxLayer")),
       includeDiscs_(cfg.getParameter<bool>("includeDiscs")),
       clusterMergeFrac_(cfg.getParameter<double>("clusterMergeFrac")),
-      measAngleMaxAbs_(cfg.getParameter<double>("measAngleMaxAbs")) {
+      measAngleMaxAbs_(cfg.getParameter<double>("measAngleMaxAbs")),
+      useCnn_(cfg.getParameter<std::string>("angleSource") == "cnn") {
+  const std::string source = cfg.getParameter<std::string>("angleSource");
+  if (source != "payload" && source != "cnn")
+    throw cms::Exception("Configuration") << "angleSource must be 'payload' or 'cnn', got '" << source << "'";
   const std::string p = cfg.getParameter<std::string>("angleSet");
-  if (p.empty())
-    throw cms::Exception("Configuration")
-        << "SmartPixelsRecHitProducer requires angleSet (the PixelAV angle-response payload). "
-           "Without it there is no sensor response and the product would carry truth angles "
-           "labelled as measurements.";
-  angleSetPath_ = edm::FileInPath(p).fullPath();
-  angleSet_ = correction::CorrectionSet::from_file(angleSetPath_);
-  corrAlphaSigma_ = angleSet_->at("spix_angle_alpha_sigma");
-  corrBetaSigma_ = angleSet_->at("spix_angle_beta_sigma");
-  corrValidProb_ = angleSet_->at("spix_angle_valid_prob");
-  corrValidFlat_ = angleSet_->at("spix_angle_valid_flat");
-  corrAlphaShift_ = angleSet_->compound().at("spix_angle_alpha_shift");
-  corrBetaShift_ = angleSet_->compound().at("spix_angle_beta_shift");
-
   const std::string np = cfg.getParameter<std::string>("noiseSet");
-  if (!np.empty()) {
-    noiseSet_ = correction::CorrectionSet::from_file(edm::FileInPath(np).fullPath());
-    corrNoiseCotAlpha_ = noiseSet_->at("smarthit_noise_cotAlpha");
-    corrNoiseCotBeta_ = noiseSet_->at("smarthit_noise_cotBeta");
+  if (useCnn_) {
+    // A payload configured alongside the CNN would silently not be used; refuse it.
+    if (!p.empty() || !np.empty())
+      throw cms::Exception("Configuration")
+          << "angleSource 'cnn' takes no angleSet/noiseSet: every cluster gets the CNN angle";
+    digiToken_ = consumes<edm::DetSetVector<PixelDigi>>(cfg.getParameter<edm::InputTag>("pixelDigis"));
+    cnnBarrelScalars_ = parseCnnScalars(cfg.getParameter<std::vector<std::string>>("cnnBarrelScalars"));
+    cnnDiscScalars_ = parseCnnScalars(cfg.getParameter<std::vector<std::string>>("cnnDiscScalars"));
+    for (double c : cfg.getParameter<std::vector<double>>("cnnFoldOffset"))
+      cnnFoldOffset_.push_back(static_cast<float>(c));
+    if (cnnFoldOffset_.size() != maxLayer_ + 1)
+      throw cms::Exception("Configuration") << "cnnFoldOffset needs maxLayer + 1 entries (index 0 = discs)";
+    cnnSigmaSet_ = correction::CorrectionSet::from_file(
+        edm::FileInPath(cfg.getParameter<std::string>("cnnSigmaSet")).fullPath());
+    corrCnnAlphaSigma_ = cnnSigmaSet_->at("spix_cnn_alpha_sigma");
+    corrCnnBetaSigma_ = cnnSigmaSet_->at("spix_cnn_beta_sigma");
+  } else {
+    if (p.empty())
+      throw cms::Exception("Configuration")
+          << "SmartPixelsRecHitProducer requires angleSet (the PixelAV angle-response payload). "
+             "Without it there is no sensor response and the product would carry truth angles "
+             "labelled as measurements.";
+    angleSetPath_ = edm::FileInPath(p).fullPath();
+    angleSet_ = correction::CorrectionSet::from_file(angleSetPath_);
+    corrAlphaSigma_ = angleSet_->at("spix_angle_alpha_sigma");
+    corrBetaSigma_ = angleSet_->at("spix_angle_beta_sigma");
+    corrValidProb_ = angleSet_->at("spix_angle_valid_prob");
+    corrValidFlat_ = angleSet_->at("spix_angle_valid_flat");
+    corrAlphaShift_ = angleSet_->compound().at("spix_angle_alpha_shift");
+    corrBetaShift_ = angleSet_->compound().at("spix_angle_beta_shift");
+    if (!np.empty()) {
+      noiseSet_ = correction::CorrectionSet::from_file(edm::FileInPath(np).fullPath());
+      corrNoiseCotAlpha_ = noiseSet_->at("smarthit_noise_cotAlpha");
+      corrNoiseCotBeta_ = noiseSet_->at("smarthit_noise_cotBeta");
+    }
   }
 
   produces<SmartPixelsRecHitCollection>();
@@ -196,6 +292,7 @@ void SmartPixelsRecHitProducer::produce(edm::Event& iEvent, const edm::EventSetu
 
   const auto& recHits = iEvent.get(recHitToken_);
   const auto& simLinks = iEvent.get(simLinkToken_);
+  const edm::DetSetVector<PixelDigi>* digis = useCnn_ ? &iEvent.get(digiToken_) : nullptr;
   edm::Handle<std::vector<TrackingParticle>> tps;
   iEvent.getByToken(tpToken_, tps);
 
@@ -220,6 +317,7 @@ void SmartPixelsRecHitProducer::produce(edm::Event& iEvent, const edm::EventSetu
     const unsigned lay = isDisc ? 0 : topo.pxbLayer(did);
     if (!isDisc && (lay < 1 || lay > maxLayer_))
       continue;
+    const unsigned disk = isDisc ? topo.pxfDisk(did) : 0;
     const auto* pdu = dynamic_cast<const PixelGeomDetUnit*>(geom.idToDet(did));
     if (pdu == nullptr)
       continue;
@@ -241,6 +339,9 @@ void SmartPixelsRecHitProducer::produce(edm::Event& iEvent, const edm::EventSetu
 
     SmartPixelsRecHitCollection::FastFiller hitFill(*outHits, dsv.detId());
     SmartPixelsRecHitTruthCollection::FastFiller truthFill(*outTruth, dsv.detId());
+    // held back until the module is complete: the CNN runs once per module
+    std::vector<SmartPixelsRecHit> detHits;
+    std::vector<SmartPixelsRecHitTruth> detTruth;
 
     uint16_t idxInDet = 0;
     for (const auto& rh : dsv) {
@@ -325,7 +426,7 @@ void SmartPixelsRecHitProducer::produce(edm::Event& iEvent, const edm::EventSetu
         // ---- sensor response: PixelAV validity gate + one shift per angle ---
         const std::vector<std::variant<int, double, std::string>> pin = {
             static_cast<int>(lay), static_cast<double>(trueCotA), static_cast<double>(trueCotB), bLocalY};
-        if (!isDisc && corrValidFlat_->evaluate(pin) < corrValidProb_->evaluate(pin)) {
+        if (!useCnn_ && !isDisc && corrValidFlat_->evaluate(pin) < corrValidProb_->evaluate(pin)) {
           const std::vector<std::variant<int, double, std::string>> pinAcc = {
               static_cast<int>(lay), static_cast<double>(trueCotA), static_cast<double>(trueCotB),
               bLocalY, 1.0};
@@ -365,7 +466,7 @@ void SmartPixelsRecHitProducer::produce(edm::Event& iEvent, const edm::EventSetu
         }
       }
 
-      if (domTp < 0 && !isDisc && corrNoiseCotAlpha_ && corrNoiseCotBeta_) {
+      if (domTp < 0 && !useCnn_ && !isDisc && corrNoiseCotAlpha_ && corrNoiseCotBeta_) {
         // No simlink on any pixel: the sensor still sees charge and still emits an
         // angle. Draw from the inclusive per-layer distribution so an unlinked
         // cluster looks like an arbitrary cluster rather than a flagged special
@@ -399,9 +500,17 @@ void SmartPixelsRecHitProducer::produce(edm::Event& iEvent, const edm::EventSetu
       truth.set(domTp >= 0 ? TrackingParticleRef(tps, domTp) : TrackingParticleRef(),
                 frac, merged, trueCotA, trueCotB, idxInDet);
 
-      hitFill.push_back(hit);
-      truthFill.push_back(truth);
+      detHits.push_back(hit);
+      detTruth.push_back(truth);
       ++idxInDet;
+    }
+    if (useCnn_) {
+      const auto ddi = digis->find(did);
+      setCnnAngles(detHits, ddi == digis->end() ? nullptr : &(*ddi), lay, disk);
+    }
+    for (size_t j = 0; j < detHits.size(); ++j) {
+      hitFill.push_back(detHits[j]);
+      truthFill.push_back(detTruth[j]);
     }
   }
 
@@ -415,6 +524,73 @@ void SmartPixelsRecHitProducer::produce(edm::Event& iEvent, const edm::EventSetu
 
   iEvent.put(std::move(outHits));
   iEvent.put(std::move(outTruth));
+}
+
+void SmartPixelsRecHitProducer::setCnnAngles(std::vector<SmartPixelsRecHit>& hits,
+                                             const edm::DetSet<PixelDigi>* digis,
+                                             unsigned lay,
+                                             unsigned disk) const {
+  if (hits.empty())
+    return;
+  const bool isDisc = lay == 0;
+  const cms::Ort::ONNXRuntime& model = isDisc ? *globalCache()->disc : *globalCache()->barrel;
+  const auto& scal = isDisc ? cnnDiscScalars_ : cnnBarrelScalars_;
+  std::unordered_map<unsigned, int> adcByChannel;
+  if (digis != nullptr)
+    for (const auto& d : *digis)
+      adcByChannel[d.channel()] = d.adc();
+
+  const size_t n = hits.size(), ns = scal.size();
+  cms::Ort::FloatArrays in(2);
+  in[0].assign(n * kWX * kWY, 0.f);
+  in[1].assign(n * ns, 0.f);
+  for (size_t i = 0; i < n; ++i) {
+    const SiPixelCluster& cl = *hits[i].cluster();
+    const int offx = floorDiv2(kWX - cl.sizeX()), offy = floorDiv2(kWY - cl.sizeY());
+    float adcSum = 0.f;
+    int lost = 0;
+    for (const auto& px : cl.pixels()) {
+      const auto it = adcByChannel.find(PixelDigi::pixelToChannel(px.x, px.y));
+      const int a1 = (it == adcByChannel.end() ? -1 : it->second) + 1;  // prep.py: ADC + 1, missing digi -> 0
+      adcSum += a1;
+      const int r = px.x - cl.minPixelRow() + offx, c = px.y - cl.minPixelCol() + offy;
+      if (r >= 0 && r < kWX && c >= 0 && c < kWY)
+        in[0][(i * kWX + r) * kWY + c] = static_cast<float>(std::clamp(a1, 1, 255));
+      else
+        ++lost;
+    }
+    for (size_t k = 0; k < ns; ++k) {
+      float v = 0.f;
+      switch (scal[k].kind) {
+        case CnnScalar::Layer: v = (lay == scal[k].k); break;
+        case CnnScalar::Disk: v = (disk == scal[k].k); break;
+        case CnnScalar::SizeX: v = cl.sizeX(); break;
+        case CnnScalar::SizeY: v = cl.sizeY(); break;
+        case CnnScalar::Size: v = cl.size(); break;
+        case CnnScalar::LogQ: v = std::log(std::max(static_cast<float>(cl.charge()), 1.f)); break;
+        case CnnScalar::AdcSum: v = adcSum; break;
+        case CnnScalar::TruncX: v = cl.sizeX() > kWX; break;
+        case CnnScalar::TruncY: v = cl.sizeY() > kWY; break;
+        case CnnScalar::NPxLost: v = lost; break;
+      }
+      in[1][i * ns + k] = v;
+    }
+  }
+  const auto out = model.run({"image", "scalars"},
+                             in,
+                             {{static_cast<int64_t>(n), kWX, kWY}, {static_cast<int64_t>(n), static_cast<int64_t>(ns)}},
+                             {"out"},
+                             static_cast<int64_t>(n))[0];
+  const int detKey = isDisc ? 100 + static_cast<int>(disk) : static_cast<int>(lay);
+  for (size_t i = 0; i < n; ++i) {
+    const float* o = &out[i * 6];
+    const float cotA = (o[2] > 0.f ? 1.f : -1.f) * std::tan(o[0]) - cnnFoldOffset_[lay];
+    const float cotB = (o[3] > 0.f ? 1.f : -1.f) * std::tan(o[1]);
+    const double sigA = corrCnnAlphaSigma_->evaluate({detKey, std::abs(static_cast<double>(cotA))});
+    const double sigB = corrCnnBetaSigma_->evaluate({detKey, std::abs(static_cast<double>(cotB))});
+    hits[i].setAngles(cotA, cotB, static_cast<float>(sigA), static_cast<float>(sigB),
+                      sigA > 0. && std::abs(cotA) <= measAngleMaxAbs_, sigB > 0. && std::abs(cotB) <= measAngleMaxAbs_);
+  }
 }
 
 void SmartPixelsRecHitProducer::fillDescriptions(edm::ConfigurationDescriptions& descriptions) {
@@ -438,7 +614,25 @@ void SmartPixelsRecHitProducer::fillDescriptions(edm::ConfigurationDescriptions&
                    "(measured 99.5% vs 0.0%) and silently inflates every angle-using study. "
                    "Derive with ngtagger-train/eval_spixel_angles/derive_noise_angle_payload.py.");
   desc.add<std::string>("angleSet", "")
-      ->setComment("REQUIRED PixelAV angle-response payload (spix_angle_* corrections)");
+      ->setComment("PixelAV angle-response payload (spix_angle_* corrections); REQUIRED for "
+                   "angleSource 'payload', refused for 'cnn'");
+  desc.add<std::string>("angleSource", "payload")
+      ->setComment("'payload': truth-keyed PixelAV draw (+ noiseSet for unlinked); 'cnn': ONNX CNN on the "
+                   "digi ADC window, identical for every cluster, no truth input");
+  desc.add<edm::InputTag>("pixelDigis", edm::InputTag("simSiPixelDigis", "Pixel"))
+      ->setComment("digis the clusters were built from (cnn: the ADC map)");
+  desc.add<std::string>("cnnBarrelModel", "")->setComment("cnn: ONNX model for TBPX clusters (FileInPath)");
+  desc.add<std::string>("cnnDiscModel", "")->setComment("cnn: ONNX model for disc clusters (FileInPath)");
+  desc.add<std::vector<std::string>>("cnnBarrelScalars", {})
+      ->setComment("cnn: scalar inputs of the barrel model, in norm.json 'cols' order");
+  desc.add<std::vector<std::string>>("cnnDiscScalars", {})
+      ->setComment("cnn: scalar inputs of the disc model, in norm.json 'cols' order");
+  desc.add<std::vector<double>>("cnnFoldOffset", {0., 0., 0.202, 0.202, 0.202})
+      ->setComment("cnn: tan(theta_L) the alpha head was folded by, index = TBPX layer (0 = discs); "
+                   "MUST match models_def.C_LAYER");
+  desc.add<std::string>("cnnSigmaSet", "")
+      ->setComment("cnn: correctionlib spix_cnn_{alpha,beta}_sigma(detKey = layer | 100 + disk, |cot|), "
+                   "the measured residual width used as sigAlpha/sigBeta");
   descriptions.addWithDefaultLabel(desc);
 }
 

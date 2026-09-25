@@ -16,4 +16,12 @@ smartPixelsRecHits = cms.EDProducer(
     angleSet=cms.string(""),   # REQUIRED: PixelAV angle-response payload
     noiseSet=cms.string(""),   # noise-angle inverse CDF; empty = unlinked clusters get NO
                                # angle, which makes "has an angle" a truth proxy
+    angleSource=cms.string("payload"),  # "cnn": cluster CNN, no truth (see the plugin header)
+    pixelDigis=cms.InputTag("simSiPixelDigis", "Pixel"),
+    cnnBarrelModel=cms.string(""),
+    cnnDiscModel=cms.string(""),
+    cnnBarrelScalars=cms.vstring(),
+    cnnDiscScalars=cms.vstring(),
+    cnnFoldOffset=cms.vdouble(0., 0., 0.202, 0.202, 0.202),
+    cnnSigmaSet=cms.string(""),
 )
