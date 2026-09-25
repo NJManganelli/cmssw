@@ -165,7 +165,7 @@ private:
   float laSimPerT_, tanLAx_, tanLAy_;  // digitizer: SimRcd LA, module-centre B
   float bLocX_, bLocY_, bLocZ_, bMag_;  // B at the CLUSTER position, local frame
   int zOutward_, is3D_;
-  // --- payload (synthesised) angle, for the baseline
+  // --- the rec-hit angle: PixelAV payload draw (baseline), or the CNN with angleSource=cnn
   float pCotA_, pCotB_, pSigA_, pSigB_;
   int pHasA_, pHasB_;
   // --- link classification
