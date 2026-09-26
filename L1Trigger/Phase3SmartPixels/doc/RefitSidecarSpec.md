@@ -169,7 +169,7 @@ PixelAV response fit and is not governed by this contract.
 
 ```cpp
 struct SmartPixelsRefitHitInfo {   // one entry per LAYER CROSSING attempted (not per accepted hit)
-  uint8_t  layer;          // TBPX layer 1..4
+  uint8_t  layer;          // IT surface code: 1-4 TBPX IL1-IL4, 11-14 ID1-ID4 (SmartPixelsSurface.h)
   uint32_t detId;          // module rawId of the crossing (diagnostics)
   uint16_t windowMult;     // digis collected in window (post readout-order truncation)
   uint8_t  flags;          // bit0 hitAccepted; bit1 windowTruncated (maxHitsPerWindow hit);
@@ -199,7 +199,7 @@ struct SmartPixelsRefitTrackInfo { // one entry per track (refit or passthrough)
   uint8_t  nCrossings;     // valid layer crossings attempted
   uint8_t  nAcceptedHits;  // hits accepted into the KF
   uint8_t  nKFUpdates;     // scalar-update groups applied (== layers updated)
-  uint8_t  layerHitMask;   // accepted-hit bitmask, bit0=L1 .. bit3=L4;
+  uint8_t  layerHitMask;   // accepted-hit bitmask, bits 0-3 = IL1-IL4, bits 4-7 = ID1-ID4;
                            // popcount(layerHitMask) == nAcceptedHits (exact)
   uint16_t maxWindowMult;  // max windowMult over this track's crossings
   float chi2IncXTot, chi2IncYTot;        // per-dimension sums over crossings; the r-phi
@@ -235,7 +235,8 @@ inference-side adapter MUST implement the `transmittedSubset` knob:
   track word MVA field / `trkMVA1`. 0 extra bits.
 - `"compact"` (TS1): a 16-bit summary word (provisional layout, pending a spare-bit
   audit of `TTTrack_TrackWord`):
-  - bits 0-3   : per-layer accepted-hit bitmask (L1..L4); popcount == nAcceptedHits
+  - bits 0-3   : per-layer accepted-hit bitmask (IL1..IL4); popcount == nAcceptedHits
+                 while only TBPX layers are refit surfaces (the ID1-ID4 bits are not packed)
   - bits 4-7   : `q(chi2IncXTot + chi2IncAlphaTot)`  (the r-phi total)
   - bits 8-11  : `q(chi2IncYTot + chi2IncBetaTot)`   (the r-z total)
   - bits 12-14 : `occ = clamp(floor(log2(1 + maxWindowMult)), 0, 7)`

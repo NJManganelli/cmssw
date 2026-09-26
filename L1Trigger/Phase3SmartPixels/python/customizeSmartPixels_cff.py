@@ -51,6 +51,9 @@ REGRESSION_CONFIGS = ["0000",
                       "1111",
                       ]
 
+# BARREL-ERA: the *_compound_<activeSP> stacks were derived when a mask character
+# meant TBPX layer k only. Since character k switches ILk AND IDk, they do not describe
+# the disc half of a mask; they are kept as derived, not re-derived.
 DEFAULT_CORRECTION_SET = "L1Trigger/Phase3SmartPixels/data/spixel_smear_all_configs_barrel_CalV1_v2p1_compound.json"
 
 
