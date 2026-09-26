@@ -140,6 +140,8 @@ def addPh3L1SmartPixelsRefitTables(process,
 l1tPh3SmartPixelsStubTable = cms.EDProducer(
     "L1SmartPixelsStubPosTableProducer",
     tracks = cms.InputTag("l1tTTTracksFromTrackletEmulation", "Level1TTTracks"),
+    # the collection L1TOTStub is built from: otStubIdx is a row there (product ID asserted)
+    stubs = cms.InputTag("TTStubsFromPhase2TrackerDigis", "StubAccepted"),
     stubTableName = cms.string("L1TTrackStub"),
     trackTableName = cms.string("L1TTrack"),
 )
@@ -186,6 +188,42 @@ def addPh3L1SmartPixelsStubTables(process,
         task = cms.Task(*[getattr(process, m) for m in newModules])
         process.p3L1SmartPixelsStubTask = task
         process.l1tPh2NanoTask.add(task)
+    assertTrackTablesUncut(process)
+    return process
+
+
+# Track tables whose row i MUST be collection element i: the truth / covariance /
+# refit extensions, the stub tables' trackIdx and the refit hit tables' trackIdx
+# all index by collection position, and a variant track row matches the L1TTrack
+# row only because both are uncut.
+_ROW_ALIGNED_TRACK_TABLES = ("L1TTrack", "L1TExtTrack", "L1TSmartPixelsTrack", "L1TSmartPixelsExtTrack")
+
+
+def assertTrackTablesUncut(process):
+    """Raise if any main L1 track table (reference or SmartPixels variant) has a cut.
+
+    A cut silently shifts rows against every extension and link table keyed by
+    collection position, so it must be applied in analysis, not in the table.
+    """
+    def _val(mod, attr, default=None):
+        # declared-but-unset (_RequiredParameter) parameters carry no value
+        try:
+            return getattr(mod, attr).value()
+        except AttributeError:
+            return default
+
+    for label in process.producers_():
+        mod = getattr(process, label)
+        name, cut = _val(mod, "name"), _val(mod, "cut")
+        if not isinstance(name, str) or not isinstance(cut, str) or _val(mod, "extension", False):
+            continue
+        if not name.startswith(_ROW_ALIGNED_TRACK_TABLES):
+            continue
+        if cut.strip():
+            raise RuntimeError(
+                f"track table '{label}' ({name}) has cut={cut!r}: its rows would no "
+                "longer be collection positions, breaking trackIdx/otStubIdx links and the "
+                "truth/refit extensions. Cut in analysis instead.")
     return process
 
 
@@ -757,7 +795,6 @@ l1tPh3SmartPixelsAllStubTable = cms.EDProducer(
     stubs = cms.InputTag("TTStubsFromPhase2TrackerDigis", "StubAccepted"),
     stubTruth = cms.InputTag("TTStubAssociatorFromPixelDigis", "StubAccepted"),
     tableName = cms.string("L1TOTStub"),
-    barrelOnly = cms.bool(False),
     doTruth = cms.bool(True),
 )
 

@@ -68,7 +68,7 @@ public:
     std::vector<bool> refitPerformed, seedCovOK, anyWindowTruncated;
     std::vector<float> chi2IncXTot, chi2IncYTot, chi2IncAlphaTot, chi2IncBetaTot;
     std::vector<float> chi2ITAtSeed, chi2ITAtRefit, shiftChi2, logDetRatio;
-    std::vector<int32_t> matchedTpIdx;
+    std::vector<int32_t> matchedTpKey;
     std::vector<int32_t> compactWord;
     status.reserve(nTracks);
     nCrossings.reserve(nTracks);
@@ -126,7 +126,7 @@ public:
       chi2IncYTot.push_back(ti.chi2IncYTot);
       chi2IncAlphaTot.push_back(ti.chi2IncAlphaTot);
       chi2IncBetaTot.push_back(ti.chi2IncBetaTot);
-      matchedTpIdx.push_back(ti.matchedTpIdx);
+      matchedTpKey.push_back(ti.matchedTpIdx);
       chi2ITAtSeed.push_back(ti.chi2ITAtSeed);
       chi2ITAtRefit.push_back(ti.chi2ITAtRefit);
       shiftChi2.push_back(ti.shiftChi2);
@@ -271,10 +271,10 @@ public:
     trkTable->addColumn<float>("spixChi2IncYTot", chi2IncYTot, "sum of local-y chi2 increments over crossings");
     trkTable->addColumn<float>("spixChi2IncAlphaTot", chi2IncAlphaTot, "sum of cotAlpha chi2 increments over crossings (r-phi total = X + Alpha)");
     trkTable->addColumn<float>("spixChi2IncBetaTot", chi2IncBetaTot, "sum of cotBeta chi2 increments over crossings (r-z total = Y + Beta)");
-    trkTable->addColumn<int32_t>("spixMatchedTpIdx", matchedTpIdx,
-        "TRUTH-ONLY: index of the TrackingParticle this track is matched to (-1 if none). Join "
-        "against L1TSmartPixelsCluster_truthTpIdx to find every cluster from this track's own "
-        "particle, including ones the search window never offered");
+    trkTable->addColumn<int32_t>("spixMatchedTpKey", matchedTpKey,
+        "TRUTH-ONLY: TrackingParticle collection key this track is matched to (-1 if none; a key, "
+        "not a row). Join against L1TSmartPixelsCluster_tpKey to find every cluster from this "
+        "track's own particle, including ones the search window never offered");
     trkTable->addColumn<float>("spixChi2ITAtSeed", chi2ITAtSeed,
         "chi2 of the ACCEPTED IT hits against the UNMODIFIED OT seed helix. Needs no stubs, so "
         "it travels with the track. CAVEAT: the refit selected these hits by minimising this, so "

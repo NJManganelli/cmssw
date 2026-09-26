@@ -32,7 +32,9 @@
 // Output: one standalone FlatTable, one row per stub, NO trackIdx (there is no
 // owning track for most of them -- that is the point). Columns are otherwise
 // deliberately identical to the on-track table so the two are directly
-// comparable row-for-row.
+// comparable row-for-row. The table is UNFILTERED and in collection order, so row
+// == TTStubRef::key(); the on-track tables' otStubIdx relies on that, and it is
+// asserted per stub.
 //
 // SIZE. ~15k rows/event at PU200 is expected, against ~26.5k for the IT cluster
 // table, so this roughly doubles the Clusters-tier payload. That is accepted
@@ -47,6 +49,7 @@
 #include "FWCore/ParameterSet/interface/ConfigurationDescriptions.h"
 #include "FWCore/ParameterSet/interface/ParameterSet.h"
 #include "FWCore/ParameterSet/interface/ParameterSetDescription.h"
+#include "FWCore/Utilities/interface/Exception.h"
 
 #include "DataFormats/Common/interface/DetSetVectorNew.h"
 #include "DataFormats/L1TrackTrigger/interface/TTStub.h"
@@ -76,7 +79,6 @@ public:
         geomToken_(esConsumes<TrackerGeometry, TrackerDigiGeometryRecord>()),
         topoToken_(esConsumes<TrackerTopology, TrackerTopologyRcd>()),
         tableName_(cfg.getParameter<std::string>("tableName")),
-        barrelOnly_(cfg.getParameter<bool>("barrelOnly")),
         doTruth_(cfg.getParameter<bool>("doTruth")) {
     if (doTruth_)
       truthToken_ = consumes<TTStubAssociationMap<Ref_Phase2TrackerDigi_>>(
@@ -98,11 +100,11 @@ public:
       iEvent.getByToken(truthToken_, truth);
 
     // TRUTH-ONLY, and deliberately mirroring the IT cluster table's tp* block so
-    // an IT-vs-OT comparison can use the same quantities on both sides: tpIdx is
-    // the TrackingParticle collection index (.key()), exactly as the cluster
-    // table derives it from dominantTp(). The three quality flags have no IT
-    // analogue and come free from the association map.
-    std::vector<int32_t> tpIdx;
+    // an IT-vs-OT comparison can use the same quantities on both sides: tpKey is
+    // the TrackingParticle collection key, exactly as the cluster table derives
+    // it from dominantTp(). The three quality flags have no IT analogue and come
+    // free from the association map.
+    std::vector<int32_t> tpKey;
     std::vector<float> tpPt;
     std::vector<bool> tpGenuine, tpCombinatoric, tpUnknown;
 
@@ -121,8 +123,11 @@ public:
         const GlobalPoint pos = det->surface().toGlobal(det->topology().localPosition(coords));
 
         const bool barrel = (did.subdetId() == StripSubdetector::TOB);
-        if (barrelOnly_ && !barrel)
-          continue;
+        const TTStubRef ref = edmNew::makeRefTo(stubHandle, st);
+        if (ref.key() != detId.size())
+          throw cms::Exception("SmartPixelsStubRowKeyMismatch")
+              << tableName_ << " row " << detId.size() << " holds stub key " << ref.key()
+              << "; otStubIdx on the on-track stub tables assumes row == key";
         const int lay = static_cast<int>(topo.layer(did));
 
         detId.push_back(did.rawId());
@@ -136,9 +141,8 @@ public:
         bend.push_back(static_cast<float>(st->bendFE()));
 
         if (doTruth_) {
-          const TTStubRef ref = edmNew::makeRefTo(stubHandle, st);
           const edm::Ptr<TrackingParticle> tp = truth->findTrackingParticlePtr(ref);
-          tpIdx.push_back(tp.isNull() ? -1 : static_cast<int32_t>(tp.key()));
+          tpKey.push_back(tp.isNull() ? -1 : static_cast<int32_t>(tp.key()));
           tpPt.push_back(tp.isNull() ? -999.f : static_cast<float>(tp->pt()));
           tpGenuine.push_back(truth->isGenuine(ref));
           tpCombinatoric.push_back(truth->isCombinatoric(ref));
@@ -162,10 +166,10 @@ public:
                           "analogue of the SmartPixels cotAlpha",
                           /*mantissaBits=*/12);
     if (doTruth_) {
-      tab->addColumn<int32_t>("tpIdx", tpIdx,
-                              "TRUTH-ONLY: TrackingParticle collection index of the associated TP, "
-                              "or -1. Same meaning as L1TSmartPixelsCluster_tpIdx, so the two "
-                              "tables join on it");
+      tab->addColumn<int32_t>("tpKey", tpKey,
+                              "TRUTH-ONLY: TrackingParticle collection key of the associated TP, "
+                              "or -1 (a key, not a row). Same meaning as L1TSmartPixelsCluster_tpKey "
+                              "and L1TTP_key, so the tables join on it");
       tab->addColumn<float>("tpPt", tpPt, "TRUTH-ONLY: pT [GeV] of the associated TP", 10);
       tab->addColumn<bool>("tpGenuine", tpGenuine,
                            "TRUTH-ONLY: both clusters from the same TP");
@@ -178,7 +182,8 @@ public:
         "EVERY Outer-Tracker stub offered to the L1 track finder (no trackIdx: most of these "
         "are on no track, which is the point). Post front-end pT gate, so already the reduced "
         "collection the finder receives. Use with L1TSmartPixelsCluster for IT-vs-OT "
-        "combinatorics; the on-track subset is L1TTrackStub / L1TExtTrackStub.");
+        "combinatorics; the on-track subset is L1TTrackStub / L1TExtTrackStub, whose otStubIdx is "
+        "the row here (row == TTStubRef key).");
     iEvent.put(std::move(tab));
   }
 
@@ -196,9 +201,6 @@ public:
                             edm::InputTag("TTStubAssociatorFromPixelDigis", "StubAccepted"))
         ->setComment("NO process name, so it resolves whether the associator ran in-job or its "
                      "output was persisted -- the same convention customizeSmartPixels_cff uses");
-    desc.add<bool>("barrelOnly", false)
-        ->setComment("keep only TOB stubs. Default false: the endcap rows are what make the "
-                     "|eta| dependence of any OT-side cost visible");
     descriptions.addWithDefaultLabel(desc);
   }
 
@@ -208,7 +210,6 @@ private:
   const edm::ESGetToken<TrackerTopology, TrackerTopologyRcd> topoToken_;
   edm::EDGetTokenT<TTStubAssociationMap<Ref_Phase2TrackerDigi_>> truthToken_;
   const std::string tableName_;
-  const bool barrelOnly_;
   const bool doTruth_;
 };
 

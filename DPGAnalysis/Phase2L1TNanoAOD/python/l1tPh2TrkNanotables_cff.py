@@ -101,15 +101,15 @@ l1tExtTracksTruthTable = l1tTracksTruthTable.clone(
 )
 
 #### TrackingParticle table: the efficiency DENOMINATOR for L1 track studies. One row per
-#### charged TP with pT >= minPt; idx = TP collection key, the same index as the stub and
-#### cluster truth tables' tpIdx. d0/z0 at the POCA with the same propagation and sign
-#### convention as tp_d0/tp_z0 above. ~15k rows/event at PU200 (minPt 1 GeV), so it is
+#### charged TP with 3-momentum |p| > minP; key = TP collection key, the same key as the
+#### track, stub and cluster truth tables' tpKey. d0/z0 at the POCA with the same propagation
+#### and sign convention as tp_d0/tp_z0 above. ~15k+ rows/event at PU200 (1 GeV), so it is
 #### opt-in via addPh2L1TrackingParticles rather than part of p2L1TrackTruthTask.
 l1tTrackingParticleTable = cms.EDProducer(
     "L1TrackingParticleTableProducer",
     trackingParticles = cms.InputTag("mix", "MergedTrackTruth"),
     name = cms.string("L1TTP"),
-    minPt = cms.double(1.0),
+    minP = cms.double(1.0),
     doGen = cms.bool(False),
     genParticlePruningMap = cms.InputTag("finalGenParticles"),
 )

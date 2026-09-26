@@ -126,7 +126,9 @@ Two findings set the whole problem:
 `globalR, globalPhi, globalZ` (cluster **position**, cylindrical);
 `globalClusterPhi, globalClusterCotTheta` (cluster **direction**, global frame);
 `charge, size, sizeX, sizeY, sigX, sigY, sigAlpha, sigBeta, hasAlpha, hasBeta,
-layer, detId`. Truth counterparts under a `tp` prefix: `tpIdx, tpPt,
+subdet, layer, disk, side, ring, surface, detId, idxInDet` (one table: all TBPX
+rows, then the ID1-ID4 disc rows; `surface` 1-4 = IL1-IL4, 11-14 = ID1-ID4). Truth
+counterparts under a `tp` prefix: `tpKey` (a TrackingParticle key, not a row), `tpPt,
 tpChargeFrac, tpLocalCotAlpha, tpLocalCotBeta, tpGlobalClusterPhi,
 tpGlobalClusterCotTheta`.
 
