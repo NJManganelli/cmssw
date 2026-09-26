@@ -44,13 +44,13 @@
 #include "L1Trigger/Phase3SmartPixels/interface/SmartPixelsHelixProjector.h"
 #include "L1Trigger/Phase3SmartPixels/interface/SmartPixelsParentMap.h"
 #include "L1Trigger/Phase3SmartPixels/interface/SmartPixelsRefitSidecar.h"
+#include "L1Trigger/Phase3SmartPixels/interface/SmartPixelsSurface.h"
 #include "L1Trigger/Phase3SmartPixels/interface/SmartPixelsTransmittedSubset.h"
 #include "DataFormats/Common/interface/DetSetVector.h"
 #include "DataFormats/SiPixelDigi/interface/PixelDigi.h"
 #include "DataFormats/SiPixelCluster/interface/SiPixelCluster.h"
 #include "DataFormats/TrackerRecHit2D/interface/SiPixelRecHitCollection.h"
 #include "DataFormats/DetId/interface/DetId.h"
-#include "DataFormats/SiPixelDetId/interface/PixelSubdetector.h"
 #include "Geometry/CommonTopologies/interface/PixelGeomDetUnit.h"
 #include "Geometry/CommonTopologies/interface/PixelTopology.h"
 #include "DataFormats/GeometryCommonDetAlgo/interface/MeasurementPoint.h"
@@ -122,6 +122,7 @@
 //////////////
 // STD HEADERS
 #include <map>
+#include <unordered_map>
 #include <set>
 #include <memory>
 #include <string>
@@ -787,7 +788,7 @@ void L1SmartPixelsTrackProducer::produce(edm::Event& iEvent, const edm::EventSet
   edm::Handle<SmartPixelsRecHitCollection> drRecHits;
   edm::Handle<SmartPixelsRecHitTruthCollection> drRecHitTruth;
   smartpixels::ParentTpIndexMap drParentTpIdx;
-  std::map<unsigned int, unsigned int> drClusterBaseIdx;
+  std::unordered_map<uint32_t, unsigned> drClusterBaseIdx;
   std::array<bool, 4> drActiveLayer{{false, false, false, false}};
   auto sidecar = std::make_unique<smartpixels::SmartPixelsRefitSidecar>();
   if (smartPixelsEmulatorMode_ == "digiRefit") {
@@ -798,28 +799,10 @@ void L1SmartPixelsTrackProducer::produce(edm::Event& iEvent, const edm::EventSet
     // (eventId, trackId)-keyed parent momenta: TPs cover signal + pileup
     // parents; the signal-only SimTrack container backstops pruned TPs.
     drParentTpIdx = smartpixels::buildParentTpIndexMap(*drTPs);
-    // Base row index of each module in the untruncated cluster nano table. The
-    // table iterates the SAME SiPixelRecHitCollection in the SAME order with the
-    // SAME filter (TBPX, layer 1..4, non-null cluster), so base + position-within-
-    // module is that cluster's row. Kept here rather than exported from the table
-    // producer because the two modules cannot communicate; the detId assertion on
-    // the analysis side is what makes a divergence loud instead of silent.
-    drClusterBaseIdx.clear();
-    {
-      unsigned running = 0;
-      for (const auto& dsv : *drRecHits) {
-        const DetId did(dsv.detId());
-        if (did.subdetId() != PixelSubdetector::PixelBarrel)
-          continue;
-        const unsigned lay = tTopo->pxbLayer(did);
-        if (lay < 1 || lay > 4)
-          continue;
-        drClusterBaseIdx[dsv.detId()] = running;
-        for (const auto& rh : dsv)
-          if (rh.cluster().isNonnull())
-            ++running;
-      }
-    }
+    // Base row index of each module in the untruncated cluster nano table, from the
+    // SAME helper the table uses. The table refuses to run unless it emits every rec
+    // hit, so taking every rec-hit module here (no scope cut) gives its row order.
+    drClusterBaseIdx = smartpixels::clusterRowBase(*drRecHits, *tTopo, 4, smartpixels::discScopeMaxDisk("all"));
     for (size_t i = 0; i < drActiveLayer.size() && i < smartPixelsActiveLayers_.size(); ++i)
       drActiveLayer[i] = (smartPixelsActiveLayers_[i] == '1');
     if (std::none_of(drActiveLayer.begin(), drActiveLayer.end(), [](bool b) { return b; }))

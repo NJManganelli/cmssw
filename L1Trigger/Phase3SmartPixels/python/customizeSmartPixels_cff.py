@@ -65,6 +65,9 @@ DIGIREFIT_USEANGLES_CHOICES = ("none", "alpha", "alphaBeta")
 DIGIREFIT_GAINMODE_CHOICES = ("full", "lut")
 DIGIREFIT_LAYERORDER_CHOICES = ("outsideIn", "insideOut")
 DIGIREFIT_ANGLESOURCE_CHOICES = ("payload", "cnn")
+# Disc clusters in the rec hits and the cluster table: none | sp = ID1-ID4 (TFPX
+# disks 1-4, the smart-pixel discs) | tfpx = TFPX 1-8 | all = TFPX + TEPX (studies).
+DISCSCOPE_CHOICES = ("none", "sp", "tfpx", "all")
 
 # Angle source "cnn": the cluster CNN (ngtagger-train eval_spixel_angles/cluster_cnn),
 # exported to ONNX, plus its static resolution table. Scalar lists are the models'
@@ -136,9 +139,11 @@ DIGIREFIT_DEFAULTS = {
     # --- where the rec-hit angle comes from ---
     # "payload": PixelAV draw keyed on the TP truth angle (+ smarthitFakeSet for unlinked).
     # "cnn": the cluster CNN on the digi ADC map, identical for every cluster and with no
-    # truth input; also emits TFPX/TEPX clusters (and their nano table). Takes no
-    # pixelavAngleSet/smarthitFakeSet.
+    # truth input, discs included. Takes no pixelavAngleSet/smarthitFakeSet.
     "angleSource": "payload",
+    # Disc clusters in the rec hits and in L1TSmartPixelsCluster (DISCSCOPE_CHOICES).
+    # The payload source gives disc clusters no angle; the CNN source does.
+    "discScope": "sp",
     # --- optional refit-aware TkQuality BDT ---
     "bdtModel": "",           # optional path to the refit TkQuality BDT model (empty = none)
 }
@@ -179,6 +184,10 @@ def _resolveDigiRefitConfig(digiRefitConfig=None):
     raise ValueError(
         f"digiRefitConfig['angleSource']={resolved['angleSource']!r} invalid; "
         f"must be one of {DIGIREFIT_ANGLESOURCE_CHOICES}")
+  if resolved["discScope"] not in DISCSCOPE_CHOICES:
+    raise ValueError(
+        f"digiRefitConfig['discScope']={resolved['discScope']!r} invalid; "
+        f"must be one of {DISCSCOPE_CHOICES}")
   if resolved["angleSource"] == "cnn" and (resolved["pixelavAngleSet"] or resolved["smarthitFakeSet"]):
     raise ValueError(
         "digiRefitConfig['angleSource']='cnn' takes no pixelavAngleSet/smarthitFakeSet: "
@@ -347,7 +356,8 @@ def addSmartPixelsTrackProducerVariants(process, variants=None, correctionSet=DE
         # existed only for the noise-angle draw, which moved with the synthesis).
         ensureSmartPixelsRecHits(process, digiRefitResolved["pixelavAngleSet"],
                                  digiRefitResolved["smarthitFakeSet"],
-                                 angleSource=digiRefitResolved["angleSource"])
+                                 angleSource=digiRefitResolved["angleSource"],
+                                 discScope=digiRefitResolved["discScope"])
 
   return process, modules
 
@@ -375,7 +385,8 @@ SPIX_PIXEL_DIGI_TAG = cms.InputTag("simSiPixelDigis", "Pixel")
 
 
 
-def ensureSmartPixelsRecHits(process, angleSet, noiseSet="", digiTag=SPIX_PIXEL_DIGI_TAG, angleSource="payload"):
+def ensureSmartPixelsRecHits(process, angleSet, noiseSet="", digiTag=SPIX_PIXEL_DIGI_TAG, angleSource="payload",
+                             discScope="sp"):
   """Create spixSmartPixelsRecHits (cluster -> rec hit -> +angle) if absent; idempotent.
 
   Downstream of the cluster chain, upstream of any refit. Single source of the
@@ -383,17 +394,20 @@ def ensureSmartPixelsRecHits(process, angleSet, noiseSet="", digiTag=SPIX_PIXEL_
   producer's event loop and could only be reused by copying it.
 
   angleSource="cnn" configures the cluster-CNN angle (SPIX_CNN_ANGLE_SOURCE; angleSet and
-  noiseSet must be empty), includes the disc clusters, and adds the disc cluster nano
-  table next to an existing TBPX cluster table.
+  noiseSet must be empty). discScope (DISCSCOPE_CHOICES) selects the disc clusters, and an
+  existing cluster nano table is set to the same scope (the table also checks it at run time).
   """
   if angleSource not in DIGIREFIT_ANGLESOURCE_CHOICES:
     raise ValueError(f"angleSource={angleSource!r} invalid; must be one of {DIGIREFIT_ANGLESOURCE_CHOICES}")
+  if discScope not in DISCSCOPE_CHOICES:
+    raise ValueError(f"discScope={discScope!r} invalid; must be one of {DISCSCOPE_CHOICES}")
   ensurePixelRecHitChain(process, digiTag)
   if hasattr(process, "spixSmartPixelsRecHits"):
-    if process.spixSmartPixelsRecHits.angleSource.value() != angleSource:
-      raise ValueError(
-          f"spixSmartPixelsRecHits already exists with angleSource="
-          f"{process.spixSmartPixelsRecHits.angleSource.value()!r}; refusing to reuse it for {angleSource!r}")
+    for name, want in (("angleSource", angleSource), ("discScope", discScope)):
+      have = getattr(process.spixSmartPixelsRecHits, name).value()
+      if have != want:
+        raise ValueError(
+            f"spixSmartPixelsRecHits already exists with {name}={have!r}; refusing to reuse it for {want!r}")
   else:
     from L1Trigger.Phase3SmartPixels.smartPixelsRecHits_cfi import smartPixelsRecHits
     process.spixSmartPixelsRecHits = smartPixelsRecHits.clone(
@@ -402,10 +416,10 @@ def ensureSmartPixelsRecHits(process, angleSet, noiseSet="", digiTag=SPIX_PIXEL_
         pixelDigis=digiTag,
         angleSet=cms.string(angleSet),
         noiseSet=cms.string(noiseSet),
-        angleSource=cms.string(angleSource))
+        angleSource=cms.string(angleSource),
+        discScope=cms.string(discScope))
     if angleSource == "cnn":
       src = SPIX_CNN_ANGLE_SOURCE
-      process.spixSmartPixelsRecHits.includeDiscs = True
       process.spixSmartPixelsRecHits.cnnBarrelModel = cms.string(src["cnnBarrelModel"])
       process.spixSmartPixelsRecHits.cnnBarrelScalars = cms.vstring(*src["cnnBarrelScalars"])
       process.spixSmartPixelsRecHits.cnnDiscModel = cms.string(src["cnnDiscModel"])
@@ -419,9 +433,8 @@ def ensureSmartPixelsRecHits(process, angleSet, noiseSet="", digiTag=SPIX_PIXEL_
   # or the table dies with ProductNotFound at the first event.
   if hasattr(process, "l1tPh2NanoTask"):
     process.l1tPh2NanoTask.add(process.spixSmartPixelsRecHitTask)
-  if angleSource == "cnn":
-    from DPGAnalysis.Phase3SmartPixelsNanoAOD.l1tPh3SmartPixelsNano_cff import addPh3L1SmartPixelsDiscClusters
-    addPh3L1SmartPixelsDiscClusters(process)
+  if hasattr(process, "l1tPh3SmartPixelsClusterTable"):
+    process.l1tPh3SmartPixelsClusterTable.discScope = cms.string(discScope)
   return process
 
 

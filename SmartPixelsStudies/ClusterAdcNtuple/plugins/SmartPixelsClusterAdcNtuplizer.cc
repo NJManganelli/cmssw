@@ -1,18 +1,19 @@
 // SmartPixelsClusterAdcNtuplizer: one TTree row per IT pixel cluster (TBPX L1-L4, and the
-// TFPX/TEPX discs when the rec-hit producer runs with includeDiscs), carrying
+// TFPX/TEPX discs in the rec-hit producer's discScope), carrying
 // the SPARSE pixel map plus everything needed to interpret it and to train a
 // per-cluster angle/position regressor on TrackingParticle truth.
 //
 // SCOPE. A study ntuple, deliberately NOT a nano table. It reads the SAME
 // spixSmartPixelsRecHits (SmartPixelsRecHit + SmartPixelsRecHitTruth) that feed the
-// L1TSmartPixelsCluster nano table, iterated in the same order, so row k of an event
-// here is row k of that table (clIdx), and (event, detId, localX, localY) agree.
+// L1TSmartPixelsCluster nano table, iterated in the same order, so a barrel row k of an
+// event here is row k of that table (clIdx), and (event, detId, localX, localY) agree.
 //
 // ROWS: every cluster on TBPX layers 1..maxLayer and every disc cluster the producer
 // emitted -- TP-linked, simlinked-without-TP and simlink-free, any pT. No truncation of
 // the pixel list. Disc rows have layer = 0 and subdet = 2, and carry disk/side/ring; disc
-// hits have no payload angle (pHas* = 0). clIdx counts barrel and disc rows separately,
-// so a barrel clIdx is still the L1TSmartPixelsCluster row.
+// hits have no payload angle (pHas* = 0). clIdx counts barrel and disc rows separately:
+// a barrel clIdx is the L1TSmartPixelsCluster row, a disc clIdx is the table row minus
+// the event's barrel count only when both run with the same discScope.
 //
 // TRUTH.
 //  * tpLocalCotAlpha/Beta: copied from SmartPixelsRecHitTruth, i.e. the producer's

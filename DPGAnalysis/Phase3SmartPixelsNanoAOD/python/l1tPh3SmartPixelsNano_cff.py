@@ -719,9 +719,12 @@ def addNGJetTier(process,
 # ---------------------------------------------------------------------------
 # Untruncated IT cluster table  (tier: L1PFTrkNanoSmartPixClusters)
 # ---------------------------------------------------------------------------
-# EVERY IT pixel cluster, with no window, no truncation and no truth-pT filter.
+# EVERY IT pixel cluster, with no window, no truncation and no truth-pT filter:
+# all TBPX clusters first, then the disc clusters in discScope (default sp =
+# ID1-ID4), one table with a surface column (1-4 = IL1-IL4, 11-14 = ID1-ID4).
 #
-# ~26.5k rows/event at PU200, measured at 88.6 stored bits/cluster = 0.29 MB/event.
+# ~26.5k barrel rows/event at PU200, measured at 88.6 stored bits/cluster = 0.29 MB/event
+# for the barrel; ID1-ID4 add ~46k rows/event.
 # Belongs ONLY to the Clusters tier. The size is the point: at PU200 the crossed module
 # carries 40.6/32.7/31.6/19.7 clusters on L1-L4 (p95 up to 72), the static window
 # admits about 2 of them, and maxHitsPerWindow truncates at 8. Every question
@@ -733,16 +736,9 @@ l1tPh3SmartPixelsClusterTable = cms.EDProducer(
     "L1SmartPixelsClusterTableProducer",
     smartPixelsRecHits = cms.InputTag("spixSmartPixelsRecHits"),
     tableName = cms.string("L1TSmartPixelsCluster"),
+    discScope = cms.string("sp"),  # MUST equal spixSmartPixelsRecHits.discScope (checked at run time)
     maxLayer = cms.uint32(4),
     doTruth = cms.bool(True),
-)
-
-# TFPX/TEPX disc clusters, same columns with disk/side/ring in place of layer. Only
-# the CNN angle source puts disc clusters into spixSmartPixelsRecHits, so this table
-# is added by customizeSmartPixels_cff.ensureSmartPixelsRecHits in that mode alone.
-l1tPh3SmartPixelsDiscClusterTable = l1tPh3SmartPixelsClusterTable.clone(
-    tableName = cms.string("L1TSmartPixelsDiscCluster"),
-    subdetector = cms.string("endcap"),
 )
 
 
@@ -788,6 +784,10 @@ def addPh3L1SmartPixelsClusters(process, recHitLabel="spixSmartPixelsRecHits", d
         smartPixelsRecHits = cms.InputTag(recHitLabel),
         doTruth = cms.bool(doTruth),
     )
+    # Follow the rec hits' disc scope when they already exist; if they are built
+    # later, ensureSmartPixelsRecHits sets it on this table.
+    if hasattr(process, recHitLabel) and hasattr(getattr(process, recHitLabel), "discScope"):
+        process.l1tPh3SmartPixelsClusterTable.discScope = getattr(process, recHitLabel).discScope
     # The OT stub table reads TTStubsFromPhase2TrackerDigis:StubAccepted straight
     # from the input file with NO process name, so it resolves whether the stubs
     # were persisted by the RelVal or rebuilt in-job -- the same reason the
@@ -802,23 +802,6 @@ def addPh3L1SmartPixelsClusters(process, recHitLabel="spixSmartPixelsRecHits", d
                     process.l1tPh3SmartPixelsAllStubTable)
     process.p3L1SmartPixelsClusterTask = task
     process.l1tPh2NanoTask.add(task)
-    return process
-
-
-def addPh3L1SmartPixelsDiscClusters(process):
-    """Add the disc cluster table next to an existing TBPX cluster table; idempotent.
-
-    Follows the TBPX table's rec-hit label and truth setting, so both describe the same
-    rec hits. No-op without a TBPX cluster table (the Clusters tier was not requested).
-    """
-    if not hasattr(process, "l1tPh3SmartPixelsClusterTable") or hasattr(process, "l1tPh3SmartPixelsDiscClusterTable"):
-        return process
-    barrel = process.l1tPh3SmartPixelsClusterTable
-    process.l1tPh3SmartPixelsDiscClusterTable = l1tPh3SmartPixelsDiscClusterTable.clone(
-        smartPixelsRecHits = barrel.smartPixelsRecHits,
-        doTruth = barrel.doTruth,
-    )
-    process.p3L1SmartPixelsClusterTask.add(process.l1tPh3SmartPixelsDiscClusterTable)
     return process
 
 
