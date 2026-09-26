@@ -1,9 +1,10 @@
 // Flat table of TrackingParticles: the efficiency denominator for L1 track studies.
 //
-// One row per TrackingParticle passing (charge != 0, pt >= minPt). `idx` is the
-// TrackingParticle collection key, the same index as L1TOTStub_tpIdx and
-// L1TSmartPixelsCluster_tpIdx, so TP identity joins exactly across tables and
-// across jobs reading the same input events.
+// One row per TrackingParticle passing (charge != 0, |p| > minP). `key` is the
+// TrackingParticle collection key (not a row), the same key as L1TOTStub_tpKey,
+// L1TSmartPixelsCluster_tpKey and L1TTrack_tpKey, so TP identity joins exactly
+// across tables and across jobs reading the same input events. The cut is on the
+// 3-momentum, not pT, so forward particles that reach the discs are kept.
 //
 // phi0/d0/z0 are at the POCA to the beamline with the same curvature-aware propagation
 // and sign convention as L1TrackTruthTableProducer's tp_phi0/tp_d0/tp_z0, so a TP row and
@@ -22,9 +23,9 @@
 // particle itself) is a b / c hadron. A b-hadron -> c-hadron -> pion chain sets both.
 // Geant4 secondaries (genPartIdx == -1) carry no ancestry.
 //
-// SIZE: at PU200 with minPt = 1 GeV this is ~15k rows/event and roughly half of
-// an L1 track nano, hence opt-in (addPh2L1TrackingParticles), not part of the
-// default truth task.
+// SIZE: at PU200 a 1 GeV pT cut gave ~15k rows/event, roughly half of an L1 track
+// nano (|p| > 1 GeV keeps more), hence opt-in (addPh2L1TrackingParticles), not part
+// of the default truth task.
 #include "FWCore/Framework/interface/Event.h"
 #include "FWCore/Framework/interface/EventSetup.h"
 #include "FWCore/Framework/interface/MakerMacros.h"
@@ -57,7 +58,7 @@ public:
       : tpToken_(consumes<TrackingParticleCollection>(cfg.getParameter<edm::InputTag>("trackingParticles"))),
         bFieldToken_(esConsumes<MagneticField, IdealMagneticFieldRecord>()),
         name_(cfg.getParameter<std::string>("name")),
-        minPt_(cfg.getParameter<double>("minPt")),
+        minP_(cfg.getParameter<double>("minP")),
         doGen_(cfg.getParameter<bool>("doGen")) {
     if (doGen_)
       genMapToken_ = consumes<GenMap>(cfg.getParameter<edm::InputTag>("genParticlePruningMap"));
@@ -70,13 +71,13 @@ public:
     const float b_field = iSetup.getData(bFieldToken_).inTesla(GlobalPoint(0.f, 0.f, 0.f)).z();
     const float convertRtoPt = CLHEP::c_light / 1.0E5 * b_field;
 
-    std::vector<int32_t> idx, pdgId, bx, evt;
+    std::vector<int32_t> key, pdgId, bx, evt;
     std::vector<float> pt, eta, phi, charge, vx, vy, vz, phi0, d0, z0;
     std::vector<int32_t> genPartIdx;
     std::vector<bool> genFromB, genFromC;
     for (size_t i = 0; i < tps.size(); ++i) {
       const TrackingParticle& tp = tps[i];
-      if (tp.charge() == 0 || tp.pt() < minPt_)
+      if (tp.charge() == 0 || !(tp.p() > minP_))
         continue;
       const float tpt = tp.pt(), tphi = tp.phi(), q = static_cast<float>(tp.charge());
       const float tvx = tp.vx(), tvy = tp.vy(), tvz = tp.vz();
@@ -87,7 +88,7 @@ public:
       const float rp = std::sqrt(x0p * x0p + y0p * y0p);
       const float tphi0 = std::atan2(-r2_inv * x0p, r2_inv * y0p);
       const float delphi = reco::deltaPhi(tphi, tphi0);
-      idx.push_back(static_cast<int32_t>(i));
+      key.push_back(static_cast<int32_t>(i));
       pdgId.push_back(tp.pdgId());
       bx.push_back(tp.eventId().bunchCrossing());
       evt.push_back(tp.eventId().event());
@@ -138,8 +139,8 @@ public:
         genFromC.push_back(fromC);
       }
     }
-    auto t = std::make_unique<nanoaod::FlatTable>(idx.size(), name_, false, false);
-    t->addColumn<int32_t>("idx", idx, "TrackingParticle collection index (= L1TOTStub_tpIdx)");
+    auto t = std::make_unique<nanoaod::FlatTable>(key.size(), name_, false, false);
+    t->addColumn<int32_t>("key", key, "TrackingParticle collection key, not a row (= L1TOTStub_tpKey)");
     t->addColumn<int32_t>("pdgId", pdgId, "pdgId");
     t->addColumn<int32_t>("bx", bx, "eventId().bunchCrossing()");
     t->addColumn<int32_t>("evt", evt, "eventId().event() (0 with bx 0 = hard interaction)");
@@ -169,7 +170,7 @@ public:
     edm::ParameterSetDescription desc;
     desc.add<edm::InputTag>("trackingParticles", edm::InputTag("mix", "MergedTrackTruth"));
     desc.add<std::string>("name", "L1TTP");
-    desc.add<double>("minPt", 1.0)->setComment("keep TPs with pt >= minPt [GeV]");
+    desc.add<double>("minP", 1.0)->setComment("keep TPs with 3-momentum |p| > minP [GeV]");
     desc.add<bool>("doGen", false)->setComment("add genPartIdx / genFromB / genFromC (needs the gen chain)");
     desc.add<edm::InputTag>("genParticlePruningMap", edm::InputTag("finalGenParticles"))
         ->setComment("GenParticlePruner behind the GenPart table; its full->pruned Association is used");
@@ -191,7 +192,7 @@ private:
   const edm::EDGetTokenT<TrackingParticleCollection> tpToken_;
   const edm::ESGetToken<MagneticField, IdealMagneticFieldRecord> bFieldToken_;
   const std::string name_;
-  const double minPt_;
+  const double minP_;
   const bool doGen_;
   edm::EDGetTokenT<GenMap> genMapToken_;
 };

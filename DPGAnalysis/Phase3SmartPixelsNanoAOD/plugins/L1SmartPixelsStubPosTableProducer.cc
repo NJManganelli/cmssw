@@ -19,6 +19,9 @@
 //   layer     -> tracker layer/disk id: barrel L1..L6 = 1..6, endcap disk d -> 10+d
 //   isBarrel  -> 1 barrel, 0 endcap
 //   bend      -> stub FE bend (full-strip units), cheap TTStub accessor
+//   otStubIdx -> row of this stub in the complete OT stub table (L1TOTStub), i.e.
+//                its TTStubRef key; the ref must point into `stubs`, the collection
+//                L1TOTStub is built from (asserted), which replaces any float join
 //
 // KEY DESIGN CHOICE (spec RefitSidecarSpec.md §1 output-sync invariant; task Part B.2):
 // the stub table is keyed to the REFERENCE L1TTrack / L1TExtTrack collection, NOT
@@ -43,6 +46,7 @@
 #include "FWCore/ParameterSet/interface/ParameterSetDescription.h"
 #include "FWCore/Utilities/interface/Exception.h"
 
+#include "DataFormats/Common/interface/DetSetVectorNew.h"
 #include "DataFormats/L1TrackTrigger/interface/TTTrack.h"
 #include "DataFormats/L1TrackTrigger/interface/TTTypes.h"
 #include "DataFormats/L1TrackTrigger/interface/TTStub.h"
@@ -71,6 +75,7 @@ public:
 
   explicit L1SmartPixelsStubPosTableProducer(const edm::ParameterSet& cfg)
       : tracksToken_(consumes<TTTrackCollection>(cfg.getParameter<edm::InputTag>("tracks"))),
+        stubsToken_(consumes<TTStubDetSetVec>(cfg.getParameter<edm::InputTag>("stubs"))),
         geomToken_(esConsumes<TrackerGeometry, TrackerDigiGeometryRecord>()),
         topoToken_(esConsumes<TrackerTopology, TrackerTopologyRcd>()),
         stubTableName_(cfg.getParameter<std::string>("stubTableName")),
@@ -80,11 +85,12 @@ public:
 
   void produce(edm::Event& iEvent, const edm::EventSetup& iSetup) override {
     const auto& tracks = iEvent.get(tracksToken_);
+    const auto stubHandle = iEvent.getHandle(stubsToken_);
     const TrackerGeometry& geom = iSetup.getData(geomToken_);
     const TrackerTopology& topo = iSetup.getData(topoToken_);
 
     // one row per stub across all tracks (the LINK-table pattern)
-    std::vector<int32_t> trackIdx;
+    std::vector<int32_t> trackIdx, otStubIdx;
     std::vector<uint8_t> layer;
     std::vector<bool> isBarrel;
     std::vector<uint32_t> detId;
@@ -93,6 +99,12 @@ public:
     for (size_t it = 0; it < tracks.size(); ++it) {
       const auto stubRefs = tracks[it].getStubRefs();
       for (const auto& stubRef : stubRefs) {
+        if (stubRef.id() != stubHandle.id() || stubRef.key() >= stubHandle->dataSize())
+          throw cms::Exception("SmartPixelsStubProductMismatch")
+              << stubTableName_ << ": a track stub ref points to product " << stubRef.id() << " key "
+              << stubRef.key() << ", not into the OT stub collection " << stubHandle.id()
+              << " (size " << stubHandle->dataSize() << ") that L1TOTStub is built from";
+        otStubIdx.push_back(static_cast<int32_t>(stubRef.key()));
         // detId + global position from the inner cluster (L1TrackNtupleMaker pattern)
         const DetId detIdStub = geom.idToDet(stubRef->clusterRef(0)->getDetId())->geographicalId();
         const MeasurementPoint coords = stubRef->clusterRef(0)->findAverageLocalCoordinatesCentered();
@@ -120,6 +132,8 @@ public:
     auto stubTable = std::make_unique<nanoaod::FlatTable>(nStubRows, stubTableName_, false, false);
     stubTable->addColumn<int32_t>(
         "trackIdx", trackIdx, "index of the owning track in the " + trackTableName_ + " table");
+    stubTable->addColumn<int32_t>(
+        "otStubIdx", otStubIdx, "row of this stub in L1TOTStub (the complete OT stub table; row == stub key)");
     stubTable->addColumn<uint8_t>(
         "layer", layer, "tracker layer/disk id: barrel L1..L6 = 1..6, endcap disk d = 10+d");
     stubTable->addColumn<bool>("isBarrel", isBarrel, "stub in the OT barrel (TOB) vs endcap");
@@ -138,6 +152,8 @@ public:
   static void fillDescriptions(edm::ConfigurationDescriptions& descriptions) {
     edm::ParameterSetDescription desc;
     desc.add<edm::InputTag>("tracks", edm::InputTag("l1tSmartPixelsTrackProducer", "Level1TTTracks"));
+    desc.add<edm::InputTag>("stubs", edm::InputTag("TTStubsFromPhase2TrackerDigis", "StubAccepted"))
+        ->setComment("the stub collection L1TOTStub is built from; otStubIdx indexes it");
     desc.add<std::string>("stubTableName", "L1TSmartPixelsStub");
     desc.add<std::string>("trackTableName", "L1TSmartPixelsTrack");
     descriptions.addWithDefaultLabel(desc);
@@ -145,6 +161,7 @@ public:
 
 private:
   const edm::EDGetTokenT<TTTrackCollection> tracksToken_;
+  const edm::EDGetTokenT<TTStubDetSetVec> stubsToken_;
   const edm::ESGetToken<TrackerGeometry, TrackerDigiGeometryRecord> geomToken_;
   const edm::ESGetToken<TrackerTopology, TrackerTopologyRcd> topoToken_;
   const std::string stubTableName_;

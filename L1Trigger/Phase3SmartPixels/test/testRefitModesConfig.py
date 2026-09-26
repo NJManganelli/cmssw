@@ -13,7 +13,11 @@ L1Trigger/Phase3SmartPixels/python/customizeSmartPixels_cff.py:
  (c) mode 'refit' (Tier 3) raises the RESERVED NotImplementedError;
  (d) invalid digiRefitConfig keys / enum values raise ValueError;
  (e) existing modes (passthrough, correctionlibRegression) still normalize and
-     suffix EXACTLY as before (byte-identical regression guard).
+     suffix EXACTLY as before (byte-identical regression guard);
+ (i) one cluster table for barrel + discs: discScope validated, rec hits and
+     table agree in either customise order, no separate disc table; stub tables
+     carry the OT stub collection for otStubIdx; L1TTP cuts on |p|; a cut on a
+     row-aligned track table is refused.
 
 Run inside the container:
   source /cvmfs/cms.cern.ch/cmsset_default.sh
@@ -545,6 +549,71 @@ smartPixelsCoexist(p_cox, variants=[("passthrough", None)], addNanoTables=True,
                    trackInputMode="reemulateL1TrackFinding")
 check(hasattr(p_cox, "l1tPh3SmartPixelsStubTable"),
       "smartPixelsCoexist(addNanoTables=True) emits the reference stub table")
+
+# --- (i) unified cluster table, disc scope, stub index, TP table, cut guard ---
+print("[i] unified cluster table / discScope / otStubIdx / L1TTP / track-table cut guard")
+from DPGAnalysis.Phase3SmartPixelsNanoAOD.l1tPh3SmartPixelsNano_cff import (
+    addPh3L1SmartPixelsClusters, assertTrackTablesUncut)
+import DPGAnalysis.Phase3SmartPixelsNanoAOD.l1tPh3SmartPixelsNano_cff as _p3nano
+from DPGAnalysis.Phase2L1TNanoAOD.l1tPh2TrkNanotables_cff import l1tTracksTable, l1tTrackingParticleTable
+
+check(DIGIREFIT_DEFAULTS["discScope"] == "sp", "default discScope is sp (ID1-ID4)")
+expect_raises(ValueError, lambda: _resolveDigiRefitConfig({"discScope": "tepx"}),
+              "invalid discScope raises ValueError", contains="discScope")
+check(not hasattr(_p3nano, "addPh3L1SmartPixelsDiscClusters")
+      and not hasattr(_p3nano, "l1tPh3SmartPixelsDiscClusterTable"),
+      "the separate disc cluster table is gone")
+
+
+def _cnn_refit(scope, tableFirst):
+    p = cms.Process("TEST")
+    p.pdummy = cms.Path()
+    p.l1tPh2NanoTask = cms.Task()
+    if tableFirst:
+        addPh3L1SmartPixelsClusters(p)
+    cfg = {"angleSource": "cnn"}
+    if scope is not None:
+        cfg["discScope"] = scope
+    smartPixelsCoexist(p, variants=[("digiRefit", "1111")], addNanoTables=True,
+                       trackInputMode="reemulateL1TrackFinding", digiRefitConfig=cfg)
+    if not tableFirst:
+        addPh3L1SmartPixelsClusters(p)
+    return p
+
+
+for scope in (None, "all"):
+    want = scope or "sp"
+    for tableFirst in (True, False):
+        pc = _cnn_refit(scope, tableFirst)
+        check(pc.spixSmartPixelsRecHits.discScope.value() == want
+              and pc.l1tPh3SmartPixelsClusterTable.discScope.value() == want,
+              f"rec hits and cluster table share discScope={want} (table added "
+              f"{'before' if tableFirst else 'after'} the refit)")
+        check(not hasattr(pc.spixSmartPixelsRecHits, "includeDiscs"),
+              "rec hits have no includeDiscs parameter")
+check(not hasattr(_p3nano.l1tPh3SmartPixelsClusterTable, "subdetector"),
+      "cluster table has no subdetector option")
+check(not hasattr(_p3nano.l1tPh3SmartPixelsAllStubTable, "barrelOnly"),
+      "L1TOTStub is unfiltered (row == stub key), no barrelOnly option")
+check(p_stub.l1tPh3SmartPixelsStubTable.stubs
+      == cms.InputTag("TTStubsFromPhase2TrackerDigis", "StubAccepted")
+      and p_stub.l1tPh3SmartPixelsStubTable.stubs == _p3nano.l1tPh3SmartPixelsAllStubTable.stubs,
+      "on-track stub tables index the same stub collection L1TOTStub is built from")
+check(hasattr(l1tTrackingParticleTable, "minP") and not hasattr(l1tTrackingParticleTable, "minPt")
+      and l1tTrackingParticleTable.minP.value() == 1.0,
+      "L1TTP selects on 3-momentum |p| > 1 GeV")
+
+
+def _cut_track_table():
+    p = cms.Process("TEST")
+    p.l1tTracksTable = l1tTracksTable.clone(cut=cms.string("pt > 2"))
+    assertTrackTablesUncut(p)
+expect_raises(RuntimeError, _cut_track_table, "a cut on the L1TTrack table is refused",
+              contains="cut")
+p_ok = cms.Process("TEST")
+p_ok.l1tTracksTable = l1tTracksTable.clone()
+assertTrackTablesUncut(p_ok)
+check(True, "an uncut L1TTrack table passes the guard")
 
 # --- summary ---------------------------------------------------------------
 print()

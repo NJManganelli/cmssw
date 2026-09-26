@@ -151,9 +151,9 @@ namespace smartpixels {
     // logDetRatio = ln(det C_seed / det C_refit) >= 0: total information gained,
     // parametrisation-independent and insensitive to WHICH direction shrank.
     float logDetRatio = -999.f;
-    // Index of the TrackingParticle this track is truth-matched to, or -1.
-    // Join key against the cluster table's truthTpIdx: equality means the cluster
-    // came from this track's own particle. TRUTH-ONLY.
+    // TrackingParticle collection KEY this track is truth-matched to, or -1
+    // (published as spixMatchedTpKey). Join key against the cluster table's tpKey:
+    // equality means the cluster came from this track's own particle. TRUTH-ONLY.
     int32_t matchedTpIdx = -1;
   };
 

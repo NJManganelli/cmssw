@@ -6,7 +6,8 @@
 //     run, e.g. data or central workflows without the truth sequence).
 //   - the matched TrackingParticle's FULL helix parameters propagated to its
 //     POCA to the beamline (tp_pt/tp_eta/tp_phi/tp_tanL/tp_charge/tp_d0/tp_z0)
-//     plus its production vertex (tp_vx/tp_vy/tp_vz). These enable
+//     plus its production vertex (tp_vx/tp_vy/tp_vz), and its collection key
+//     tpKey (joins L1TTP_key and the cluster/stub tables' tpKey). These enable
 //     resolution-vs-truth for DISPLACED / b-decay tracks whose TRUE d0 is
 //     nonzero and is NOT captured by GenVtx (the PV). Sentinel -999 when the
 //     track is not genuinely matched to a TP.
@@ -71,7 +72,7 @@ public:
     std::vector<bool> genuine(nTracks, false), loose(nTracks, false), combinatoric(nTracks, false),
         unknown(nTracks, false);
     std::vector<float> tpPt(nTracks, -1.f), tpEta(nTracks, 0.f);
-    std::vector<int32_t> tpPdgId(nTracks, 0);
+    std::vector<int32_t> tpPdgId(nTracks, 0), tpKey(nTracks, -1);
     std::vector<bool> tpFromHardInteraction(nTracks, false);
     // Matched-TP full helix params @ POCA + production vertex (-999 sentinel for
     // tracks without a genuine TP match; consumers gate on genuine / tp_pt>0).
@@ -97,6 +98,7 @@ public:
           const float vx = tp->vx();
           const float vy = tp->vy();
           const float vz = tp->vz();
+          tpKey[i] = static_cast<int32_t>(tp.key());
           tpPt[i] = pt;
           tpEta[i] = tp->eta();
           tpPdgId[i] = tp->pdgId();
@@ -137,6 +139,10 @@ public:
     table->addColumn<float>("tpPt", tpPt, "matched TrackingParticle pt (-1 if none)");
     table->addColumn<float>("tpEta", tpEta, "matched TrackingParticle eta");
     table->addColumn<int32_t>("tpPdgId", tpPdgId, "matched TrackingParticle pdgId");
+    table->addColumn<int32_t>("tpKey",
+                              tpKey,
+                              "matched TrackingParticle collection key (-1 if none; a key, not a row): "
+                              "joins L1TTP_key and the cluster/stub tpKey");
     table->addColumn<bool>(
         "tpFromHardInteraction", tpFromHardInteraction, "matched TrackingParticle from the hard interaction");
     // Matched-TP full helix params for resolution-vs-truth (displaced/b-tracks).

@@ -155,7 +155,7 @@ public:
     std::vector<float> localCotAlpha, localCotBeta, sigAlpha, sigBeta;
     std::vector<uint8_t> hasAlpha, hasBeta;
     std::vector<float> tpPt, tpVx, tpVy, tpVz, tpEta, tpPhi, tpChargeFrac, tpLocalCotAlpha, tpLocalCotBeta;
-    std::vector<int32_t> tpIdx;
+    std::vector<int32_t> tpKey;
 
     for (const auto& [dsv, surf] : order) {
       const DetId did(dsv.detId());
@@ -227,7 +227,7 @@ public:
 
         if (haveTruth) {
           const auto& tr = (*tsv)[j];
-          tpIdx.push_back(tr.hasTp() ? static_cast<int32_t>(tr.dominantTp().key()) : -1);
+          tpKey.push_back(tr.hasTp() ? static_cast<int32_t>(tr.dominantTp().key()) : -1);
           tpPt.push_back(tr.hasTp() ? static_cast<float>(tr.dominantTp()->pt()) : -999.f);
           tpVx.push_back(tr.hasTp() ? static_cast<float>(tr.dominantTp()->vx()) : -999.f);
           tpVy.push_back(tr.hasTp() ? static_cast<float>(tr.dominantTp()->vy()) : -999.f);
@@ -323,9 +323,10 @@ public:
                             "sensor reports an alpha at all (payload validity gate / grazing clamp)");
     tab->addColumn<uint8_t>("hasBeta", hasBeta, "sensor reports a beta at all");
     if (doTruth_) {
-      tab->addColumn<int32_t>("tpIdx", tpIdx,
-                              "TRUTH-ONLY: TrackingParticle index of the dominant charge contributor, "
-                              "or -1. Join key against spixMatchedTpIdx");
+      tab->addColumn<int32_t>("tpKey", tpKey,
+                              "TRUTH-ONLY: TrackingParticle collection key of the dominant charge "
+                              "contributor, or -1 (a key, not a row). Joins L1TTP_key, L1TOTStub_tpKey, "
+                              "L1TTrack_tpKey and spixMatchedTpKey");
       tab->addColumn<float>("tpPt", tpPt, "TRUTH-ONLY: pT [GeV] of the dominant TP", 10);
       // Full PRODUCTION STATE of the dominant TP. tpLocalCot{Alpha,Beta} are
       // helix-propagated from this vertex+direction and therefore IGNORE multiple
@@ -370,7 +371,7 @@ public:
     desc.add<unsigned>("maxLayer", 4)
         ->setComment("highest TBPX layer kept (SmartPixels scope is 1..4); MUST equal the rec hits' (checked)");
     desc.add<bool>("doTruth", true)
-        ->setComment("attach the TRUTH-ONLY tp* block (tpIdx, tpPt, tpChargeFrac, "
+        ->setComment("attach the TRUTH-ONLY tp* block (tpKey, tpPt, tpChargeFrac, "
                      "tpLocalCot*, tpGlobalCluster*)");
     descriptions.addWithDefaultLabel(desc);
   }
