@@ -28,7 +28,7 @@ namespace smartpixels {
   // hit was accepted) -- NOT one entry per accepted hit.
   struct SmartPixelsRefitHitInfo {
     // --- crossing identity / window occupancy (always valid) ---
-    uint8_t layer = 0;         // TBPX layer 1..4
+    uint8_t layer = 0;         // IT surface code (SmartPixelsSurface.h): 1-4 TBPX, 11-14 ID1-ID4
     uint32_t detId = 0;        // module rawId of the crossing (diagnostics)
     uint16_t windowMult = 0;   // digis collected in window (post readout-order truncation)
     uint8_t flags = 0;         // bit0 hitAccepted; bit1 windowTruncated (maxHitsPerWindow hit);
@@ -124,7 +124,7 @@ namespace smartpixels {
     uint8_t nCrossings = 0;     // valid layer crossings attempted
     uint8_t nAcceptedHits = 0;  // hits accepted into the KF
     uint8_t nKFUpdates = 0;     // scalar-update groups applied (== layers updated)
-    uint8_t layerHitMask = 0;   // accepted-hit bitmask, bit0=L1 .. bit3=L4;
+    uint8_t layerHitMask = 0;   // accepted-hit bitmask, bits 0-3 = IL1-IL4, bits 4-7 = ID1-ID4;
                                 // popcount(layerHitMask) == nAcceptedHits (exact)
     uint16_t maxWindowMult = 0; // max windowMult over this track's crossings
     // Per-dimension chi2-increment sums over crossings.

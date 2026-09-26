@@ -668,6 +668,7 @@ L1SmartPixelsTrackProducer::L1SmartPixelsTrackProducer(edm::ParameterSet const& 
   // Correctionlib loading
   if( smartPixelsEmulatorMode_ == "correctionlibRegression") {
     auto cSet = correction::CorrectionSet::from_file(smartPixelsCorrectionSet_);
+    // Barrel-era stacks: derived with mask character k = TBPX layer k only (no IDk).
     std::string cmap_pt_name = "pt_relative_smear_compound_" + smartPixelsActiveLayers_;
     std::string cmap_eta_name = "eta_relative_smear_compound_" + smartPixelsActiveLayers_;
     std::string cmap_phi_name = "phi_relative_smear_compound_" + smartPixelsActiveLayers_;
@@ -789,7 +790,7 @@ void L1SmartPixelsTrackProducer::produce(edm::Event& iEvent, const edm::EventSet
   edm::Handle<SmartPixelsRecHitTruthCollection> drRecHitTruth;
   smartpixels::ParentTpIndexMap drParentTpIdx;
   std::unordered_map<uint32_t, unsigned> drClusterBaseIdx;
-  std::array<bool, 4> drActiveLayer{{false, false, false, false}};
+  std::array<bool, smartpixels::kMaxSurfaceCode + 1> drActiveSurface{};
   auto sidecar = std::make_unique<smartpixels::SmartPixelsRefitSidecar>();
   if (smartPixelsEmulatorMode_ == "digiRefit") {
     iEvent.getByToken(smartPixelsRecHitToken_, drRecHits);
@@ -803,9 +804,10 @@ void L1SmartPixelsTrackProducer::produce(edm::Event& iEvent, const edm::EventSet
     // SAME helper the table uses. The table refuses to run unless it emits every rec
     // hit, so taking every rec-hit module here (no scope cut) gives its row order.
     drClusterBaseIdx = smartpixels::clusterRowBase(*drRecHits, *tTopo, 4, smartpixels::discScopeMaxDisk("all"));
-    for (size_t i = 0; i < drActiveLayer.size() && i < smartPixelsActiveLayers_.size(); ++i)
-      drActiveLayer[i] = (smartPixelsActiveLayers_[i] == '1');
-    if (std::none_of(drActiveLayer.begin(), drActiveLayer.end(), [](bool b) { return b; }))
+    // Mask character k switches ILk AND IDk. Only barrel surfaces are visited below
+    // (the projector has no disc surfaces yet), so the ID entries take no effect.
+    drActiveSurface = smartpixels::activeSurfaces(smartPixelsActiveLayers_);
+    if (std::none_of(drActiveSurface.begin(), drActiveSurface.end(), [](bool b) { return b; }))
       throw cms::Exception("Configuration")
           << "digiRefit requires at least one active layer (smartPixelsActiveLayers='"
           << smartPixelsActiveLayers_ << "').";
@@ -1528,7 +1530,7 @@ void L1SmartPixelsTrackProducer::produce(edm::Event& iEvent, const edm::EventSet
       // ---- sidecar accumulators (spec §2): one hitInfo entry per valid layer
       // crossing attempted (whether or not a hit is accepted), one trackInfo
       // entry per track. Filled below and appended to the sidecar under the 1:1
-      // invariant. layerHitMask (bit0=L1..bit3=L4) feeds the compact word.
+      // invariant. layerHitMask (bits 0-3 IL1-IL4, 4-7 ID1-ID4) feeds the compact word.
       std::vector<smartpixels::SmartPixelsRefitHitInfo> drHitInfo;
       smartpixels::SmartPixelsRefitTrackInfo drTrackInfo;
       uint8_t drLayerHitMask = 0;
@@ -1621,7 +1623,8 @@ void L1SmartPixelsTrackProducer::produce(edm::Event& iEvent, const edm::EventSet
         const int layer = drOutsideIn ? (drNLayers - step) : (step + 1);
         if (!seedCovOK || nUpdates >= digiRefitMaxKFUpdates_)
           break;
-        if (!drActiveLayer[layer - 1])
+        const unsigned surface = static_cast<unsigned>(layer);  // projector surfaces are TBPX layers
+        if (!drActiveSurface[surface])
           continue;
 
         // ---- MULTIPLE-SCATTERING PROCESS NOISE -------------------------------
@@ -1709,7 +1712,7 @@ void L1SmartPixelsTrackProducer::produce(edm::Event& iEvent, const edm::EventSet
         // A valid crossing was attempted: seed its sidecar record now (spec §2 -
         // one hitInfo entry per valid crossing, whether or not a hit is accepted).
         smartpixels::SmartPixelsRefitHitInfo hi;
-        hi.layer = static_cast<uint8_t>(layer);
+        hi.layer = static_cast<uint8_t>(surface);
         hi.detId = cx.detId;
         // Running projection: cx IS the current state's crossing, so this is free.
         hi.projLocalX = static_cast<float>(cx.local.x());
@@ -2067,7 +2070,7 @@ void L1SmartPixelsTrackProducer::produce(edm::Event& iEvent, const edm::EventSet
         drHitInfo.push_back(hi);
 
         // Compact-word layer bitmask + per-track chi2 totals (spec §2/§3).
-        drLayerHitMask |= static_cast<uint8_t>(1u << (layer - 1));
+        drLayerHitMask |= smartpixels::surfaceHitBit(surface);
         drTrackInfo.chi2IncXTot =
             (drTrackInfo.chi2IncXTot < -900.f ? 0.f : drTrackInfo.chi2IncXTot) + static_cast<float>(incX);
         drTrackInfo.chi2IncYTot =
@@ -2370,7 +2373,7 @@ void L1SmartPixelsTrackProducer::fillDescriptions(edm::ConfigurationDescriptions
   desc.add<edm::InputTag>("TrackingParticleInputTag", edm::InputTag("mix", "MergedTrackTruth"));
   desc.add<std::string>("outputCollectionName", "Level1TTTracksEmulation");
   desc.add<std::string>("smartPixelsEmulatorMode", "passthrough")->setComment("passthrough, passthroughFloat, passthroughHW, trackingParticleTruth, correctionlibRegression, correctionlibTPToySmear");
-  desc.add<std::string>("smartPixelsActiveLayers", "0000")->setComment("Active layers of SmartPixels, '0000' is none active, '1111' is all active, '0110' has active 2nd and 3rd layers, and '1000' is only innermost layer active");
+  desc.add<std::string>("smartPixelsActiveLayers", "0000")->setComment("Active SmartPixels surfaces: character k switches barrel layer ILk AND disc IDk, '0000' is none active, '1111' is all active, '0110' has IL2+IL3 and ID2+ID3 active. digiRefit skips inactive surfaces; it visits TBPX layers only so far");
   desc.add<edm::FileInPath>("smartPixelsCorrectionSet")->setComment("Name of json file containing the correctionlib set used for smartPixelsEmulatorMode (correctionlibRegression | correctionlibTPToySmear )");
   // --- digiRefit (Tier 2) ---
   desc.add<std::vector<double>>("digiRefitWindowRPhi", std::vector<double>{0.05, 0.17, 0.5, 0.9})

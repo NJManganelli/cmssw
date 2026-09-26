@@ -20,6 +20,7 @@
 #include "DataFormats/TrackerCommon/interface/TrackerTopology.h"
 #include "FWCore/Utilities/interface/Exception.h"
 
+#include <array>
 #include <cstdint>
 #include <string>
 #include <unordered_map>
@@ -29,6 +30,7 @@
 namespace smartpixels {
 
   constexpr unsigned kDiscSurfaceOffset = 10;
+  constexpr unsigned kMaxSurfaceCode = 22;  // TEPX disk 12
 
   inline bool isDiscSurface(unsigned surface) { return surface > kDiscSurfaceOffset; }
 
@@ -56,6 +58,26 @@ namespace smartpixels {
       const unsigned disk = topo.pxfDisk(did);
       return (disk >= 1 && disk <= maxDisk) ? kDiscSurfaceOffset + disk : 0;
     }
+    return 0;
+  }
+
+  // Active surfaces from a 4-character activeSP mask: character k switches BOTH
+  // ILk and IDk (index pairing). Indexed by surface code.
+  inline std::array<bool, kMaxSurfaceCode + 1> activeSurfaces(const std::string& mask) {
+    std::array<bool, kMaxSurfaceCode + 1> active{};
+    for (unsigned k = 0; k < 4 && k < mask.size(); ++k) {
+      active[k + 1] = (mask[k] == '1');
+      active[kDiscSurfaceOffset + k + 1] = (mask[k] == '1');
+    }
+    return active;
+  }
+
+  // Accepted-hit mask bit of a surface: bits 0-3 = IL1-IL4, bits 4-7 = ID1-ID4.
+  inline uint8_t surfaceHitBit(unsigned surface) {
+    if (surface >= 1 && surface <= 4)
+      return static_cast<uint8_t>(1u << (surface - 1));
+    if (surface >= kDiscSurfaceOffset + 1 && surface <= kDiscSurfaceOffset + 4)
+      return static_cast<uint8_t>(1u << (surface - kDiscSurfaceOffset + 3));
     return 0;
   }
 

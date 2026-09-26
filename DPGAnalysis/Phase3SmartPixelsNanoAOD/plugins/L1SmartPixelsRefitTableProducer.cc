@@ -192,7 +192,8 @@ public:
     auto hitTable = std::make_unique<nanoaod::FlatTable>(nHitRows, hitTableName_, false, false);
     hitTable->addColumn<int32_t>(
         "trackIdx", hitTrackIdx, "index of the owning track in the " + trackTableName_ + " table");
-    hitTable->addColumn<uint8_t>("layer", hitLayer, "TBPX layer 1..4");
+    hitTable->addColumn<uint8_t>("layer", hitLayer,
+        "IT surface of the crossing: 1-4 = TBPX IL1-IL4, 11-14 = ID1-ID4 (L1TSmartPixelsCluster_surface)");
     hitTable->addColumn<uint32_t>("detId", hitDetId, "module rawId of the crossing");
     hitTable->addColumn<uint16_t>("windowMult", hitWindowMult, "digis collected in window (post truncation)");
     hitTable->addColumn<int32_t>("flags", hitFlags, "packed flags (bit0 hitAccepted, bit1 windowTruncated, bit2 hasAlpha, bit3 hasBeta)");
@@ -265,7 +266,7 @@ public:
     trkTable->addColumn<uint8_t>("spixNCrossings", nCrossings, "valid layer crossings attempted");
     trkTable->addColumn<uint8_t>("spixNAcceptedHits", nAcceptedHits, "hits accepted into the KF");
     trkTable->addColumn<uint8_t>("spixNKFUpdates", nKFUpdates, "scalar-update groups applied (layers updated)");
-    trkTable->addColumn<uint8_t>("spixLayerHitMask", layerHitMask, "accepted-hit bitmask bit0=L1..bit3=L4; popcount == nAcceptedHits");
+    trkTable->addColumn<uint8_t>("spixLayerHitMask", layerHitMask, "accepted-hit bitmask, bits 0-3 = IL1-IL4, bits 4-7 = ID1-ID4; popcount == nAcceptedHits");
     trkTable->addColumn<uint16_t>("spixMaxWindowMult", maxWindowMult, "max window multiplicity over this track's crossings");
     trkTable->addColumn<float>("spixChi2IncXTot", chi2IncXTot, "sum of local-x chi2 increments over crossings");
     trkTable->addColumn<float>("spixChi2IncYTot", chi2IncYTot, "sum of local-y chi2 increments over crossings");

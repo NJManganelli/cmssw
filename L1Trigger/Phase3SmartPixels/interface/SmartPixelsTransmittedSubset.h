@@ -13,7 +13,8 @@
 // possible, no CMSSW dependencies -- so it can be mirrored trivially.
 //
 // Provisional compact-word bit layout (spec §3):
-//   bits 0-3   : per-layer accepted-hit bitmask (L1..L4); popcount == nAcceptedHits
+//   bits 0-3   : per-layer accepted-hit bitmask (IL1..IL4); popcount == nAcceptedHits while
+//                only TBPX layers are refit surfaces (layerHitMask's ID1-ID4 bits are not packed)
 //   bits 4-7   : q(chi2IncXTot + chi2IncAlphaTot)   [the r-phi combination]
 //   bits 8-11  : q(chi2IncYTot + chi2IncBetaTot)    [the r-z combination]
 //   bits 12-14 : occ = clamp(floor(log2(1 + maxWindowMult)), 0, 7)
