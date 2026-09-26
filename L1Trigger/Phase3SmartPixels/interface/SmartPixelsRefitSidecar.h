@@ -87,9 +87,9 @@ namespace smartpixels {
     float projSeedCotAlpha = -999.f, projSeedCotBeta = -999.f;
 
     // Row index of the SELECTED cluster in the untruncated cluster nano table
-    // (L1TSmartPixelsCluster), or -1. Both are produced from the same
-    // SiPixelRecHitCollection with the same filter and iteration order, so the
-    // index is exact -- which matters because matching on POSITION does not work:
+    // (L1TSmartPixelsCluster), or -1. Both take their row order from
+    // smartpixels::clusterTableOrder over the same rec hits, so the index is
+    // exact -- which matters because matching on POSITION does not work:
     // both tables store coordinates at 10-bit nano mantissa precision, ~5 um on a
     // 0.5 cm coordinate, against a 25 um pitch.
     // Consumers MUST assert cluster[selClusterIdx].detId == hitInfo.detId; that is a

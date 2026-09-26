@@ -87,7 +87,6 @@
 #include "DataFormats/Phase3SmartPixels/interface/SmartPixelsRecHit.h"
 #include "DataFormats/Phase3SmartPixels/interface/SmartPixelsRecHitTruth.h"
 #include "DataFormats/SiPixelCluster/interface/SiPixelCluster.h"
-#include "DataFormats/SiPixelDetId/interface/PixelSubdetector.h"
 #include "DataFormats/SiPixelDigi/interface/PixelDigi.h"
 #include "DataFormats/TrackerCommon/interface/TrackerTopology.h"
 #include "DataFormats/TrackerRecHit2D/interface/SiPixelRecHitCollection.h"
@@ -99,6 +98,7 @@
 #include "MagneticField/Records/interface/IdealMagneticFieldRecord.h"
 #include "SimDataFormats/TrackerDigiSimLink/interface/PixelDigiSimLink.h"
 #include "SimDataFormats/TrackingAnalysis/interface/TrackingParticle.h"
+#include "L1Trigger/Phase3SmartPixels/interface/SmartPixelsSurface.h"
 #include "PhysicsTools/ONNXRuntime/interface/ONNXRuntime.h"
 
 #include "correction.h"
@@ -194,7 +194,7 @@ private:
   const edm::ESGetToken<MagneticField, IdealMagneticFieldRecord> fieldToken_;
 
   const unsigned maxLayer_;
-  const bool includeDiscs_;
+  const unsigned maxDisk_;
   const double clusterMergeFrac_;
   const double measAngleMaxAbs_;
   const bool useCnn_;
@@ -219,7 +219,7 @@ std::unique_ptr<SmartPixelsCnnModels> SmartPixelsRecHitProducer::initializeGloba
   if (cfg.getParameter<std::string>("angleSource") == "cnn") {
     models->barrel = std::make_unique<cms::Ort::ONNXRuntime>(
         edm::FileInPath(cfg.getParameter<std::string>("cnnBarrelModel")).fullPath());
-    if (cfg.getParameter<bool>("includeDiscs"))
+    if (smartpixels::discScopeMaxDisk(cfg.getParameter<std::string>("discScope")) > 0)
       models->disc = std::make_unique<cms::Ort::ONNXRuntime>(
           edm::FileInPath(cfg.getParameter<std::string>("cnnDiscModel")).fullPath());
   }
@@ -235,7 +235,7 @@ SmartPixelsRecHitProducer::SmartPixelsRecHitProducer(const edm::ParameterSet& cf
       topoToken_(esConsumes()),
       fieldToken_(esConsumes()),
       maxLayer_(cfg.getParameter<unsigned>("maxLayer")),
-      includeDiscs_(cfg.getParameter<bool>("includeDiscs")),
+      maxDisk_(smartpixels::discScopeMaxDisk(cfg.getParameter<std::string>("discScope"))),
       clusterMergeFrac_(cfg.getParameter<double>("clusterMergeFrac")),
       measAngleMaxAbs_(cfg.getParameter<double>("measAngleMaxAbs")),
       useCnn_(cfg.getParameter<std::string>("angleSource") == "cnn") {
@@ -310,14 +310,13 @@ void SmartPixelsRecHitProducer::produce(edm::Event& iEvent, const edm::EventSetu
 
   for (const auto& dsv : recHits) {
     const DetId did(dsv.detId());
-    const bool isDisc = did.subdetId() == PixelSubdetector::PixelEndcap;
-    if (!(did.subdetId() == PixelSubdetector::PixelBarrel || (isDisc && includeDiscs_)))
+    const unsigned surface = smartpixels::surfaceCode(did, topo, maxLayer_, maxDisk_);
+    if (surface == 0)
       continue;
+    const bool isDisc = smartpixels::isDiscSurface(surface);
     // lay = 0 marks a disc: the PixelAV payload and the noise CDF are TBPX-layer tables.
-    const unsigned lay = isDisc ? 0 : topo.pxbLayer(did);
-    if (!isDisc && (lay < 1 || lay > maxLayer_))
-      continue;
-    const unsigned disk = isDisc ? topo.pxfDisk(did) : 0;
+    const unsigned lay = isDisc ? 0 : surface;
+    const unsigned disk = isDisc ? surface - smartpixels::kDiscSurfaceOffset : 0;
     const auto* pdu = dynamic_cast<const PixelGeomDetUnit*>(geom.idToDet(did));
     if (pdu == nullptr)
       continue;
@@ -599,9 +598,10 @@ void SmartPixelsRecHitProducer::fillDescriptions(edm::ConfigurationDescriptions&
   desc.add<edm::InputTag>("pixelDigiSimLink", edm::InputTag("simSiPixelDigis", "Pixel"));
   desc.add<edm::InputTag>("trackingParticles", edm::InputTag("mix", "MergedTrackTruth"));
   desc.add<unsigned>("maxLayer", 4)->setComment("highest TBPX layer processed (SmartPixels scope is 1..4)");
-  desc.add<bool>("includeDiscs", false)
-      ->setComment("also emit TFPX/TEPX disc clusters (with truth). The PixelAV payload and the "
-                   "noise CDF are TBPX-only, so disc hits carry no payload angle");
+  desc.add<std::string>("discScope", "sp")
+      ->setComment("disc clusters emitted (with truth): none | sp = ID1-ID4 (TFPX disks 1-4, the smart-pixel "
+                   "discs) | tfpx = TFPX 1-8 | all = TFPX + TEPX. The PixelAV payload and the noise CDF are "
+                   "TBPX-only, so disc hits carry no payload angle; the CNN source gives them one");
   desc.add<double>("clusterMergeFrac", 0.1)
       ->setComment("runner-up charge share above which the cluster is flagged merged (TRUTH-ONLY)");
   desc.add<double>("measAngleMaxAbs", 12.0)

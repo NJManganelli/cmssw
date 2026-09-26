@@ -11,9 +11,10 @@
 // than useless: it removes precisely the soft clusters that do the confusing,
 // which would make the measured combinatorics optimistic by ~45x.
 //
-// It is consequently a large table (~26.5k rows/event at PU200) and belongs only
-// to the L1PFTrkNanoSmartPixClusters tier. It is never added to a physics tier.
-// Measured cost is 0.29 MB/event -- see the payload breakdown below.
+// It is consequently a large table (~26.5k barrel rows/event at PU200, plus ~46k
+// on ID1-ID4) and belongs only to the L1PFTrkNanoSmartPixClusters tier. It is never
+// added to a physics tier. The barrel-only table measured 0.29 MB/event -- see the
+// payload breakdown below.
 //
 // WHAT A "MODULE" IS (D121 geometry, measured by SmartPixelsClusterCensusAnalyzer).
 // One module == one PixelGeomDetUnit == one DetId == the unit this table's detId
@@ -45,10 +46,20 @@
 // Cartesian columns would give ~1 mrad, several times the sensor resolution, and
 // would make any angular result an artefact of storage rather than of physics.
 //
-// DISCS. subdetector = "endcap" makes a SEPARATE table of the TFPX/TEPX clusters
-// (L1TSmartPixelsDiscCluster), with disk/side/ring in place of layer and otherwise
-// the same columns, so the TBPX table schema is untouched. Disc clusters exist only
-// when the rec-hit producer runs with includeDiscs (the CNN angle source).
+// ONE TABLE FOR BARREL AND DISCS. Rows are every TBPX cluster (layers 1..maxLayer)
+// FIRST, then every disc cluster in discScope (default sp = ID1-ID4, TFPX disks 1-4),
+// in the order of smartpixels::clusterTableOrder, which the refit's selClusterIdx
+// uses too. The barrel prefix is the historical barrel-only table row for row.
+// surface (1-4 = IL1-IL4, 10 + disk on the discs) is the one column to select on;
+// (detId, idxInDet) is a stable per-event key. The table emits EVERY rec hit and
+// refuses to run if the rec hits were made with a different disc scope or layer
+// range, since the refit's row indices assume table == rec hits.
+//
+// DISC COLUMN SEMANTICS. On a disc module local x is along r-phi and localY runs
+// along the radius, pointing INWARD, so sigY is sigma_r (not sigma_z as on TBPX).
+// localCotAlpha/localCotBeta stay SIGNED in the module frame; the sign of the disc
+// cotBeta flips with the module facing (the two blade faces point opposite ways
+// along z), so compare directions through globalClusterCotTheta, not raw cotBeta.
 //
 // NAMING. Frame prefix only for sensor quantities (localX/localY, localCotAlpha/
 // Beta, globalR/Phi/Z, globalClusterPhi/CotTheta); "reco" is redundant because a
@@ -64,6 +75,7 @@
 // pT-discriminating on-sensor readout could buy, and must never be used as a
 // selection in anything claiming to be deployable.
 
+#include "FWCore/Common/interface/Provenance.h"
 #include "FWCore/Framework/interface/Event.h"
 #include "FWCore/Framework/interface/MakerMacros.h"
 #include "FWCore/Framework/interface/stream/EDProducer.h"
@@ -75,7 +87,6 @@
 #include "DataFormats/Common/interface/DetSetVector.h"
 #include "DataFormats/NanoAOD/interface/FlatTable.h"
 #include "DataFormats/SiPixelCluster/interface/SiPixelCluster.h"
-#include "DataFormats/SiPixelDetId/interface/PixelSubdetector.h"
 #include "DataFormats/SiPixelDigi/interface/PixelDigi.h"
 #include "DataFormats/TrackerCommon/interface/TrackerTopology.h"
 #include "DataFormats/Phase3SmartPixels/interface/SmartPixelsFrames.h"
@@ -83,12 +94,10 @@
 #include "DataFormats/Phase3SmartPixels/interface/SmartPixelsRecHitTruth.h"
 #include "Geometry/CommonTopologies/interface/PixelGeomDetUnit.h"
 #include "Geometry/Records/interface/TrackerDigiGeometryRecord.h"
-#include "Geometry/CommonTopologies/interface/PixelGeomDetUnit.h"
-#include "Geometry/Records/interface/TrackerDigiGeometryRecord.h"
 #include "Geometry/Records/interface/TrackerTopologyRcd.h"
 #include "Geometry/TrackerGeometryBuilder/interface/TrackerGeometry.h"
-#include "Geometry/TrackerGeometryBuilder/interface/TrackerGeometry.h"
 #include "L1Trigger/Phase3SmartPixels/interface/SmartPixelsParentMap.h"
+#include "L1Trigger/Phase3SmartPixels/interface/SmartPixelsSurface.h"
 #include "SimDataFormats/Track/interface/SimTrackContainer.h"
 #include "SimDataFormats/TrackerDigiSimLink/interface/PixelDigiSimLink.h"
 #include "SimDataFormats/TrackingAnalysis/interface/TrackingParticle.h"
@@ -107,8 +116,9 @@ public:
         topoToken_(esConsumes()),
         geomToken_(esConsumes()),
         tableName_(cfg.getParameter<std::string>("tableName")),
-        discs_(cfg.getParameter<std::string>("subdetector") == "endcap"),
+        discScope_(cfg.getParameter<std::string>("discScope")),
         maxLayer_(cfg.getParameter<unsigned>("maxLayer")),
+        maxDisk_(smartpixels::discScopeMaxDisk(discScope_)),
         doTruth_(cfg.getParameter<bool>("doTruth")) {
     produces<nanoaod::FlatTable>();
   }
@@ -116,10 +126,26 @@ public:
   void produce(edm::Event& iEvent, const edm::EventSetup& iSetup) override {
     const auto& topo = iSetup.getData(topoToken_);
     const auto& geom = iSetup.getData(geomToken_);
-    const auto& recHits = iEvent.get(recHitToken_);
+    const auto recHitHandle = iEvent.getHandle(recHitToken_);
+    const auto& recHits = *recHitHandle;
     const auto& truthColl = iEvent.get(truthToken_);
-    std::vector<uint8_t> layer, disk, side, ring, sizeX, sizeY;
-    std::vector<uint16_t> size;
+    if (!scopeChecked_) {
+      const auto& rhCfg = edm::parameterSet(recHitHandle.provenance()->stable(), iEvent.processHistory());
+      if (rhCfg.getParameter<std::string>("discScope") != discScope_ ||
+          rhCfg.getParameter<unsigned>("maxLayer") != maxLayer_)
+        throw cms::Exception("Configuration")
+            << "cluster table discScope/maxLayer (" << discScope_ << ", " << maxLayer_
+            << ") differ from the rec hits' (" << rhCfg.getParameter<std::string>("discScope") << ", "
+            << rhCfg.getParameter<unsigned>("maxLayer") << "): selClusterIdx would point at the wrong rows";
+      scopeChecked_ = true;
+    }
+    const auto order = smartpixels::clusterTableOrder(recHits, topo, maxLayer_, maxDisk_);
+    if (order.size() != recHits.size())
+      throw cms::Exception("SmartPixelsClusterTableScope")
+          << recHits.size() - order.size() << " rec-hit modules lie outside the table scope; the table must "
+          << "emit every rec hit for selClusterIdx to be a row index";
+    std::vector<uint8_t> subdet, layer, disk, side, ring, surface, sizeX, sizeY;
+    std::vector<uint16_t> size, idxInDet;
     std::vector<uint32_t> detId;
     std::vector<float> localX, localY, sigX, sigY, charge;
     std::vector<float> globalR, globalPhi, globalZ;
@@ -131,13 +157,9 @@ public:
     std::vector<float> tpPt, tpVx, tpVy, tpVz, tpEta, tpPhi, tpChargeFrac, tpLocalCotAlpha, tpLocalCotBeta;
     std::vector<int32_t> tpIdx;
 
-    for (const auto& dsv : recHits) {
+    for (const auto& [dsv, surf] : order) {
       const DetId did(dsv.detId());
-      if (did.subdetId() != (discs_ ? PixelSubdetector::PixelEndcap : PixelSubdetector::PixelBarrel))
-        continue;
-      const unsigned lay = discs_ ? 0 : topo.pxbLayer(did);
-      if (!discs_ && (lay < 1 || lay > maxLayer_))
-        continue;
+      const bool disc = smartpixels::isDiscSurface(surf);
       const auto* pdu = dynamic_cast<const PixelGeomDetUnit*>(geom.idToDet(did));
       const auto tsv = truthColl.find(dsv.detId());
       const bool haveTruth = doTruth_ && tsv != truthColl.end() && tsv->size() == dsv.size();
@@ -147,14 +169,14 @@ public:
 
       for (size_t j = 0; j < dsv.size(); ++j) {
         const auto& rh = dsv[j];
-        if (discs_) {
-          disk.push_back(static_cast<uint8_t>(topo.pxfDisk(did)));
-          side.push_back(static_cast<uint8_t>(topo.pxfSide(did)));
-          ring.push_back(static_cast<uint8_t>(topo.pxfBlade(did)));
-        } else {
-          layer.push_back(static_cast<uint8_t>(lay));
-        }
+        subdet.push_back(static_cast<uint8_t>(did.subdetId()));
+        layer.push_back(static_cast<uint8_t>(disc ? 0 : surf));
+        disk.push_back(static_cast<uint8_t>(disc ? topo.pxfDisk(did) : 0));
+        side.push_back(static_cast<uint8_t>(disc ? topo.pxfSide(did) : 0));
+        ring.push_back(static_cast<uint8_t>(disc ? topo.pxfBlade(did) : 0));
+        surface.push_back(static_cast<uint8_t>(surf));
         detId.push_back(did.rawId());
+        idxInDet.push_back(static_cast<uint16_t>(j));
         // GLOBAL position and direction, computed HERE because this is where the
         // geometry is. nano carries none, so without these every analysis would
         // re-derive them from detId with its own copy of the tracker geometry --
@@ -227,16 +249,21 @@ public:
     }
 
     auto tab = std::make_unique<nanoaod::FlatTable>(detId.size(), tableName_, false, false);
-    if (discs_) {
-      tab->addColumn<uint8_t>("disk", disk, "pxfDisk: 1-8 TFPX, 9-12 TEPX");
-      tab->addColumn<uint8_t>("side", side, "pxfSide: 1 = -z, 2 = +z");
-      tab->addColumn<uint8_t>("ring", ring, "ring (pxfBlade in the Phase-2 numbering)");
-    } else {
-      tab->addColumn<uint8_t>("layer", layer, "TBPX layer 1..4");
-    }
+    tab->addColumn<uint8_t>("subdet", subdet, "1 = TBPX barrel, 2 = pixel disc");
+    tab->addColumn<uint8_t>("layer", layer, "TBPX layer 1..4; 0 on a disc");
+    tab->addColumn<uint8_t>("disk", disk, "pxfDisk (1-8 TFPX, 9-12 TEPX); 0 on the barrel");
+    tab->addColumn<uint8_t>("side", side, "pxfSide: 1 = -z, 2 = +z; 0 on the barrel");
+    tab->addColumn<uint8_t>("ring", ring, "ring (pxfBlade in the Phase-2 numbering); 0 on the barrel");
+    tab->addColumn<uint8_t>("surface", surface,
+                            "IT surface: 1-4 = IL1-IL4 (TBPX layer), 10 + disk on the discs (ID1-ID4 = 11-14). "
+                            "Rows are all barrel clusters, then all disc clusters");
     tab->addColumn<uint32_t>("detId", detId, "module rawId; join key to the refit hit table detId");
+    tab->addColumn<uint16_t>("idxInDet", idxInDet,
+                             "position of the cluster within its module; (detId, idxInDet) is a stable key");
     tab->addColumn<float>("localX", localX, "cluster position, module-local x [cm]", 16);
-    tab->addColumn<float>("localY", localY, "cluster position, module-local y [cm]", 16);
+    tab->addColumn<float>("localY", localY,
+                          "cluster position, module-local y [cm]; along z on TBPX, along the radius "
+                          "(pointing inward) on a disc", 16);
     tab->addColumn<float>("globalR", globalR,
                           "POSITION. Cylindrical radius of WHERE THE CLUSTER IS [cm]", 16);
     tab->addColumn<float>("globalPhi", globalPhi,
@@ -279,7 +306,7 @@ public:
     tab->addColumn<float>("sigGlobalClusterCotTheta", sigGlobalClusterCotTheta,
                           "Uncertainty on globalClusterCotTheta, same propagation", 12);
     tab->addColumn<float>("sigX", sigX, "CPE position uncertainty, local x [cm]", 10);
-    tab->addColumn<float>("sigY", sigY, "CPE position uncertainty, local y [cm]", 10);
+    tab->addColumn<float>("sigY", sigY, "CPE position uncertainty, local y [cm] (sigma_r on a disc)", 10);
     tab->addColumn<uint8_t>("sizeX", sizeX, "cluster bounding-box extent in pixels, local x");
     tab->addColumn<uint8_t>("sizeY", sizeY, "cluster bounding-box extent in pixels, local y");
     tab->addColumn<uint16_t>("size", size, "FIRED-PIXEL COUNT (not the bounding box): charge/size is "
@@ -287,7 +314,9 @@ public:
     tab->addColumn<float>("charge", charge, "cluster charge [ADC]", 10);
     tab->addColumn<float>("localCotAlpha", localCotAlpha,
                           "SENSOR angle estimate, module-local cotAlpha (-999 if none)", 12);
-    tab->addColumn<float>("localCotBeta", localCotBeta, "SENSOR angle estimate, cotBeta", 12);
+    tab->addColumn<float>("localCotBeta", localCotBeta,
+                          "SENSOR angle estimate, cotBeta (signed; on a disc the sign flips with the module "
+                          "facing, use globalClusterCotTheta to compare directions)", 12);
     tab->addColumn<float>("sigAlpha", sigAlpha, "angle-estimator resolution, alpha", 10);
     tab->addColumn<float>("sigBeta", sigBeta, "angle-estimator resolution, beta", 10);
     tab->addColumn<uint8_t>("hasAlpha", hasAlpha,
@@ -336,9 +365,10 @@ public:
         ->setComment("SmartPixelsRecHit + Truth (same label): the single source of the "
                      "sensor angle, shared with the refit so selClusterIdx is exact");
     desc.add<std::string>("tableName", "L1TSmartPixelsCluster");
-    desc.add<std::string>("subdetector", "barrel")
-        ->setComment("'barrel' (TBPX, layer column) or 'endcap' (TFPX/TEPX, disk/side/ring columns)");
-    desc.add<unsigned>("maxLayer", 4)->setComment("highest TBPX layer kept (SmartPixels scope is 1..4)");
+    desc.add<std::string>("discScope", "sp")
+        ->setComment("disc rows: none | sp (ID1-ID4) | tfpx | all. MUST equal the rec hits' discScope (checked)");
+    desc.add<unsigned>("maxLayer", 4)
+        ->setComment("highest TBPX layer kept (SmartPixels scope is 1..4); MUST equal the rec hits' (checked)");
     desc.add<bool>("doTruth", true)
         ->setComment("attach the TRUTH-ONLY tp* block (tpIdx, tpPt, tpChargeFrac, "
                      "tpLocalCot*, tpGlobalCluster*)");
@@ -351,9 +381,11 @@ private:
   const edm::ESGetToken<TrackerTopology, TrackerTopologyRcd> topoToken_;
   const edm::ESGetToken<TrackerGeometry, TrackerDigiGeometryRecord> geomToken_;
   const std::string tableName_;
-  const bool discs_;
+  const std::string discScope_;
   const unsigned maxLayer_;
+  const unsigned maxDisk_;
   const bool doTruth_;
+  bool scopeChecked_ = false;
 };
 
 DEFINE_FWK_MODULE(L1SmartPixelsClusterTableProducer);

@@ -4,7 +4,7 @@ Rebuilds the SmartPixels-owned cluster chain exactly as the nano jobs do
 (customizeSmartPixels_cff.ensureSmartPixelsRecHits: spixPixelClusters ->
 spixPixelRecHits -> spixSmartPixelsRecHits, from simSiPixelDigis:Pixel) with the
 v4fixed PixelAV payload + noise v6 (as spix_sweep15_500), then writes one TTree row
-per TBPX cluster and, with includeDiscs=1 (default), per TFPX/TEPX disc cluster.
+per TBPX cluster and per disc cluster in discScope (default all = TFPX + TEPX).
 
   cmsRun runClusterAdcNtuple_cfg.py maxEvents=5 outputFile=/work/clusterntuple/test5.root
 """
@@ -19,8 +19,8 @@ o = VarParsing("analysis")
 o.register("fileIdx", "1", VarParsing.multiplicity.singleton, VarParsing.varType.string,
            "comma list of RelVal file indices")
 o.register("nThreads", 4, VarParsing.multiplicity.singleton, VarParsing.varType.int, "threads")
-o.register("includeDiscs", 1, VarParsing.multiplicity.singleton, VarParsing.varType.int,
-           "also ntuple the disc clusters (rec-hit producer includeDiscs)")
+o.register("discScope", "all", VarParsing.multiplicity.singleton, VarParsing.varType.string,
+           "disc clusters to ntuple (rec-hit producer discScope): none | sp | tfpx | all")
 o.register("angleSource", "payload", VarParsing.multiplicity.singleton, VarParsing.varType.string,
            "rec-hit angle source: payload (pCot* = PixelAV draw) or cnn (pCot* = CMSSW CNN inference)")
 o.register("skip", 0, VarParsing.multiplicity.singleton, VarParsing.varType.int, "skipEvents")
@@ -47,12 +47,11 @@ process.MessageLogger.cerr.FwkReport.reportEvery = 10
 
 from L1Trigger.Phase3SmartPixels.customizeSmartPixels_cff import ensureSmartPixelsRecHits
 if o.angleSource == "cnn":
-    ensureSmartPixelsRecHits(process, "", "", angleSource="cnn")
+    ensureSmartPixelsRecHits(process, "", "", angleSource="cnn", discScope=o.discScope)
 else:
     ensureSmartPixelsRecHits(process,
                              "/work/spxsmoke/spix_angle_response_Conv1D_Full-2bit_v4fixed.json",
-                             "/work/spxsmoke/smarthit_noise_v6.json")
-process.spixSmartPixelsRecHits.includeDiscs = bool(o.includeDiscs)
+                             "/work/spxsmoke/smarthit_noise_v6.json", discScope=o.discScope)
 
 process.clusterAdcNtuple = cms.EDAnalyzer("SmartPixelsClusterAdcNtuplizer")
 process.TFileService = cms.Service("TFileService", fileName=cms.string(o.outputFile))
