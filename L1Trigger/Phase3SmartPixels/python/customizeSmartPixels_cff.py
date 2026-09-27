@@ -102,7 +102,8 @@ DIGIREFIT_DEFAULTS = {
     # --- track emission ---
     "minHits": 1,             # min attached IT hits required to emit a refit track
     # --- fidelity handle: which synthesized angle(s) enter the refit ---
-    "useAngles": "alpha",     # "none" | "alpha" | "alphaBeta"
+    # alphaBeta (both angles) is the INTENDED PRODUCTION SETTING; none/alpha are ablations.
+    "useAngles": "alphaBeta",  # "none" | "alpha" | "alphaBeta"
     # --- FPGA-fidelity / truncation handles (float impl, switchable) ---
     "maxHitsPerWindow": 8,    # combinatorics truncation: max in-window digis kept per layer
     "maxKFUpdates": 4,        # max Kalman updates applied (layer/update cap)

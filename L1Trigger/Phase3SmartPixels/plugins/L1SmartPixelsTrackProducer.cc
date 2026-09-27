@@ -347,7 +347,7 @@ private:
   std::vector<double> digiRefitWindowRPhi_;  // module-local x
   std::vector<double> digiRefitWindowZ_;     // module-local y
   int digiRefitMinHits_ = 1;            // min attached IT hits to emit a refit track
-  std::string digiRefitUseAngles_ = "alpha";  // "none" | "alpha" | "alphaBeta"
+  std::string digiRefitUseAngles_ = "alphaBeta";  // "none" | "alpha" | "alphaBeta"
   int digiRefitMaxHitsPerWindow_ = 8;   // combinatorics truncation
   double digiRefitClusterMergeFrac_ = 0.1;  // runner-up charge share that flags a merged cluster
   int digiRefitMaxKFUpdates_ = 4;       // KF update / layer cap
@@ -2383,7 +2383,9 @@ void L1SmartPixelsTrackProducer::fillDescriptions(edm::ConfigurationDescriptions
   desc.add<std::vector<double>>("digiRefitWindowZ", std::vector<double>{0.45, 0.35, 0.25, 0.2})
       ->setComment("per-layer z search-window half-widths [cm] (TBPX L1-L4)");
   desc.add<int>("digiRefitMinHits", 1)->setComment("min attached IT hits to emit a refit track (else passthrough copy)");
-  desc.add<std::string>("digiRefitUseAngles", "alpha")->setComment("which synthesized angles enter the refit: none | alpha | alphaBeta");
+  desc.add<std::string>("digiRefitUseAngles", "alphaBeta")
+      ->setComment("which synthesized angles enter the refit: none | alpha | alphaBeta (alphaBeta = the intended "
+                   "production setting; none/alpha are ablations)");
   desc.add<int>("digiRefitMaxHitsPerWindow", 8)
       ->setComment("combinatorics truncation: max in-window CLUSTERS kept per layer (readout order). This is a "
                    "LATENCY model of the match stage, not a fidelity knob: every surviving candidate costs time "
