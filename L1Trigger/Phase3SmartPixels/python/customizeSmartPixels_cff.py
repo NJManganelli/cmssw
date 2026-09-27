@@ -67,21 +67,26 @@ DEFAULT_CORRECTION_SET = "L1Trigger/Phase3SmartPixels/data/spixel_smear_all_conf
 DIGIREFIT_USEANGLES_CHOICES = ("none", "alpha", "alphaBeta")
 DIGIREFIT_GAINMODE_CHOICES = ("full", "lut")
 DIGIREFIT_LAYERORDER_CHOICES = ("outsideIn", "insideOut")
-DIGIREFIT_ANGLESOURCE_CHOICES = ("payload", "cnn")
+DIGIREFIT_ANGLESOURCE_CHOICES = ("payload", "emu")
 # Disc clusters in the rec hits and the cluster table: none | sp = ID1-ID4 (TFPX
 # disks 1-4, the smart-pixel discs) | tfpx = TFPX 1-8 | all = TFPX + TEPX (studies).
 DISCSCOPE_CHOICES = ("none", "sp", "tfpx", "all")
 
-# Angle source "cnn": the cluster CNN (ngtagger-train eval_spixel_angles/cluster_cnn),
-# exported to ONNX, plus its static resolution table. Scalar lists are the models'
-# norm.json "cols", in order (export_onnx.py prints them).
-SPIX_CNN_ANGLE_SOURCE = dict(
-    cnnBarrelModel="L1Trigger/Phase3SmartPixels/data/cluster_cnn/spix_cnn_barrel_v1.onnx",
-    cnnBarrelScalars=["l1", "l2", "l3", "l4", "sizeX", "sizeY", "size", "logq", "adcSum", "truncX", "truncY", "nPxLost"],
-    cnnDiscModel="L1Trigger/Phase3SmartPixels/data/cluster_cnn/spix_cnn_disc_v1.onnx",
-    cnnDiscScalars=["d%d" % d for d in range(1, 13)] + ["sizeX", "sizeY", "size", "logq", "adcSum", "truncX",
-                                                          "truncY", "nPxLost"],
-    cnnSigmaSet="L1Trigger/Phase3SmartPixels/data/cluster_cnn/spix_cnn_angle_sigma_v1.json",
+# Angle source "emu": the SmartPixels-output emulator (ngtagger-train
+# eval_spixel_angles/cluster_cnn, emu_*.py): the pos-hubsig CNNs (ONNX), the library
+# (rescaled SmartPixels dump + class-T donors of training events) and the static
+# resolution table. Scalar lists are the models' norm.json "cols", in order
+# (emu_export_onnx.py prints them). The library is NOT in git (size); data/README.md.
+_SPIX_EMU_POS = ["is3D", "axXz", "axYz", "axZz", "axXr", "axYr", "axZr", "sideZ", "pu", "pv", "pw", "globalR", "globalZ",
+                 "localX", "localY"]
+_SPIX_EMU_SHAPE = ["sizeX", "sizeY", "size", "logq", "adcSum", "truncX", "truncY", "nPxLost"]
+SPIX_EMU_ANGLE_SOURCE = dict(
+    emuBarrelModel="L1Trigger/Phase3SmartPixels/data/smartpixels_emu/spix_emu_cnn_barrel_v1.onnx",
+    emuBarrelScalars=["l1", "l2", "l3", "l4"] + _SPIX_EMU_SHAPE + _SPIX_EMU_POS,
+    emuDiscModel="L1Trigger/Phase3SmartPixels/data/smartpixels_emu/spix_emu_cnn_disc_v1.onnx",
+    emuDiscScalars=["d%d" % d for d in range(1, 13)] + _SPIX_EMU_SHAPE + _SPIX_EMU_POS,
+    emuLibrary="L1Trigger/Phase3SmartPixels/data/smartpixels_emu/spix_emu_library_v1.root",
+    emuSigmaSet="L1Trigger/Phase3SmartPixels/data/smartpixels_emu/spix_emu_sigma_v1.json",
 )
 
 DIGIREFIT_DEFAULTS = {
@@ -141,11 +146,12 @@ DIGIREFIT_DEFAULTS = {
     "pixelavAngleSet": "",    # PixelAV angle sigma/bias response payload
     # --- where the rec-hit angle comes from ---
     # "payload": PixelAV draw keyed on the TP truth angle (+ smarthitFakeSet for unlinked).
-    # "cnn": the cluster CNN on the digi ADC map, identical for every cluster and with no
-    # truth input, discs included. Takes no pixelavAngleSet/smarthitFakeSet.
+    # "emu": the SmartPixels-output emulator (truth-derived pseudo-truth + the SmartPixels
+    # dump response, x1.5 spread), every cluster, discs included. Takes no
+    # pixelavAngleSet/smarthitFakeSet; discScope none|sp only.
     "angleSource": "payload",
     # Disc clusters in the rec hits and in L1TSmartPixelsCluster (DISCSCOPE_CHOICES).
-    # The payload source gives disc clusters no angle; the CNN source does.
+    # The payload source gives disc clusters no angle; the emu source does.
     "discScope": "sp",
     # --- optional refit-aware TkQuality BDT ---
     "bdtModel": "",           # optional path to the refit TkQuality BDT model (empty = none)
@@ -191,9 +197,13 @@ def _resolveDigiRefitConfig(digiRefitConfig=None):
     raise ValueError(
         f"digiRefitConfig['discScope']={resolved['discScope']!r} invalid; "
         f"must be one of {DISCSCOPE_CHOICES}")
-  if resolved["angleSource"] == "cnn" and (resolved["pixelavAngleSet"] or resolved["smarthitFakeSet"]):
+  if resolved["angleSource"] == "emu" and resolved["discScope"] not in ("none", "sp"):
     raise ValueError(
-        "digiRefitConfig['angleSource']='cnn' takes no pixelavAngleSet/smarthitFakeSet: "
+        f"digiRefitConfig['angleSource']='emu' supports discScope none|sp (its library covers ID1-ID4), "
+        f"got {resolved['discScope']!r}")
+  if resolved["angleSource"] == "emu" and (resolved["pixelavAngleSet"] or resolved["smarthitFakeSet"]):
+    raise ValueError(
+        "digiRefitConfig['angleSource']='emu' takes no pixelavAngleSet/smarthitFakeSet: "
         "every cluster gets the CNN angle, so a payload would silently go unused")
   if resolved["seedNPar"] not in (4, 5):
     raise ValueError(
@@ -396,8 +406,8 @@ def ensureSmartPixelsRecHits(process, angleSet, noiseSet="", digiTag=SPIX_PIXEL_
   sensor angle estimate: before this existed the synthesis lived inside the refit
   producer's event loop and could only be reused by copying it.
 
-  angleSource="cnn" configures the cluster-CNN angle (SPIX_CNN_ANGLE_SOURCE; angleSet and
-  noiseSet must be empty). discScope (DISCSCOPE_CHOICES) selects the disc clusters, and an
+  angleSource="emu" configures the SmartPixels-output emulator (SPIX_EMU_ANGLE_SOURCE;
+  angleSet and noiseSet must be empty). discScope (DISCSCOPE_CHOICES) selects the disc clusters, and an
   existing cluster nano table is set to the same scope (the table also checks it at run time).
   """
   if angleSource not in DIGIREFIT_ANGLESOURCE_CHOICES:
@@ -421,13 +431,10 @@ def ensureSmartPixelsRecHits(process, angleSet, noiseSet="", digiTag=SPIX_PIXEL_
         noiseSet=cms.string(noiseSet),
         angleSource=cms.string(angleSource),
         discScope=cms.string(discScope))
-    if angleSource == "cnn":
-      src = SPIX_CNN_ANGLE_SOURCE
-      process.spixSmartPixelsRecHits.cnnBarrelModel = cms.string(src["cnnBarrelModel"])
-      process.spixSmartPixelsRecHits.cnnBarrelScalars = cms.vstring(*src["cnnBarrelScalars"])
-      process.spixSmartPixelsRecHits.cnnDiscModel = cms.string(src["cnnDiscModel"])
-      process.spixSmartPixelsRecHits.cnnDiscScalars = cms.vstring(*src["cnnDiscScalars"])
-      process.spixSmartPixelsRecHits.cnnSigmaSet = cms.string(src["cnnSigmaSet"])
+    if angleSource == "emu":
+      for name, value in SPIX_EMU_ANGLE_SOURCE.items():
+        setattr(process.spixSmartPixelsRecHits, name,
+                cms.vstring(*value) if isinstance(value, list) else cms.string(value))
     process.spixSmartPixelsRecHitTask = cms.Task(process.spixSmartPixelsRecHits)
     if hasattr(process, "spixPixelRecHitTask"):
       process.spixSmartPixelsRecHitTask.add(process.spixPixelRecHitTask)
