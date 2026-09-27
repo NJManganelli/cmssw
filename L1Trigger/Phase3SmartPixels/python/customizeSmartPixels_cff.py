@@ -88,7 +88,7 @@ SPIX_EMU_ANGLE_SOURCE = dict(
     emuDiscA1=_SPIX_EMU_DATA + "spix_emu_a1_disc_v2.onnx",
     emuDiscScalars=["d1", "d2", "d3", "d4"] + _SPIX_EMU_SHAPE + ["axZz"] + _SPIX_EMU_POS,
     emuLibrary=_SPIX_EMU_DATA + "spix_emu_library_v2.root",
-    emuSigmaSet=_SPIX_EMU_DATA + "spix_emu_sigma_v3.json",
+    emuSigmaSet=_SPIX_EMU_DATA + "spix_emu_sigma_v2.json",
 )
 
 DIGIREFIT_DEFAULTS = {
