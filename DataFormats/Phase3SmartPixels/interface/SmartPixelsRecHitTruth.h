@@ -48,6 +48,13 @@ public:
 
   uint16_t idxInDet() const { return idxInDet_; }
 
+  // Class of the SmartPixels-output emulator (angleSource "emu"): T = the angle was
+  // emulated from this TP's truth, C = from the CNN + a donor residual. A truth tell by
+  // construction -- for validating the emulator only, never a feature.
+  static constexpr int8_t kEmuClassNone = -1, kEmuClassC = 0, kEmuClassT = 1;
+  int8_t emuClass() const { return emuClass_; }
+  void setEmuClass(int8_t c) { emuClass_ = c; }
+
   void set(const TrackingParticleRef& tp, float frac, bool merged,
            float trueCotAlpha, float trueCotBeta, uint16_t idxInDet) {
     tp_ = tp;
@@ -64,6 +71,7 @@ private:
   bool merged_ = false;
   float trueCotAlpha_ = -999.f, trueCotBeta_ = -999.f;
   uint16_t idxInDet_ = 0;
+  int8_t emuClass_ = kEmuClassNone;
 };
 
 using SmartPixelsRecHitTruthCollection = edmNew::DetSetVector<SmartPixelsRecHitTruth>;
