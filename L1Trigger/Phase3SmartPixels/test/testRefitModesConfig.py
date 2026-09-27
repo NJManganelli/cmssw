@@ -592,10 +592,15 @@ for scope in (None, "none"):
         check(not hasattr(pc.spixSmartPixelsRecHits, "includeDiscs"),
               "rec hits have no includeDiscs parameter")
         check(pc.spixSmartPixelsRecHits.angleSource.value() == "emu"
-              and pc.spixSmartPixelsRecHits.emuLibrary.value().endswith("spix_emu_library_v1.root")
-              and len(pc.spixSmartPixelsRecHits.emuBarrelScalars) == 27
-              and len(pc.spixSmartPixelsRecHits.emuDiscScalars) == 35,
+              and pc.spixSmartPixelsRecHits.emuLibrary.value().endswith("spix_emu_library_v2.root")
+              and pc.spixSmartPixelsRecHits.emuBarrelA1.value().endswith("spix_emu_a1_barrel_v2.onnx")
+              and pc.spixSmartPixelsRecHits.emuDiscA1.value().endswith("spix_emu_a1_disc_v2.onnx")
+              and len(pc.spixSmartPixelsRecHits.emuBarrelScalars) == 23
+              and len(pc.spixSmartPixelsRecHits.emuDiscScalars) == 21,
               "emu source wired with its models, scalars and library")
+        check(not hasattr(pc.spixSmartPixelsRecHits, "emuTruthPtMin")
+              and not hasattr(pc.spixSmartPixelsRecHits, "emuDonorK"),
+              "emu class T has no pT cut and no donor library")
 expect_raises(ValueError, lambda: _resolveDigiRefitConfig({"angleSource": "emu", "discScope": "all"}),
               "emu with discScope all raises ValueError", contains="discScope")
 expect_raises(ValueError, lambda: _resolveDigiRefitConfig({"angleSource": "emu", "pixelavAngleSet": "x.json"}),
