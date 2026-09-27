@@ -80,9 +80,12 @@
 //  table (emuSigmaSet) keyed on sensor-reported quantities only: the surface code, the
 //  cluster size(s) (as the table declares; the size counts as sensor-reported) and the
 //  |reported cot|. EVERY emu cluster reports both angles (hasAlpha = hasBeta = true): a
-//  validity flag that depended on the value would tell class C from class T, so the |cot|
-//  cap (measAngleMaxAbs) is applied by the algorithms that need it, e.g. the refit. The
-//  class is TRUTH (SmartPixelsRecHitTruth::emuClass), for validation only.
+//  validity flag that depended on the value would tell class C from class T. The class
+//  is TRUTH (SmartPixelsRecHitTruth::emuClass), for validation only.
+//
+// NO |cot| CAP HERE, for either source: hasAlpha/hasBeta only say whether the sensor
+// reports the angle at all (payload: the PixelAV validity gate; emu: always). The cap
+// is applied by the algorithms that need it (the refit: digiRefitMeasAngleMaxAbs).
 
 #include "FWCore/Framework/interface/Event.h"
 #include "FWCore/Framework/interface/EventSetup.h"
@@ -348,7 +351,6 @@ private:
   const unsigned maxLayer_;
   const unsigned maxDisk_;
   const double clusterMergeFrac_;
-  const double measAngleMaxAbs_;
   const bool useEmu_;
   std::string angleSetPath_;
 
@@ -460,7 +462,6 @@ SmartPixelsRecHitProducer::SmartPixelsRecHitProducer(const edm::ParameterSet& cf
       maxLayer_(cfg.getParameter<unsigned>("maxLayer")),
       maxDisk_(smartpixels::discScopeMaxDisk(cfg.getParameter<std::string>("discScope"))),
       clusterMergeFrac_(cfg.getParameter<double>("clusterMergeFrac")),
-      measAngleMaxAbs_(cfg.getParameter<double>("measAngleMaxAbs")),
       useEmu_(cfg.getParameter<std::string>("angleSource") == "emu") {
   const std::string source = cfg.getParameter<std::string>("angleSource");
   if (source != "payload" && source != "emu")
@@ -704,15 +705,8 @@ void SmartPixelsRecHitProducer::produce(edm::Event& iEvent, const edm::EventSetu
               static_cast<int>(lay), cotA, cotB, bLocalY};
           const double sigA = corrAlphaSigma_->evaluate(pinReco);
           const double sigB = corrBetaSigma_->evaluate(pinReco);
-          bool hasA = sigA > 0., hasB = sigB > 0.;
-          // Grazing clamp lives HERE, not in the fit: a sensor physically cannot
-          // report an angle beyond the bound, so it is a property of the hit.
-          if (std::abs(cotA) > measAngleMaxAbs_)
-            hasA = false;
-          if (std::abs(cotB) > measAngleMaxAbs_)
-            hasB = false;
           hit.setAngles(static_cast<float>(cotA), static_cast<float>(cotB),
-                        static_cast<float>(sigA), static_cast<float>(sigB), hasA, hasB);
+                        static_cast<float>(sigA), static_cast<float>(sigB), sigA > 0., sigB > 0.);
         }
       }
 
@@ -736,13 +730,8 @@ void SmartPixelsRecHitProducer::produce(edm::Event& iEvent, const edm::EventSetu
             static_cast<int>(lay), cotA, cotB, bLocalY};
         const double sigA = corrAlphaSigma_->evaluate(pin);
         const double sigB = corrBetaSigma_->evaluate(pin);
-        bool hasA = sigA > 0., hasB = sigB > 0.;
-        if (std::abs(cotA) > measAngleMaxAbs_)
-          hasA = false;
-        if (std::abs(cotB) > measAngleMaxAbs_)
-          hasB = false;
         hit.setAngles(static_cast<float>(cotA), static_cast<float>(cotB),
-                      static_cast<float>(sigA), static_cast<float>(sigB), hasA, hasB);
+                      static_cast<float>(sigA), static_cast<float>(sigB), sigA > 0., sigB > 0.);
       }
 
       const float frac = (qTot > 0. && qDom > 0.) ? static_cast<float>(qDom / qTot) : -999.f;
@@ -1091,10 +1080,6 @@ void SmartPixelsRecHitProducer::fillDescriptions(edm::ConfigurationDescriptions&
                    "TBPX-only, so disc hits carry no payload angle; the emu source gives them one (none|sp only)");
   desc.add<double>("clusterMergeFrac", 0.1)
       ->setComment("runner-up charge share above which the cluster is flagged merged (TRUTH-ONLY)");
-  desc.add<double>("measAngleMaxAbs", 12.0)
-      ->setComment("payload source only: a sensor cannot report |cot| beyond this; clears hasAlpha/hasBeta "
-                   "for that angle only. The emu source reports every angle (hasAlpha = hasBeta = true, so the "
-                   "flag cannot tell class C from class T); the refit applies the same cap itself.");
   desc.add<std::string>("noiseSet", "")
       ->setComment("inverse-CDF payload giving an angle to clusters with NO simlink "
                    "(smarthit_noise_cotAlpha/Beta). Leaving it empty means unlinked clusters "

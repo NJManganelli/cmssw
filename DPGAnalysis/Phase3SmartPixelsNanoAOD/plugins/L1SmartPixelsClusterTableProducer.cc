@@ -331,10 +331,10 @@ public:
     tab->addColumn<float>("sigAlpha", sigAlpha, "angle-estimator resolution, alpha", 10);
     tab->addColumn<float>("sigBeta", sigBeta, "angle-estimator resolution, beta", 10);
     tab->addColumn<uint8_t>("hasAlpha", hasAlpha,
-                            "sensor reports an alpha. angleSource emu: ALWAYS 1 (a flag that depended on the "
-                            "value would tell class C from class T); algorithms apply their own |cot| cap (the "
-                            "refit: measAngleMaxAbs = 12). payload: 0 outside the PixelAV validity gate or "
-                            "beyond |cot| 12");
+                            "sensor reports an alpha at all, whatever its value: angleSource emu ALWAYS 1 (a "
+                            "flag that depended on the value would tell class C from class T); payload 0 outside "
+                            "the PixelAV validity gate and on discs. Algorithms apply their own |cot| cap (the "
+                            "refit: measAngleMaxAbs = 12)");
     tab->addColumn<uint8_t>("hasBeta", hasBeta, "sensor reports a beta; as hasAlpha");
     tab->addColumn<uint8_t>("satAlpha", satAlpha,
                             "the emulated alpha (angleSource emu) hit its clamp at +-(90 - 0.01) deg: the "
