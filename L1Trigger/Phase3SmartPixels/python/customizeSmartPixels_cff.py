@@ -73,20 +73,22 @@ DIGIREFIT_ANGLESOURCE_CHOICES = ("payload", "emu")
 DISCSCOPE_CHOICES = ("none", "sp", "tfpx", "all")
 
 # Angle source "emu": the SmartPixels-output emulator (ngtagger-train
-# eval_spixel_angles/cluster_cnn, emu_*.py): the pos-hubsig CNNs (ONNX), the library
-# (rescaled SmartPixels dump + class-T donors of training events) and the static
-# resolution table. Scalar lists are the models' norm.json "cols", in order
-# (emu_export_onnx.py prints them). The library is NOT in git (size); data/README.md.
-_SPIX_EMU_POS = ["is3D", "axXz", "axYz", "axZz", "axXr", "axYr", "axZr", "sideZ", "pu", "pv", "pw", "globalR", "globalZ",
-                 "localX", "localY"]
+# eval_spixel_angles/cluster_cnn, emu_*.py): the tiny CNNs and the A1 class-C residual
+# models (ONNX), the rescaled SmartPixels dump (library) and the static resolution
+# table (data/README.md). Scalar lists are the CNNs' norm.json "cols", in order
+# (emu_export_onnx.py prints them).
 _SPIX_EMU_SHAPE = ["sizeX", "sizeY", "size", "logq", "adcSum", "truncX", "truncY", "nPxLost"]
+_SPIX_EMU_POS = ["sideZ", "pu", "pv", "pw", "globalR", "globalZ", "localX", "localY"]
+_SPIX_EMU_DATA = "L1Trigger/Phase3SmartPixels/data/smartpixels_emu/"
 SPIX_EMU_ANGLE_SOURCE = dict(
-    emuBarrelModel="L1Trigger/Phase3SmartPixels/data/smartpixels_emu/spix_emu_cnn_barrel_v1.onnx",
-    emuBarrelScalars=["l1", "l2", "l3", "l4"] + _SPIX_EMU_SHAPE + _SPIX_EMU_POS,
-    emuDiscModel="L1Trigger/Phase3SmartPixels/data/smartpixels_emu/spix_emu_cnn_disc_v1.onnx",
-    emuDiscScalars=["d%d" % d for d in range(1, 13)] + _SPIX_EMU_SHAPE + _SPIX_EMU_POS,
-    emuLibrary="L1Trigger/Phase3SmartPixels/data/smartpixels_emu/spix_emu_library_v1.root",
-    emuSigmaSet="L1Trigger/Phase3SmartPixels/data/smartpixels_emu/spix_emu_sigma_v1.json",
+    emuBarrelModel=_SPIX_EMU_DATA + "spix_emu_cnn_barrel_v2.onnx",
+    emuBarrelA1=_SPIX_EMU_DATA + "spix_emu_a1_barrel_v2.onnx",
+    emuBarrelScalars=["l1", "l2", "l3", "l4"] + _SPIX_EMU_SHAPE + ["is3D", "axXr", "axZr"] + _SPIX_EMU_POS,
+    emuDiscModel=_SPIX_EMU_DATA + "spix_emu_cnn_disc_v2.onnx",
+    emuDiscA1=_SPIX_EMU_DATA + "spix_emu_a1_disc_v2.onnx",
+    emuDiscScalars=["d1", "d2", "d3", "d4"] + _SPIX_EMU_SHAPE + ["axZz"] + _SPIX_EMU_POS,
+    emuLibrary=_SPIX_EMU_DATA + "spix_emu_library_v2.root",
+    emuSigmaSet=_SPIX_EMU_DATA + "spix_emu_sigma_v2.json",
 )
 
 DIGIREFIT_DEFAULTS = {
@@ -204,7 +206,7 @@ def _resolveDigiRefitConfig(digiRefitConfig=None):
   if resolved["angleSource"] == "emu" and (resolved["pixelavAngleSet"] or resolved["smarthitFakeSet"]):
     raise ValueError(
         "digiRefitConfig['angleSource']='emu' takes no pixelavAngleSet/smarthitFakeSet: "
-        "every cluster gets the CNN angle, so a payload would silently go unused")
+        "every cluster gets the emulated angle, so a payload would silently go unused")
   if resolved["seedNPar"] not in (4, 5):
     raise ValueError(
         f"digiRefitConfig['seedNPar']={resolved['seedNPar']!r} invalid; must be 4 or 5")

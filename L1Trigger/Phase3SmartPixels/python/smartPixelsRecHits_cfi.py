@@ -21,6 +21,8 @@ smartPixelsRecHits = cms.EDProducer(
     # emu only (customizeSmartPixels_cff.SPIX_EMU_ANGLE_SOURCE fills the files)
     emuBarrelModel=cms.string(""),
     emuDiscModel=cms.string(""),
+    emuBarrelA1=cms.string(""),
+    emuDiscA1=cms.string(""),
     emuBarrelScalars=cms.vstring(),
     emuDiscScalars=cms.vstring(),
     emuLibrary=cms.string(""),
@@ -29,8 +31,6 @@ smartPixelsRecHits = cms.EDProducer(
     emuDiscAlphaOffset=cms.double(-0.312),
     emuSatEpsDeg=cms.double(0.01),
     emuDumpK=cms.uint32(32),
-    emuDonorK=cms.uint32(10),
-    emuTruthPtMin=cms.double(0.25),
     emuTruthMaxHelixDist=cms.double(1.0),
     emuHelixStep=cms.double(0.2),
     emuDebug=cms.bool(False),

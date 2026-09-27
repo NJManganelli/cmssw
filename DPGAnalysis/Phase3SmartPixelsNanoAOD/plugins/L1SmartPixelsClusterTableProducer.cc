@@ -362,7 +362,7 @@ public:
       tab->addColumn<int16_t>("tpEmuClass", tpEmuClass,
                              "TRUTH-ONLY, VALIDATION ONLY (a truth tell by construction; never a feature): "
                              "SmartPixels-output emulator class, 1 = T (angle emulated from the dominant TP's "
-                             "truth), 0 = C (CNN + donor residual), -1 = not the emu angle source");
+                             "truth), 0 = C (CNN + drawn residual), -1 = not the emu angle source");
     }
     if (closureFail)
         throw cms::Exception("SmartPixelsFrameClosureFailed")

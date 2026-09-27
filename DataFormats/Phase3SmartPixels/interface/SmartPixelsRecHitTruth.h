@@ -49,7 +49,7 @@ public:
   uint16_t idxInDet() const { return idxInDet_; }
 
   // Class of the SmartPixels-output emulator (angleSource "emu"): T = the angle was
-  // emulated from this TP's truth, C = from the CNN + a donor residual. A truth tell by
+  // emulated from this TP's truth, C = from the CNN + a drawn residual. A truth tell by
   // construction -- for validating the emulator only, never a feature.
   static constexpr int8_t kEmuClassNone = -1, kEmuClassC = 0, kEmuClassT = 1;
   int8_t emuClass() const { return emuClass_; }

@@ -58,21 +58,21 @@
 // ANGLE SOURCE "emu" (opt-in; the default "payload" is everything above): the
 // SmartPixels-OUTPUT EMULATOR, a conservative stand-in for what the SmartPixels chip
 // will report (ngtagger-train eval_spixel_angles/cluster_cnn, emulator v4, angle space;
-// python reference emu_reference.py). One procedure for every cluster, barrel IL1-IL4
+// python reference emu_common.py). One procedure for every cluster, barrel IL1-IL4
 // and discs ID1-ID4, linked or not; angles are atan(cot) in DEGREES until the output.
-//  1. Pseudo-truth. CLASS T: the dominant TP is charged, pT >= emuTruthPtMin and its
-//     helix crosses the module plane within emuTruthMaxHelixDist of the hit (the
-//     ntuple's hxDist); pseudo = its helix-propagated angle (the truth angle above).
-//     CLASS C (everything else): pseudo = CNN angle + the (truth - CNN) residual of a
-//     class-T DONOR, one of the emuDonorK nearest in 11 standardised observables per
-//     surface, from a library of TRAINING events shipped with the job (emuLibrary).
-//     The CNN is the pos-hubsig model (ONNX; inputs = the digi ADC window as prep.py
-//     builds it + raw scalars, the graph normalises), run on class-C clusters only
-//     (class T never uses it). Saturated at +-(90 - eps).
+//  1. Pseudo-truth. CLASS T: the dominant TP is charged and its helix crosses the
+//     module plane within emuTruthMaxHelixDist of the hit (the ntuple's hxDist; no pT
+//     cut); pseudo = its helix-propagated angle (the truth angle above).
+//     CLASS C (everything else): pseudo = CNN angle + a residual DRAWN from the A1 model
+//     p(rA | z) p(rB | z, rA) (z = the CNN angles and sigmas, 7 cluster observables and
+//     the surface; trained on class T of TRAINING events). Both are ONNX graphs per
+//     region: the tiny CNN (inputs = the digi ADC window as prep.py builds it + raw
+//     scalars, the graph normalises) and A1 (the draw is inside the graph, fed 4 hash
+//     uniforms). They run on class-C clusters only. Saturated at +-(90 - eps).
 //  2. Response: the emuDumpK nearest rows of the SmartPixels Conv1D_Full-2bit dump
-//     (rescaled, CMS frame) in (alpha, beta) of the pseudo-truth -- on a disc the alpha
-//     key is atan(cotAlpha - 0.312), a Lorentz-offset LOOKUP KEY only -- give the bias
-//     (median residual) and ONE drawn row r, the same for alpha and beta:
+//     (rescaled, CMS frame; emuLibrary) in (alpha, beta) of the pseudo-truth -- on a
+//     disc the alpha key is atan(cotAlpha - 0.312), a Lorentz-offset LOOKUP KEY only --
+//     give the bias (median residual) and ONE drawn row r, the same for alpha and beta:
 //     out = pseudo + bias + emuInflation * (r - bias), saturated (satAlpha/satBeta
 //     flag the clamp; never wrapped), reported as cot = tan(out) in the module frame.
 //  Every draw is a hash of (run, event, detId, idxInDet) with a salt per draw, so the
@@ -160,21 +160,26 @@ namespace {
     return static_cast<double>(z >> 11) * (1.0 / 9007199254740992.0);  // [0,1)
   }
 
-  // ---- emu: the cluster hash, MUST match emu_common.hash_index -----------------
+  // ---- emu: the cluster hash, MUST match emu_common.hash_u -----------------------
   inline uint64_t mix64(uint64_t z) {
     z = (z ^ (z >> 30)) * 0xBF58476D1CE4E5B9ull;
     z = (z ^ (z >> 27)) * 0x94D049BB133111EBull;
     return z ^ (z >> 31);
   }
-  constexpr uint64_t kSaltDonor = 0xD0A0D0A0D0A0D0A1ull, kSaltDump = 0x5A7E11175A7E1117ull;
-  // index in [0, k) from the stable cluster key (run, event, detId, idxInDet)
-  inline unsigned emuHashIndex(uint64_t run, uint64_t event, uint32_t detId, uint16_t idxInDet, uint64_t salt, unsigned k) {
+  constexpr uint64_t kSaltDump = 0x5A7E11175A7E1117ull;
+  // the A1 draw: (bin, position in bin) for alpha, then for beta
+  constexpr uint64_t kSaltA1[4] = {
+      0xA2A2A2A2A2A2A201ull, 0xA2A2A2A2A2A2A202ull, 0xA2A2A2A2A2A2A203ull, 0xA2A2A2A2A2A2A204ull};
+  // uniform in [0, 1) from the stable cluster key (run, event, detId, idxInDet)
+  inline double emuHashU(uint64_t run, uint64_t event, uint32_t detId, uint16_t idxInDet, uint64_t salt) {
     uint64_t h = mix64(((static_cast<uint64_t>(detId) << 16) | idxInDet) + 0x9E3779B97F4A7C15ull);
     h = mix64(h ^ event);
     h = mix64(h ^ run);
     h = mix64(h ^ salt);
-    const double u = static_cast<double>(h >> 11) * (1.0 / 9007199254740992.0);
-    return std::min(static_cast<unsigned>(u * k), k - 1);
+    return static_cast<double>(h >> 11) * (1.0 / 9007199254740992.0);
+  }
+  inline unsigned emuHashIndex(uint64_t run, uint64_t event, uint32_t detId, uint16_t idxInDet, uint64_t salt, unsigned k) {
+    return std::min(static_cast<unsigned>(emuHashU(run, event, detId, idxInDet, salt) * k), k - 1);
   }
 
   constexpr double kDegPerRad = 180.0 / M_PI, kRadPerDeg = M_PI / 180.0;
@@ -237,11 +242,9 @@ namespace {
     return out;
   }
 
-  // Module orientation / position inputs of the pos-hubsig CNN, computed EXACTLY as the
-  // training did (ntuple float columns, then v2_common.derived() in numpy float32, no
-  // fused multiply-add). Bit-exactness matters: several inputs are geometry rounding
-  // residues (training sd ~1e-16, e.g. barrel axXz/axZz/axYr) that the normalisation
-  // amplifies to O(1), and the trained network does use them.
+  // Module orientation / position inputs of the CNN, computed as the training did
+  // (ntuple float columns, then v2_common.derived() in numpy float32, no fused
+  // multiply-add), so the closure test compares like with like.
   struct ModuleFrame {
     float axXx, axXy, axXz, axYx, axYy, axYz, axZx, axZy, axZz;  // local axes in global coordinates
     float axXr, axYr, axZr;                                     // their module-centre radial projections
@@ -269,6 +272,10 @@ namespace {
     const float dn = std::sqrt(dx * dx + dy * dy + dz * dz);
     return {lx / dn, ly / dn, lz / dn};
   }
+  // Orientation inputs are rounded to 1e-6 (numpy.round in double, as
+  // emu_common.cnn_scalars): the raw values carry geometry rounding residues (~1e-16)
+  // that differ across geometry/release/arch and must not reach the network.
+  inline float roundOrientation(float v) { return static_cast<float>(std::nearbyint(static_cast<double>(v) * 1e6) / 1e6); }
 
   // The response in angle space, contraction-free as numpy: the MEDIAN of the dump
   // residuals, then out = pseudo + bias + k (r - bias).
@@ -285,23 +292,19 @@ namespace {
 // Everything the emu source loads once and shares read-only between streams, plus
 // the job-level counters its summary reports.
 struct SmartPixelsEmuCache {
-  static constexpr unsigned kNObs = 11;
-  struct Donors {
-    std::array<double, kNObs> mu{}, sd{};
-    std::vector<float> resA, resB;
-    smartpixels::KnnTree tree;
-  };
-  std::unique_ptr<cms::Ort::ONNXRuntime> barrel, disc;
+  // A1 inputs: CNN alpha, beta, sigma alpha, sigma beta [deg], sizeX, sizeY, log charge,
+  // r, |z|, localX, localY, then the surface one-hot (layer or disk 1-4)
+  static constexpr unsigned kNA1 = 15;
+  std::unique_ptr<cms::Ort::ONNXRuntime> barrel, disc, a1Barrel, a1Disc;
   std::vector<float> dumpRA, dumpRB;
   smartpixels::KnnTree dumpTree;
-  std::array<Donors, smartpixels::kMaxSurfaceCode + 1> donors;
   double setupSeconds = 0.;
 
   // [surface][class C = 0, T = 1]
   mutable std::array<std::array<std::atomic<uint64_t>, 2>, smartpixels::kMaxSurfaceCode + 1> nClusters{}, nSatA{},
       nSatB{}, nPseudoSat{};
   // wall time per step [ns], summed over streams
-  enum Step { kHelix, kCnn, kDonor, kDump, kDraw, kNSteps };
+  enum Step { kHelix, kCnnInput, kCnn, kA1, kDump, kOther, kNSteps };
   mutable std::array<std::atomic<uint64_t>, kNSteps> stepNs{};
 };
 
@@ -318,7 +321,7 @@ private:
   struct EmuHit {
     bool classT = false;
     float trueCotA = 0.f, trueCotB = 0.f;
-    float hxDist = -1.f;  // -1: not evaluated (no charged dominant TP above emuTruthPtMin)
+    float hxDist = -1.f;  // -1: not evaluated (no charged dominant TP)
     GlobalPoint gp;
   };
   void setEmuAngles(std::vector<SmartPixelsRecHit>&,
@@ -348,8 +351,8 @@ private:
   edm::EDGetTokenT<edm::DetSetVector<PixelDigi>> digiToken_;
   std::vector<CnnScalar> emuBarrelScalars_, emuDiscScalars_;
   double emuInflation_ = 0., emuDiscAlphaOffset_ = 0., emuSat_ = 0.;
-  unsigned emuDumpK_ = 0, emuDonorK_ = 0;
-  double emuTruthPtMin_ = 0., emuTruthMaxHelixDist_ = 0., emuHelixStep_ = 0.;
+  unsigned emuDumpK_ = 0;
+  double emuTruthMaxHelixDist_ = 0., emuHelixStep_ = 0.;
   bool emuDebug_ = false;
   std::unique_ptr<correction::CorrectionSet> emuSigmaSet_;
   correction::Correction::Ref corrEmuAlphaSigma_, corrEmuBetaSigma_;
@@ -367,92 +370,42 @@ std::unique_ptr<SmartPixelsEmuCache> SmartPixelsRecHitProducer::initializeGlobal
   if (cfg.getParameter<std::string>("angleSource") != "emu")
     return cache;
   const auto t0 = std::chrono::steady_clock::now();
-  cache->barrel =
-      std::make_unique<cms::Ort::ONNXRuntime>(edm::FileInPath(cfg.getParameter<std::string>("emuBarrelModel")).fullPath());
-  if (smartpixels::discScopeMaxDisk(cfg.getParameter<std::string>("discScope")) > 0)
-    cache->disc =
-        std::make_unique<cms::Ort::ONNXRuntime>(edm::FileInPath(cfg.getParameter<std::string>("emuDiscModel")).fullPath());
+  const auto onnx = [&cfg](const char* name) {
+    return std::make_unique<cms::Ort::ONNXRuntime>(edm::FileInPath(cfg.getParameter<std::string>(name)).fullPath());
+  };
+  cache->barrel = onnx("emuBarrelModel");
+  cache->a1Barrel = onnx("emuBarrelA1");
+  if (smartpixels::discScopeMaxDisk(cfg.getParameter<std::string>("discScope")) > 0) {
+    cache->disc = onnx("emuDiscModel");
+    cache->a1Disc = onnx("emuDiscA1");
+  }
 
   const std::string lib = edm::FileInPath(cfg.getParameter<std::string>("emuLibrary")).fullPath();
   std::unique_ptr<TFile> f(TFile::Open(lib.c_str(), "READ"));
   if (!f || f->IsZombie())
     throw cms::Exception("Configuration") << "cannot open emuLibrary " << lib;
-  auto tree = [&](const char* name) {
-    auto* t = f->Get<TTree>(name);
-    if (t == nullptr)
-      throw cms::Exception("Configuration") << "emuLibrary " << lib << " has no tree '" << name << "'";
-    return t;
-  };
-  {  // the SmartPixels dump: lookup key (tA, tB), residuals (rA, rB) [deg]
-    TTree* t = tree("dump");
-    float tA, tB, rA, rB;
-    t->SetBranchAddress("tA", &tA);
-    t->SetBranchAddress("tB", &tB);
-    t->SetBranchAddress("rA", &rA);
-    t->SetBranchAddress("rB", &rB);
-    std::vector<double> pts;
-    pts.reserve(2 * t->GetEntries());
-    for (Long64_t i = 0; i < t->GetEntries(); ++i) {
-      t->GetEntry(i);
-      pts.push_back(tA);
-      pts.push_back(tB);
-      cache->dumpRA.push_back(rA);
-      cache->dumpRB.push_back(rB);
-    }
-    cache->dumpTree = smartpixels::KnnTree(std::move(pts), 2);
+  // the SmartPixels dump: lookup key (tA, tB), residuals (rA, rB) [deg]
+  auto* t = f->Get<TTree>("dump");
+  if (t == nullptr)
+    throw cms::Exception("Configuration") << "emuLibrary " << lib << " has no tree 'dump'";
+  float tA, tB, rA, rB;
+  t->SetBranchAddress("tA", &tA);
+  t->SetBranchAddress("tB", &tB);
+  t->SetBranchAddress("rA", &rA);
+  t->SetBranchAddress("rB", &rB);
+  std::vector<double> pts;
+  pts.reserve(2 * t->GetEntries());
+  for (Long64_t i = 0; i < t->GetEntries(); ++i) {
+    t->GetEntry(i);
+    pts.push_back(tA);
+    pts.push_back(tB);
+    cache->dumpRA.push_back(rA);
+    cache->dumpRB.push_back(rB);
   }
-  static const char* obs[SmartPixelsEmuCache::kNObs] = {
-      "cnnA", "cnnB", "sigA", "sigB", "sizeX", "sizeY", "logq", "r", "absz", "localX", "localY"};
-  {  // per-surface standardisation of the donor observables
-    TTree* t = tree("norm");
-    int surface;
-    std::array<double, SmartPixelsEmuCache::kNObs> mu, sd;
-    t->SetBranchAddress("surface", &surface);
-    for (unsigned j = 0; j < SmartPixelsEmuCache::kNObs; ++j) {
-      t->SetBranchAddress((std::string("mu_") + obs[j]).c_str(), &mu[j]);
-      t->SetBranchAddress((std::string("sd_") + obs[j]).c_str(), &sd[j]);
-    }
-    for (Long64_t i = 0; i < t->GetEntries(); ++i) {
-      t->GetEntry(i);
-      if (surface < 1 || surface > static_cast<int>(smartpixels::kMaxSurfaceCode))
-        throw cms::Exception("Configuration") << "emuLibrary norm: bad surface " << surface;
-      cache->donors[surface].mu = mu;
-      cache->donors[surface].sd = sd;
-    }
-  }
-  {  // class-T donors, sorted by surface; library index = row within the surface
-    TTree* t = tree("donors");
-    int surface;
-    std::array<float, SmartPixelsEmuCache::kNObs> x;
-    float resA, resB;
-    t->SetBranchAddress("surface", &surface);
-    for (unsigned j = 0; j < SmartPixelsEmuCache::kNObs; ++j)
-      t->SetBranchAddress(obs[j], &x[j]);
-    t->SetBranchAddress("resA", &resA);
-    t->SetBranchAddress("resB", &resB);
-    std::array<std::vector<double>, smartpixels::kMaxSurfaceCode + 1> pts;
-    for (Long64_t i = 0; i < t->GetEntries(); ++i) {
-      t->GetEntry(i);
-      auto& d = cache->donors.at(surface);
-      if (d.sd[0] == 0.)
-        throw cms::Exception("Configuration") << "emuLibrary: donors on surface " << surface << " without a norm row";
-      for (unsigned j = 0; j < SmartPixelsEmuCache::kNObs; ++j)
-        pts[surface].push_back((static_cast<double>(x[j]) - d.mu[j]) / d.sd[j]);
-      d.resA.push_back(resA);
-      d.resB.push_back(resB);
-    }
-    for (unsigned s = 0; s <= smartpixels::kMaxSurfaceCode; ++s)
-      if (!pts[s].empty())
-        cache->donors[s].tree = smartpixels::KnnTree(std::move(pts[s]), SmartPixelsEmuCache::kNObs);
-  }
+  cache->dumpTree = smartpixels::KnnTree(std::move(pts), 2);
   cache->setupSeconds = std::chrono::duration<double>(std::chrono::steady_clock::now() - t0).count();
-  std::ostringstream msg;
-  msg << "emu setup " << std::fixed << std::setprecision(2) << cache->setupSeconds << " s: ONNX sessions + "
-      << cache->dumpTree.size() << " dump rows + donors per surface:";
-  for (unsigned s = 0; s <= smartpixels::kMaxSurfaceCode; ++s)
-    if (cache->donors[s].tree.size() > 0)
-      msg << " " << s << ":" << cache->donors[s].tree.size();
-  edm::LogPrint("SmartPixelsEmu") << msg.str();
+  edm::LogPrint("SmartPixelsEmu") << "emu setup " << std::fixed << std::setprecision(2) << cache->setupSeconds
+                                  << " s: ONNX sessions + " << cache->dumpTree.size() << " dump rows";
   return cache;
 }
 
@@ -475,7 +428,8 @@ void SmartPixelsRecHitProducer::globalEndJob(const SmartPixelsEmuCache* cache) {
           << cache->nSatA[s][c] << std::setw(9) << cache->nSatB[s][c] << std::setw(11) << cache->nPseudoSat[s][c]
           << "\n";
     }
-  static const char* steps[] = {"helix (class-T test)", "CNN (ONNX)", "donor kNN", "dump kNN", "draw+bookkeeping"};
+  static const char* steps[] = {
+      "helix (class-T test)", "CNN inputs", "CNN (ONNX)", "A1 (inputs + ONNX)", "dump kNN", "response+bookkeeping"};
   msg << " time summed over streams [s]:";
   for (unsigned k = 0; k < SmartPixelsEmuCache::kNSteps; ++k)
     msg << " " << steps[k] << " " << std::setprecision(3) << cache->stepNs[k] * 1e-9 << ";";
@@ -505,7 +459,7 @@ SmartPixelsRecHitProducer::SmartPixelsRecHitProducer(const edm::ParameterSet& cf
     if (!p.empty() || !np.empty())
       throw cms::Exception("Configuration")
           << "angleSource 'emu' takes no angleSet/noiseSet: every cluster gets the emulated angle";
-    // the donor library covers IL1-IL4 and ID1-ID4 only
+    // the CNN and A1 models cover IL1-IL4 and ID1-ID4 only
     if (maxLayer_ > 4 || maxDisk_ > 4)
       throw cms::Exception("Configuration") << "angleSource 'emu' supports maxLayer <= 4 and discScope none|sp";
     digiToken_ = consumes<edm::DetSetVector<PixelDigi>>(cfg.getParameter<edm::InputTag>("pixelDigis"));
@@ -515,10 +469,8 @@ SmartPixelsRecHitProducer::SmartPixelsRecHitProducer(const edm::ParameterSet& cf
     emuDiscAlphaOffset_ = cfg.getParameter<double>("emuDiscAlphaOffset");
     emuSat_ = 90. - cfg.getParameter<double>("emuSatEpsDeg");
     emuDumpK_ = cfg.getParameter<unsigned>("emuDumpK");
-    emuDonorK_ = cfg.getParameter<unsigned>("emuDonorK");
-    if (emuDumpK_ == 0 || emuDumpK_ > 64 || emuDonorK_ == 0)
-      throw cms::Exception("Configuration") << "emuDumpK must be 1..64 and emuDonorK >= 1";
-    emuTruthPtMin_ = cfg.getParameter<double>("emuTruthPtMin");
+    if (emuDumpK_ == 0 || emuDumpK_ > 64)
+      throw cms::Exception("Configuration") << "emuDumpK must be 1..64";
     emuTruthMaxHelixDist_ = cfg.getParameter<double>("emuTruthMaxHelixDist");
     emuHelixStep_ = cfg.getParameter<double>("emuHelixStep");
     emuDebug_ = cfg.getParameter<bool>("emuDebug");
@@ -693,7 +645,7 @@ void SmartPixelsRecHitProducer::produce(edm::Event& iEvent, const edm::EventSetu
         trueCotA = static_cast<float>(plv.x() / ppz);
         trueCotB = static_cast<float>(plv.y() / ppz);
 
-        if (useEmu_ && q != 0. && tp.pt() >= emuTruthPtMin_) {
+        if (useEmu_ && q != 0.) {
           // class T needs the helix to pass the hit: the plane crossing nearest it,
           // exactly the cluster ntuple's hxDist (stopping at the first crossing that
           // decides it, unless the debug product wants the full scan's value)
@@ -828,9 +780,9 @@ void SmartPixelsRecHitProducer::produce(edm::Event& iEvent, const edm::EventSetu
 }
 
 // emuDebug product: kEmuDebugStride doubles per cluster, in rec-hit collection order.
-// MUST match EMU_DEBUG_COLS in SmartPixelsClusterAdcNtuplizer.
+// MUST match kEmuDebugCols in SmartPixelsClusterAdcNtuplizer.
 namespace {
-  constexpr unsigned kEmuDebugStride = 14;
+  constexpr unsigned kEmuDebugStride = 15;
 }
 
 void SmartPixelsRecHitProducer::setEmuAngles(std::vector<SmartPixelsRecHit>& hits,
@@ -852,15 +804,17 @@ void SmartPixelsRecHitProducer::setEmuAngles(std::vector<SmartPixelsRecHit>& hit
   const bool isDisc = smartpixels::isDiscSurface(surface);
   const unsigned lay = isDisc ? 0 : surface;
   const unsigned disk = isDisc ? surface - smartpixels::kDiscSurfaceOffset : 0;
+  const unsigned layerOrDisk = isDisc ? disk : lay;
   const cms::Ort::ONNXRuntime& model = isDisc ? *cache.disc : *cache.barrel;
+  const cms::Ort::ONNXRuntime& a1 = isDisc ? *cache.a1Disc : *cache.a1Barrel;
   const auto& scal = isDisc ? emuDiscScalars_ : emuBarrelScalars_;
   const ModuleFrame frame = moduleFrame(pdu.surface());
   const bool is3D = !isDisc && lay == 1;
   const float discSideZ = side == 1 ? -1.f : 1.f;  // pxfSide 1 = -z
 
-  auto t0 = Clock::now();
-  // the CNN is needed only for class C: class T takes the truth angle (the debug
-  // product wants the CNN everywhere, for the closure test)
+  const auto t0 = Clock::now();
+  // the CNN and A1 are needed only for class C: class T takes the truth angle (the
+  // debug product wants them everywhere, for the closure test)
   const size_t n = hits.size(), ns_ = scal.size();
   std::vector<int> cnnRow(n, -1);
   std::vector<size_t> cnnHits;
@@ -885,11 +839,11 @@ void SmartPixelsRecHitProducer::setEmuAngles(std::vector<SmartPixelsRecHit>& hit
     int lost = 0;
     for (const auto& px : cl.pixels()) {
       const auto it = adcByChannel.find(PixelDigi::pixelToChannel(px.x, px.y));
-      const int a1 = (it == adcByChannel.end() ? -1 : it->second) + 1;  // prep.py: ADC + 1, missing digi -> 0
-      adcSum += a1;
+      const int adc1 = (it == adcByChannel.end() ? -1 : it->second) + 1;  // prep.py: ADC + 1, missing digi -> 0
+      adcSum += adc1;
       const int r = px.x - cl.minPixelRow() + offx, c = px.y - cl.minPixelCol() + offy;
       if (r >= 0 && r < kWX && c >= 0 && c < kWY)
-        in[0][(ic * kWX + r) * kWY + c] = static_cast<float>(std::clamp(a1, 1, 255));
+        in[0][(ic * kWX + r) * kWY + c] = static_cast<float>(std::clamp(adc1, 1, 255));
       else
         ++lost;
     }
@@ -910,12 +864,12 @@ void SmartPixelsRecHitProducer::setEmuAngles(std::vector<SmartPixelsRecHit>& hit
         case CnnScalar::TruncY: v = cl.sizeY() > kWY; break;
         case CnnScalar::NPxLost: v = lost; break;
         case CnnScalar::Is3D: v = is3D; break;
-        case CnnScalar::AxXz: v = frame.axXz; break;
-        case CnnScalar::AxYz: v = frame.axYz; break;
-        case CnnScalar::AxZz: v = frame.axZz; break;
-        case CnnScalar::AxXr: v = frame.axXr; break;
-        case CnnScalar::AxYr: v = frame.axYr; break;
-        case CnnScalar::AxZr: v = frame.axZr; break;
+        case CnnScalar::AxXz: v = roundOrientation(frame.axXz); break;
+        case CnnScalar::AxYz: v = roundOrientation(frame.axYz); break;
+        case CnnScalar::AxZz: v = roundOrientation(frame.axZz); break;
+        case CnnScalar::AxXr: v = roundOrientation(frame.axXr); break;
+        case CnnScalar::AxYr: v = roundOrientation(frame.axYr); break;
+        case CnnScalar::AxZr: v = roundOrientation(frame.axZr); break;
         case CnnScalar::SideZ: v = isDisc ? discSideZ : (gz > 0.f ? 1.f : (gz < 0.f ? -1.f : 0.f)); break;
         case CnnScalar::Pu: v = pd[0]; break;
         case CnnScalar::Pv: v = pd[1]; break;
@@ -928,6 +882,7 @@ void SmartPixelsRecHitProducer::setEmuAngles(std::vector<SmartPixelsRecHit>& hit
       in[1][ic * ns_ + k] = v;
     }
   }
+  const auto t1 = Clock::now();
   const std::vector<float> out =
       nc == 0 ? std::vector<float>()
               : model.run({"image", "scalars"},
@@ -935,65 +890,74 @@ void SmartPixelsRecHitProducer::setEmuAngles(std::vector<SmartPixelsRecHit>& hit
                           {{static_cast<int64_t>(nc), kWX, kWY}, {static_cast<int64_t>(nc), static_cast<int64_t>(ns_)}},
                           {"out"},
                           static_cast<int64_t>(nc))[0];
-  auto t1 = Clock::now();
-  cache.stepNs[SmartPixelsEmuCache::kCnn] += ns(t0, t1);
+  const auto t2 = Clock::now();
 
-  const auto& donors = cache.donors[surface];
-  if (donors.tree.size() < emuDonorK_)
-    throw cms::Exception("SmartPixelsEmu") << "emuLibrary has " << donors.tree.size() << " donors on surface "
-                                           << surface << ", fewer than emuDonorK";
+  // CNN decode (atan(cot) [rad], log sigma [rad] -> deg; emu_common.decode), then the
+  // A1 residual draw, fed the raw A1 inputs and the 4 hash uniforms
+  constexpr unsigned kNA1 = SmartPixelsEmuCache::kNA1;
+  std::vector<double> cnnA(nc), cnnB(nc), sigCnnA(nc), sigCnnB(nc);
+  cms::Ort::FloatArrays a1in(2);
+  a1in[0].assign(nc * kNA1, 0.f);
+  a1in[1].assign(nc * 4, 0.f);
+  for (size_t ic = 0; ic < nc; ++ic) {
+    const size_t i = cnnHits[ic];
+    const float* o = &out[ic * 6];
+    cnnA[ic] = std::clamp(static_cast<double>(o[0]), -1.5707, 1.5707) * kDegPerRad;
+    cnnB[ic] = std::clamp(static_cast<double>(o[1]), -1.5707, 1.5707) * kDegPerRad;
+    sigCnnA[ic] = std::exp(std::clamp(static_cast<double>(o[2]), -7., 3.)) * kDegPerRad;
+    sigCnnB[ic] = std::exp(std::clamp(static_cast<double>(o[3]), -7., 3.)) * kDegPerRad;
+    const SiPixelCluster& cl = *hits[i].cluster();
+    const GlobalPoint& gp = emu[i].gp;
+    float* z = &a1in[0][ic * kNA1];
+    z[0] = cnnA[ic];
+    z[1] = cnnB[ic];
+    z[2] = sigCnnA[ic];
+    z[3] = sigCnnB[ic];
+    z[4] = cl.sizeX();
+    z[5] = cl.sizeY();
+    z[6] = std::log(std::max(static_cast<float>(cl.charge()), 1.f));
+    z[7] = std::hypot(gp.x(), gp.y());
+    z[8] = std::abs(gp.z());
+    z[9] = hits[i].localPosition().x();
+    z[10] = hits[i].localPosition().y();
+    for (unsigned k = 1; k <= 4; ++k)
+      z[10 + k] = (layerOrDisk == k);
+    for (unsigned k = 0; k < 4; ++k)
+      a1in[1][ic * 4 + k] =
+          static_cast<float>(emuHashU(eid.run(), eid.event(), hits[i].detId(), truths[i].idxInDet(), kSaltA1[k]));
+  }
+  const std::vector<float> draws =
+      nc == 0 ? std::vector<float>()
+              : a1.run({"z", "u"},
+                       a1in,
+                       {{static_cast<int64_t>(nc), kNA1}, {static_cast<int64_t>(nc), 4}},
+                       {"r"},
+                       static_cast<int64_t>(nc))[0];
+  const auto t3 = Clock::now();
+
   const auto sat = [this](double a) { return std::clamp(a, -emuSat_, emuSat_); };
   std::vector<std::pair<double, uint32_t>> nbr;
-  nbr.reserve(std::max(emuDumpK_, emuDonorK_));
-  std::array<double, SmartPixelsEmuCache::kNObs> z;
+  nbr.reserve(emuDumpK_);
   std::array<double, 64> rs;
-  uint64_t tDonor = 0, tDump = 0;
+  uint64_t tDump = 0;
   for (size_t i = 0; i < n; ++i) {
-    // hubsig head: atan(cot) [rad] and log sigma [rad]; decode as emu_common.decode
-    double cnnA = -999., cnnB = -999., sigCnnA = -999., sigCnnB = -999.;
-    if (cnnRow[i] >= 0) {
-      const float* o = &out[cnnRow[i] * 6];
-      cnnA = std::clamp(static_cast<double>(o[0]), -1.5707, 1.5707) * kDegPerRad;
-      cnnB = std::clamp(static_cast<double>(o[1]), -1.5707, 1.5707) * kDegPerRad;
-      sigCnnA = std::exp(std::clamp(static_cast<double>(o[2]), -7., 3.)) * kDegPerRad;
-      sigCnnB = std::exp(std::clamp(static_cast<double>(o[3]), -7., 3.)) * kDegPerRad;
-    }
     const EmuHit& e = emu[i];
+    const int ic = cnnRow[i];
     const uint16_t idx = truths[i].idxInDet();
     const uint32_t detId = hits[i].detId();
 
     // ---- 1. pseudo-truth [deg]
     double pA, pB;
-    int donor = -1;
     bool pseudoSat = false;
     if (e.classT) {
       pA = std::atan(static_cast<double>(e.trueCotA)) * kDegPerRad;
       pB = std::atan(static_cast<double>(e.trueCotB)) * kDegPerRad;
     } else {
-      const auto ta = Clock::now();
-      const SiPixelCluster& cl = *hits[i].cluster();
-      const std::array<double, SmartPixelsEmuCache::kNObs> x = {
-          cnnA,
-          cnnB,
-          sigCnnA,
-          sigCnnB,
-          static_cast<double>(cl.sizeX()),
-          static_cast<double>(cl.sizeY()),
-          static_cast<double>(std::log(std::max(static_cast<float>(cl.charge()), 1.f))),
-          static_cast<double>(static_cast<float>(std::hypot(e.gp.x(), e.gp.y()))),
-          static_cast<double>(std::abs(e.gp.z())),
-          static_cast<double>(hits[i].localPosition().x()),
-          static_cast<double>(hits[i].localPosition().y())};
-      for (unsigned j = 0; j < SmartPixelsEmuCache::kNObs; ++j)
-        z[j] = (x[j] - donors.mu[j]) / donors.sd[j];
-      donors.tree.query(z.data(), emuDonorK_, nbr);
-      donor = nbr[emuHashIndex(eid.run(), eid.event(), detId, idx, kSaltDonor, emuDonorK_)].second;
-      const double rawA = cnnA + static_cast<double>(donors.resA[donor]);
-      const double rawB = cnnB + static_cast<double>(donors.resB[donor]);
+      const double rawA = cnnA[ic] + static_cast<double>(draws[ic * 2]);
+      const double rawB = cnnB[ic] + static_cast<double>(draws[ic * 2 + 1]);
       pseudoSat = std::abs(rawA) >= emuSat_ || std::abs(rawB) >= emuSat_;
       pA = sat(rawA);
       pB = sat(rawB);
-      tDonor += ns(ta, Clock::now());
     }
 
     // ---- 2. SmartPixels response from the dump rows nearest the pseudo-truth
@@ -1034,13 +998,14 @@ void SmartPixelsRecHitProducer::setEmuAngles(std::vector<SmartPixelsRecHit>& hit
     cache.nSatB[surface][c] += satB;
     cache.nPseudoSat[surface][c] += pseudoSat;
     if (debug != nullptr) {
-      const double v[kEmuDebugStride] = {cnnA,
-                                         cnnB,
-                                         sigCnnA,
-                                         sigCnnB,
+      const double v[kEmuDebugStride] = {cnnA[ic],
+                                         cnnB[ic],
+                                         sigCnnA[ic],
+                                         sigCnnB[ic],
                                          static_cast<double>(c),
                                          static_cast<double>(e.hxDist),
-                                         static_cast<double>(donor),
+                                         static_cast<double>(draws[ic * 2]),
+                                         static_cast<double>(draws[ic * 2 + 1]),
                                          pA,
                                          pB,
                                          static_cast<double>(row),
@@ -1051,10 +1016,12 @@ void SmartPixelsRecHitProducer::setEmuAngles(std::vector<SmartPixelsRecHit>& hit
       debug->insert(debug->end(), v, v + kEmuDebugStride);
     }
   }
-  const auto t2 = Clock::now();
-  cache.stepNs[SmartPixelsEmuCache::kDonor] += tDonor;
+  const auto t4 = Clock::now();
+  cache.stepNs[SmartPixelsEmuCache::kCnnInput] += ns(t0, t1);
+  cache.stepNs[SmartPixelsEmuCache::kCnn] += ns(t1, t2);
+  cache.stepNs[SmartPixelsEmuCache::kA1] += ns(t2, t3);
   cache.stepNs[SmartPixelsEmuCache::kDump] += tDump;
-  cache.stepNs[SmartPixelsEmuCache::kDraw] += ns(t1, t2) - std::min(ns(t1, t2), tDonor + tDump);
+  cache.stepNs[SmartPixelsEmuCache::kOther] += ns(t3, t4) - std::min(ns(t3, t4), tDump);
 }
 
 void SmartPixelsRecHitProducer::fillDescriptions(edm::ConfigurationDescriptions& descriptions) {
@@ -1086,15 +1053,17 @@ void SmartPixelsRecHitProducer::fillDescriptions(edm::ConfigurationDescriptions&
                    "emulator (class T / class C pseudo-truth + dump response), every cluster, discs included");
   desc.add<edm::InputTag>("pixelDigis", edm::InputTag("simSiPixelDigis", "Pixel"))
       ->setComment("digis the clusters were built from (emu: the CNN's ADC map)");
-  desc.add<std::string>("emuBarrelModel", "")->setComment("emu: pos-hubsig ONNX model for TBPX clusters (FileInPath)");
-  desc.add<std::string>("emuDiscModel", "")->setComment("emu: pos-hubsig ONNX model for disc clusters (FileInPath)");
+  desc.add<std::string>("emuBarrelModel", "")->setComment("emu: tiny-CNN ONNX model for TBPX clusters (FileInPath)");
+  desc.add<std::string>("emuDiscModel", "")->setComment("emu: tiny-CNN ONNX model for disc clusters (FileInPath)");
+  desc.add<std::string>("emuBarrelA1", "")
+      ->setComment("emu: A1 ONNX model (class-C residual draw: z[15], u[4] -> r[2] deg) for TBPX clusters");
+  desc.add<std::string>("emuDiscA1", "")->setComment("emu: A1 ONNX model for disc clusters");
   desc.add<std::vector<std::string>>("emuBarrelScalars", {})
       ->setComment("emu: scalar inputs of the barrel model, in norm.json 'cols' order");
   desc.add<std::vector<std::string>>("emuDiscScalars", {})
       ->setComment("emu: scalar inputs of the disc model, in norm.json 'cols' order");
   desc.add<std::string>("emuLibrary", "")
-      ->setComment("emu: ROOT file with the rescaled SmartPixels dump (tree dump) and the class-T donor library "
-                   "of training events (trees donors, norm); emu_build_library.py");
+      ->setComment("emu: ROOT file with the rescaled SmartPixels dump (tree dump); emu_build_library.py");
   desc.add<std::string>("emuSigmaSet", "")
       ->setComment("emu: correctionlib spix_emu_{alpha,beta}_sigma(surface, |reported cot|), the emulated "
                    "residual width used as sigAlpha/sigBeta");
@@ -1103,14 +1072,13 @@ void SmartPixelsRecHitProducer::fillDescriptions(edm::ConfigurationDescriptions&
       ->setComment("emu: disc alpha lookup key atan(cotAlpha + offset), the PixelAV Lorentz offset (key only)");
   desc.add<double>("emuSatEpsDeg", 0.01)->setComment("emu: angles saturate at +-(90 - eps) deg, never wrap");
   desc.add<unsigned>("emuDumpK", 32)->setComment("emu: dump rows per lookup (bias = their median residual)");
-  desc.add<unsigned>("emuDonorK", 10)->setComment("emu: class-C donor candidates (nearest class-T clusters)");
-  desc.add<double>("emuTruthPtMin", 0.25)->setComment("emu: class T needs the dominant TP's pT >= this [GeV]");
   desc.add<double>("emuTruthMaxHelixDist", 1.0)
       ->setComment("emu: class T needs the TP helix to cross the module plane within this of the hit [cm]");
   desc.add<double>("emuHelixStep", 0.2)->setComment("emu: helix-plane root scan step [cm], as the cluster ntuple");
   desc.add<bool>("emuDebug", false)
-      ->setComment("emu: also put std::vector<double> 'emuDebug' (14 per cluster: CNN angles/sigmas, class, "
-                   "hxDist from the full scan, donor, pseudo-truth, dump row, biases, output angles) for closure tests");
+      ->setComment("emu: also put std::vector<double> 'emuDebug' (15 per cluster: CNN angles/sigmas, class, "
+                   "hxDist from the full scan, A1 draws, pseudo-truth, dump row, biases, output angles; the CNN "
+                   "and A1 then run on every cluster) for closure tests");
   descriptions.addWithDefaultLabel(desc);
 }
 

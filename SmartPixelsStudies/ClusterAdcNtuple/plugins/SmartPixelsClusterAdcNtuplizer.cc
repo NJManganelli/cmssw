@@ -78,10 +78,10 @@
 
 namespace {
   // MUST match the emuDebug layout of SmartPixelsRecHitProducer (kEmuDebugStride)
-  constexpr unsigned kEmuDebugStride = 14;
+  constexpr unsigned kEmuDebugStride = 15;
   const char* const kEmuDebugCols[kEmuDebugStride] = {"emuCnnA",    "emuCnnB",    "emuCnnSigA", "emuCnnSigB", "emuClass",
-                                                      "emuHxDist",  "emuDonor",   "emuPseudoA", "emuPseudoB", "emuDumpRow",
-                                                      "emuBiasA",   "emuBiasB",   "emuOutA",    "emuOutB"};
+                                                      "emuHxDist",  "emuDrawA",   "emuDrawB",   "emuPseudoA", "emuPseudoB",
+                                                      "emuDumpRow", "emuBiasA",   "emuBiasB",   "emuOutA",    "emuOutB"};
 }  // namespace
 
 class SmartPixelsClusterAdcNtuplizer : public edm::one::EDAnalyzer<edm::one::SharedResources> {
