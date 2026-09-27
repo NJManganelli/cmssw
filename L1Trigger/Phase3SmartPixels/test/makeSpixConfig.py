@@ -116,8 +116,8 @@ RELVAL_ABSENT_TABLES = (
     "l1tPuppiCandTrackTruthTable", "l1tExtPuppiCandTrackTruthTable",
 )
 
-PAYLOAD_DIR = "/work/spxsmoke"
-DEFAULT_ANGLE_SET = f"{PAYLOAD_DIR}/spix_angle_response_Conv1D_Full-2bit_v4fixed.json"
+# v5 = physical units (the eval dump's rescale); v4 and earlier were x1.88 (alpha) / x6.53 (beta) too narrow
+DEFAULT_ANGLE_SET = "L1Trigger/Phase3SmartPixels/data/spix_angle_response_Conv1D_Full-2bit_v5.json"
 
 
 def build_customise(args, overrides):
