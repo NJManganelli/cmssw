@@ -22,7 +22,8 @@ o.register("nThreads", 4, VarParsing.multiplicity.singleton, VarParsing.varType.
 o.register("discScope", "all", VarParsing.multiplicity.singleton, VarParsing.varType.string,
            "disc clusters to ntuple (rec-hit producer discScope): none | sp | tfpx | all")
 o.register("angleSource", "payload", VarParsing.multiplicity.singleton, VarParsing.varType.string,
-           "rec-hit angle source: payload (pCot* = PixelAV draw) or cnn (pCot* = CMSSW CNN inference)")
+           "rec-hit angle source: payload (pCot* = PixelAV draw) or emu (pCot* = the SmartPixels-output emulator, "
+           "with its internals in the emu* branches; needs discScope none|sp)")
 o.register("skip", 0, VarParsing.multiplicity.singleton, VarParsing.varType.int, "skipEvents")
 o.setDefault("maxEvents", 5)
 o.setDefault("outputFile", "/work/clusterntuple/test5.root")
@@ -46,8 +47,9 @@ process.options.numberOfStreams = 0
 process.MessageLogger.cerr.FwkReport.reportEvery = 10
 
 from L1Trigger.Phase3SmartPixels.customizeSmartPixels_cff import ensureSmartPixelsRecHits
-if o.angleSource == "cnn":
-    ensureSmartPixelsRecHits(process, "", "", angleSource="cnn", discScope=o.discScope)
+if o.angleSource == "emu":
+    ensureSmartPixelsRecHits(process, "", "", angleSource="emu", discScope=o.discScope)
+    process.spixSmartPixelsRecHits.emuDebug = True
 else:
     ensureSmartPixelsRecHits(process,
                              "/work/spxsmoke/spix_angle_response_Conv1D_Full-2bit_v4fixed.json",

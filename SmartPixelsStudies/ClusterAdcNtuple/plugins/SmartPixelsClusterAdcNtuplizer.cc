@@ -68,11 +68,21 @@
 
 #include "TTree.h"
 
+#include <array>
+
 #include <cmath>
 #include <cstdint>
 #include <map>
 #include <unordered_map>
 #include <vector>
+
+namespace {
+  // MUST match the emuDebug layout of SmartPixelsRecHitProducer (kEmuDebugStride)
+  constexpr unsigned kEmuDebugStride = 14;
+  const char* const kEmuDebugCols[kEmuDebugStride] = {"emuCnnA",    "emuCnnB",    "emuCnnSigA", "emuCnnSigB", "emuClass",
+                                                      "emuHxDist",  "emuDonor",   "emuPseudoA", "emuPseudoB", "emuDumpRow",
+                                                      "emuBiasA",   "emuBiasB",   "emuOutA",    "emuOutB"};
+}  // namespace
 
 class SmartPixelsClusterAdcNtuplizer : public edm::one::EDAnalyzer<edm::one::SharedResources> {
 public:
@@ -126,9 +136,12 @@ private:
   float laSimPerT_, tanLAx_, tanLAy_;  // digitizer: SimRcd LA, module-centre B
   float bLocX_, bLocY_, bLocZ_, bMag_;  // B at the CLUSTER position, local frame
   int zOutward_, is3D_;
-  // --- the rec-hit angle: PixelAV payload draw (baseline), or the CNN with angleSource=cnn
+  // --- the rec-hit angle: PixelAV payload draw (baseline), or the emulator with angleSource=emu
   float pCotA_, pCotB_, pSigA_, pSigB_;
-  int pHasA_, pHasB_;
+  int pHasA_, pHasB_, pSatA_, pSatB_, pEmuClass_;
+  // --- emulator internals (the producer's emuDebug product, when present)
+  edm::EDGetTokenT<std::vector<double>> emuDebugToken_;
+  std::array<double, kEmuDebugStride> emu_;
   // --- link classification
   int linkClass_, nTp_, nSimTrk_;
   float qFracLinked_, qFracTp_;
@@ -159,6 +172,8 @@ SmartPixelsClusterAdcNtuplizer::SmartPixelsClusterAdcNtuplizer(const edm::Parame
       maxLayer_(cfg.getParameter<unsigned>("maxLayer")),
       doLorentz_(cfg.getParameter<bool>("doLorentz")),
       helixStep_(cfg.getParameter<double>("helixStep")) {
+  emuDebugToken_ = consumes<std::vector<double>>(
+      edm::InputTag(cfg.getParameter<edm::InputTag>("smartPixelsRecHits").label(), "emuDebug"));
   for (const auto& t : cfg.getParameter<std::vector<edm::InputTag>>("simHits"))
     simHitTokens_.push_back(consumes<std::vector<PSimHit>>(t));
   if (doLorentz_)
@@ -249,6 +264,11 @@ void SmartPixelsClusterAdcNtuplizer::book() {
   F("pSigBeta", &pSigB_);
   I("pHasAlpha", &pHasA_);
   I("pHasBeta", &pHasB_);
+  I("pSatAlpha", &pSatA_);
+  I("pSatBeta", &pSatB_);
+  I("pEmuClass", &pEmuClass_);
+  for (unsigned k = 0; k < kEmuDebugStride; ++k)
+    tree_->Branch(kEmuDebugCols[k], &emu_[k], (std::string(kEmuDebugCols[k]) + "/D").c_str());
   I("linkClass", &linkClass_);
   I("nTp", &nTp_);
   I("nSimTrk", &nSimTrk_);
@@ -339,7 +359,15 @@ void SmartPixelsClusterAdcNtuplizer::analyze(const edm::Event& iEvent, const edm
   event_ = iEvent.id().event();
   int clIdx = 0, discIdx = 0;
 
+  edm::Handle<std::vector<double>> emuDebug;
+  iEvent.getByToken(emuDebugToken_, emuDebug);
+  if (emuDebug.isValid() && emuDebug->size() != kEmuDebugStride * hits.dataSize())
+    throw cms::Exception("ClusterAdcNtuple") << "emuDebug has " << emuDebug->size() << " values for "
+                                             << hits.dataSize() << " rec hits";
+  size_t dsvOffset = 0;  // rec-hit collection index of the DetSet's first hit (the emuDebug order)
   for (const auto& dsv : hits) {
+    const size_t dsvBegin = dsvOffset;
+    dsvOffset += dsv.size();
     const DetId did(dsv.detId());
     const bool isDisc = did.subdetId() == PixelSubdetector::PixelEndcap;
     if (!isDisc && did.subdetId() != PixelSubdetector::PixelBarrel)
@@ -464,6 +492,10 @@ void SmartPixelsClusterAdcNtuplizer::analyze(const edm::Event& iEvent, const edm
       pCotA_ = rh.cotAlpha(); pCotB_ = rh.cotBeta();
       pSigA_ = rh.sigAlpha(); pSigB_ = rh.sigBeta();
       pHasA_ = rh.hasAlpha(); pHasB_ = rh.hasBeta();
+      pSatA_ = rh.satAlpha(); pSatB_ = rh.satBeta();
+      pEmuClass_ = tr.emuClass();
+      for (unsigned k = 0; k < kEmuDebugStride; ++k)
+        emu_[k] = emuDebug.isValid() ? (*emuDebug)[(dsvBegin + j) * kEmuDebugStride + k] : -999.;
 
       // ---- pixels + truth aggregation (producer logic, re-derived)
       pxRow_.clear(); pxCol_.clear(); pxQ_.clear(); pxAdc_.clear();
