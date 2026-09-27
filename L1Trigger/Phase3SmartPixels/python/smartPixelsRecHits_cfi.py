@@ -16,12 +16,22 @@ smartPixelsRecHits = cms.EDProducer(
     angleSet=cms.string(""),   # REQUIRED: PixelAV angle-response payload
     noiseSet=cms.string(""),   # noise-angle inverse CDF; empty = unlinked clusters get NO
                                # angle, which makes "has an angle" a truth proxy
-    angleSource=cms.string("payload"),  # "cnn": cluster CNN, no truth (see the plugin header)
+    angleSource=cms.string("payload"),  # "emu": SmartPixels-output emulator (see the plugin header)
     pixelDigis=cms.InputTag("simSiPixelDigis", "Pixel"),
-    cnnBarrelModel=cms.string(""),
-    cnnDiscModel=cms.string(""),
-    cnnBarrelScalars=cms.vstring(),
-    cnnDiscScalars=cms.vstring(),
-    cnnFoldOffset=cms.vdouble(0., 0., 0.202, 0.202, 0.202),
-    cnnSigmaSet=cms.string(""),
+    # emu only (customizeSmartPixels_cff.SPIX_EMU_ANGLE_SOURCE fills the files)
+    emuBarrelModel=cms.string(""),
+    emuDiscModel=cms.string(""),
+    emuBarrelScalars=cms.vstring(),
+    emuDiscScalars=cms.vstring(),
+    emuLibrary=cms.string(""),
+    emuSigmaSet=cms.string(""),
+    emuInflation=cms.double(1.5),
+    emuDiscAlphaOffset=cms.double(-0.312),
+    emuSatEpsDeg=cms.double(0.01),
+    emuDumpK=cms.uint32(32),
+    emuDonorK=cms.uint32(10),
+    emuTruthPtMin=cms.double(0.25),
+    emuTruthMaxHelixDist=cms.double(1.0),
+    emuHelixStep=cms.double(0.2),
+    emuDebug=cms.bool(False),
 )
