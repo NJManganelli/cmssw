@@ -13,7 +13,7 @@ SmartPixelsSeedCovMissing here — by design. For such files, rebuild the tracks
 
 Run (in the container, cmsenv):
   cmsRun L1Trigger/Phase3SmartPixels/test/runDigiRefitFromFile_cfg.py \
-      maxEvents=100 useAngles=alpha \
+      maxEvents=100 useAngles=alphaBeta \
       inputFiles=file:/work/testfiles/RelValTTbar_14TeV_PU_150X_mcRun4_realistic_v1_STD_D121_RegeneratedGS_PU-v1.root \
       outputFile=digirefit_pu.root
 """
@@ -22,7 +22,7 @@ from FWCore.ParameterSet.VarParsing import VarParsing
 from Configuration.Eras.Era_Phase2C22I13M9_cff import Phase2C22I13M9
 
 options = VarParsing('analysis')
-options.register('useAngles', 'alpha', VarParsing.multiplicity.singleton, VarParsing.varType.string,
+options.register('useAngles', 'alphaBeta', VarParsing.multiplicity.singleton, VarParsing.varType.string,
                  "digiRefit angle usage: none | alpha | alphaBeta")
 options.register('activeSP', '1100', VarParsing.multiplicity.singleton, VarParsing.varType.string,
                  "active layer encoding for the digiRefit variant")

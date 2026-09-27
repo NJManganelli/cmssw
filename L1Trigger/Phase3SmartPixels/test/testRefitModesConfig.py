@@ -116,7 +116,7 @@ check(hasattr(p_dr, _dr_prompt), "digiRefit prompt producer variant exists")
 _m = getattr(p_dr, _dr_prompt)
 check(_m.smartPixelsEmulatorMode.value() == "digiRefit", "mode set to digiRefit")
 check(_m.digiRefitSeedNPar.value() == 5, "seedNPar default is 5")
-check(_m.digiRefitUseAngles.value() == "alpha", "useAngles default is alpha")
+check(_m.digiRefitUseAngles.value() == "alphaBeta", "useAngles default is alphaBeta (the production setting)")
 check(_m.smartPixelsRecHitInputTag.value() == "spixSmartPixelsRecHits",
       "refit reads the SmartPixelsRecHit product, not raw pixel rec hits")
 check(hasattr(p_dr, "spixSmartPixelsRecHits"),
@@ -272,8 +272,8 @@ expect_raises(ValueError,
               contains="bdtModel")
 
 # valid config merges over defaults and does NOT mutate the defaults
-merged = _resolveDigiRefitConfig({"minHits": 3, "useAngles": "alphaBeta"})
-check(merged["minHits"] == 3 and merged["useAngles"] == "alphaBeta",
+merged = _resolveDigiRefitConfig({"minHits": 3, "useAngles": "alpha"})
+check(merged["minHits"] == 3 and merged["useAngles"] == "alpha",
       "valid overrides applied")
 check(merged["windowRPhi"] == DIGIREFIT_DEFAULTS["windowRPhi"],
       "untouched keys keep defaults")
