@@ -101,8 +101,9 @@ l1tExtTracksTruthTable = l1tTracksTruthTable.clone(
 )
 
 #### TrackingParticle table: the efficiency DENOMINATOR for L1 track studies. One row per
-#### charged TP with 3-momentum |p| > minP; key = TP collection key, the same key as the
-#### track, stub and cluster truth tables' tpKey. d0/z0 at the POCA with the same propagation
+#### charged TP with 3-momentum |p| > minP. It also puts the TP key -> L1TTP row map that
+#### every tpIdx link (track, stub, cluster, refit) is encoded from, so the selection lives
+#### only here; without it scheduled those links read -2. d0/z0 at the POCA with the same propagation
 #### and sign convention as tp_d0/tp_z0 above. ~15k+ rows/event at PU200 (1 GeV), so it is
 #### opt-in via addPh2L1TrackingParticles rather than part of p2L1TrackTruthTask.
 l1tTrackingParticleTable = cms.EDProducer(

@@ -1,10 +1,19 @@
 // Flat table of TrackingParticles: the efficiency denominator for L1 track studies.
 //
-// One row per TrackingParticle passing (charge != 0, |p| > minP). `key` is the
-// TrackingParticle collection key (not a row), the same key as L1TOTStub_tpKey,
-// L1TSmartPixelsCluster_tpKey and L1TTrack_tpKey, so TP identity joins exactly
-// across tables and across jobs reading the same input events. The cut is on the
+// One row per TrackingParticle passing (charge != 0, |p| > minP). The cut is on the
 // 3-momentum, not pT, so forward particles that reach the discs are kept.
+//
+// TP LINKS. Alongside the table this puts an edm::ValueMap<int> over the TrackingParticle
+// collection: the L1TTP row of each TP, or -1 when the selection pruned it. It is the ONLY
+// place the selection lives; every table writing a tpIdx link (L1TTrack, L1TExtTrack,
+// L1TOTStub, L1TSmartPixelsCluster, spixMatchedTpIdx) consumes it and encodes
+//   tpIdx >= 0   row in L1TTP
+//   tpIdx == -1  not truth-matched
+//   tpIdx == -2  TrackingParticle product (or this map) unavailable
+//   tpIdx <= -3  matched TP pruned from L1TTP; -3 - tpIdx is its index in the UNPRUNED,
+//                unwritten TrackingParticle collection
+// through DPGAnalysis/Phase2L1TNanoAOD/interface/L1TPRowLink.h. Being a ValueMap, a lookup
+// with a Ref into a different TrackingParticle product throws instead of mis-indexing.
 //
 // phi0/d0/z0 are at the POCA to the beamline with the same curvature-aware propagation
 // and sign convention as L1TrackTruthTableProducer's tp_phi0/tp_d0/tp_z0, so a TP row and
@@ -35,6 +44,7 @@
 #include "FWCore/ParameterSet/interface/ParameterSetDescription.h"
 
 #include "DataFormats/Common/interface/Association.h"
+#include "DataFormats/Common/interface/ValueMap.h"
 #include "DataFormats/GeometryVector/interface/GlobalPoint.h"
 #include "DataFormats/HepMCCandidate/interface/GenParticle.h"
 #include "FWCore/Utilities/interface/Exception.h"
@@ -63,15 +73,18 @@ public:
     if (doGen_)
       genMapToken_ = consumes<GenMap>(cfg.getParameter<edm::InputTag>("genParticlePruningMap"));
     produces<nanoaod::FlatTable>();
+    produces<edm::ValueMap<int>>();
   }
 
   void produce(edm::Event& iEvent, const edm::EventSetup& iSetup) override {
-    const auto& tps = iEvent.get(tpToken_);
+    const auto tpHandle = iEvent.getHandle(tpToken_);
+    const auto& tps = *tpHandle;
     const GenMap* genMap = doGen_ ? &iEvent.get(genMapToken_) : nullptr;
     const float b_field = iSetup.getData(bFieldToken_).inTesla(GlobalPoint(0.f, 0.f, 0.f)).z();
     const float convertRtoPt = CLHEP::c_light / 1.0E5 * b_field;
 
-    std::vector<int32_t> key, pdgId, bx, evt;
+    std::vector<int> keyToRow(tps.size(), -1);
+    std::vector<int32_t> pdgId, bx, evt;
     std::vector<float> pt, eta, phi, charge, vx, vy, vz, phi0, d0, z0;
     std::vector<int32_t> genPartIdx;
     std::vector<bool> genFromB, genFromC;
@@ -88,7 +101,7 @@ public:
       const float rp = std::sqrt(x0p * x0p + y0p * y0p);
       const float tphi0 = std::atan2(-r2_inv * x0p, r2_inv * y0p);
       const float delphi = reco::deltaPhi(tphi, tphi0);
-      key.push_back(static_cast<int32_t>(i));
+      keyToRow[i] = static_cast<int>(pdgId.size());
       pdgId.push_back(tp.pdgId());
       bx.push_back(tp.eventId().bunchCrossing());
       evt.push_back(tp.eventId().event());
@@ -139,8 +152,7 @@ public:
         genFromC.push_back(fromC);
       }
     }
-    auto t = std::make_unique<nanoaod::FlatTable>(key.size(), name_, false, false);
-    t->addColumn<int32_t>("key", key, "TrackingParticle collection key, not a row (= L1TOTStub_tpKey)");
+    auto t = std::make_unique<nanoaod::FlatTable>(pdgId.size(), name_, false, false);
     t->addColumn<int32_t>("pdgId", pdgId, "pdgId");
     t->addColumn<int32_t>("bx", bx, "eventId().bunchCrossing()");
     t->addColumn<int32_t>("evt", evt, "eventId().event() (0 with bx 0 = hard interaction)");
@@ -163,7 +175,14 @@ public:
       t->addColumn<bool>("genFromB", genFromB, "a b hadron is among the generator ancestors (full record)");
       t->addColumn<bool>("genFromC", genFromC, "a c hadron is among the generator ancestors (full record)");
     }
+    t->setDoc("TrackingParticles (charged, |p| > minP). Other tables link here through tpIdx (row), "
+              "with -1 unmatched, -2 truth unavailable, <= -3 matched but pruned from this table");
     iEvent.put(std::move(t));
+    auto rowMap = std::make_unique<edm::ValueMap<int>>();
+    edm::ValueMap<int>::Filler filler(*rowMap);
+    filler.insert(tpHandle, keyToRow.begin(), keyToRow.end());
+    filler.fill();
+    iEvent.put(std::move(rowMap));
   }
 
   static void fillDescriptions(edm::ConfigurationDescriptions& descriptions) {

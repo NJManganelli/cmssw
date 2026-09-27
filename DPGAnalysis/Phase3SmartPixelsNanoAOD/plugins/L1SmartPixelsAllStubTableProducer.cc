@@ -51,6 +51,7 @@
 #include "FWCore/ParameterSet/interface/ParameterSetDescription.h"
 #include "FWCore/Utilities/interface/Exception.h"
 
+#include "DPGAnalysis/Phase2L1TNanoAOD/interface/L1TPRowLink.h"
 #include "DataFormats/Common/interface/DetSetVectorNew.h"
 #include "DataFormats/L1TrackTrigger/interface/TTStub.h"
 #include "DataFormats/L1TrackTrigger/interface/TTTypes.h"
@@ -70,6 +71,7 @@
 
 #include <cmath>
 #include <cstdint>
+#include <string>
 #include <vector>
 
 class L1SmartPixelsAllStubTableProducer : public edm::stream::EDProducer<> {
@@ -80,9 +82,11 @@ public:
         topoToken_(esConsumes<TrackerTopology, TrackerTopologyRcd>()),
         tableName_(cfg.getParameter<std::string>("tableName")),
         doTruth_(cfg.getParameter<bool>("doTruth")) {
-    if (doTruth_)
+    if (doTruth_) {
       truthToken_ = consumes<TTStubAssociationMap<Ref_Phase2TrackerDigi_>>(
           cfg.getParameter<edm::InputTag>("stubTruth"));
+      tpRowMapToken_ = consumes<edm::ValueMap<int>>(cfg.getParameter<edm::InputTag>("tpRowMap"));
+    }
     produces<nanoaod::FlatTable>();
   }
 
@@ -96,15 +100,18 @@ public:
     const TrackerTopology& topo = iSetup.getData(topoToken_);
 
     edm::Handle<TTStubAssociationMap<Ref_Phase2TrackerDigi_>> truth;
-    if (doTruth_)
+    edm::Handle<edm::ValueMap<int>> tpRowMapHandle;
+    if (doTruth_) {
       iEvent.getByToken(truthToken_, truth);
+      iEvent.getByToken(tpRowMapToken_, tpRowMapHandle);
+    }
+    const edm::ValueMap<int>* tpRowMap = tpRowMapHandle.isValid() ? tpRowMapHandle.product() : nullptr;
 
     // TRUTH-ONLY, and deliberately mirroring the IT cluster table's tp* block so
-    // an IT-vs-OT comparison can use the same quantities on both sides: tpKey is
-    // the TrackingParticle collection key, exactly as the cluster table derives
-    // it from dominantTp(). The three quality flags have no IT analogue and come
-    // free from the association map.
-    std::vector<int32_t> tpKey;
+    // an IT-vs-OT comparison can use the same quantities on both sides: tpIdx is
+    // the L1TTP row, exactly as the cluster table derives it from dominantTp(). The
+    // three quality flags have no IT analogue and come free from the association map.
+    std::vector<int32_t> tpIdx;
     std::vector<float> tpPt;
     std::vector<bool> tpGenuine, tpCombinatoric, tpUnknown;
 
@@ -142,7 +149,7 @@ public:
 
         if (doTruth_) {
           const edm::Ptr<TrackingParticle> tp = truth->findTrackingParticlePtr(ref);
-          tpKey.push_back(tp.isNull() ? -1 : static_cast<int32_t>(tp.key()));
+          tpIdx.push_back(l1tnano::tpIdx(tpRowMap, tp));
           tpPt.push_back(tp.isNull() ? -999.f : static_cast<float>(tp->pt()));
           tpGenuine.push_back(truth->isGenuine(ref));
           tpCombinatoric.push_back(truth->isCombinatoric(ref));
@@ -166,10 +173,8 @@ public:
                           "analogue of the SmartPixels cotAlpha",
                           /*mantissaBits=*/12);
     if (doTruth_) {
-      tab->addColumn<int32_t>("tpKey", tpKey,
-                              "TRUTH-ONLY: TrackingParticle collection key of the associated TP, "
-                              "or -1 (a key, not a row). Same meaning as L1TSmartPixelsCluster_tpKey "
-                              "and L1TTP_key, so the tables join on it");
+      tab->addColumn<int32_t>("tpIdx", tpIdx,
+                              std::string("TRUTH-ONLY, associated TP: ") + l1tnano::tpIdxDoc());
       tab->addColumn<float>("tpPt", tpPt, "TRUTH-ONLY: pT [GeV] of the associated TP", 10);
       tab->addColumn<bool>("tpGenuine", tpGenuine,
                            "TRUTH-ONLY: both clusters from the same TP");
@@ -201,6 +206,8 @@ public:
                             edm::InputTag("TTStubAssociatorFromPixelDigis", "StubAccepted"))
         ->setComment("NO process name, so it resolves whether the associator ran in-job or its "
                      "output was persisted -- the same convention customizeSmartPixels_cff uses");
+    desc.add<edm::InputTag>("tpRowMap", edm::InputTag("l1tTrackingParticleTable"))
+        ->setComment("L1TTP key -> row map from L1TrackingParticleTableProducer; tpIdx = -2 when absent");
     descriptions.addWithDefaultLabel(desc);
   }
 
@@ -209,6 +216,7 @@ private:
   const edm::ESGetToken<TrackerGeometry, TrackerDigiGeometryRecord> geomToken_;
   const edm::ESGetToken<TrackerTopology, TrackerTopologyRcd> topoToken_;
   edm::EDGetTokenT<TTStubAssociationMap<Ref_Phase2TrackerDigi_>> truthToken_;
+  edm::EDGetTokenT<edm::ValueMap<int>> tpRowMapToken_;
   const std::string tableName_;
   const bool doTruth_;
 };

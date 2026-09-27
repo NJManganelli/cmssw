@@ -128,7 +128,8 @@ Two findings set the whole problem:
 `charge, size, sizeX, sizeY, sigX, sigY, sigAlpha, sigBeta, hasAlpha, hasBeta,
 subdet, layer, disk, side, ring, surface, detId, idxInDet` (one table: all TBPX
 rows, then the ID1-ID4 disc rows; `surface` 1-4 = IL1-IL4, 11-14 = ID1-ID4). Truth
-counterparts under a `tp` prefix: `tpKey` (a TrackingParticle key, not a row), `tpPt,
+counterparts under a `tp` prefix: `tpIdx` (row in L1TTP; -1 unmatched, -2 truth
+unavailable, <= -3 matched TP pruned from L1TTP), `tpPt,
 tpChargeFrac, tpLocalCotAlpha, tpLocalCotBeta, tpGlobalClusterPhi,
 tpGlobalClusterCotTheta`.
 
