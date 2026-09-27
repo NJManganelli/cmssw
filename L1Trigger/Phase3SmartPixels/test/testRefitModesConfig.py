@@ -565,13 +565,13 @@ check(not hasattr(_p3nano, "addPh3L1SmartPixelsDiscClusters")
       "the separate disc cluster table is gone")
 
 
-def _cnn_refit(scope, tableFirst):
+def _emu_refit(scope, tableFirst):
     p = cms.Process("TEST")
     p.pdummy = cms.Path()
     p.l1tPh2NanoTask = cms.Task()
     if tableFirst:
         addPh3L1SmartPixelsClusters(p)
-    cfg = {"angleSource": "cnn"}
+    cfg = {"angleSource": "emu"}
     if scope is not None:
         cfg["discScope"] = scope
     smartPixelsCoexist(p, variants=[("digiRefit", "1111")], addNanoTables=True,
@@ -581,16 +581,27 @@ def _cnn_refit(scope, tableFirst):
     return p
 
 
-for scope in (None, "all"):
+for scope in (None, "none"):
     want = scope or "sp"
     for tableFirst in (True, False):
-        pc = _cnn_refit(scope, tableFirst)
+        pc = _emu_refit(scope, tableFirst)
         check(pc.spixSmartPixelsRecHits.discScope.value() == want
               and pc.l1tPh3SmartPixelsClusterTable.discScope.value() == want,
               f"rec hits and cluster table share discScope={want} (table added "
               f"{'before' if tableFirst else 'after'} the refit)")
         check(not hasattr(pc.spixSmartPixelsRecHits, "includeDiscs"),
               "rec hits have no includeDiscs parameter")
+        check(pc.spixSmartPixelsRecHits.angleSource.value() == "emu"
+              and pc.spixSmartPixelsRecHits.emuLibrary.value().endswith("spix_emu_library_v1.root")
+              and len(pc.spixSmartPixelsRecHits.emuBarrelScalars) == 27
+              and len(pc.spixSmartPixelsRecHits.emuDiscScalars) == 35,
+              "emu source wired with its models, scalars and library")
+expect_raises(ValueError, lambda: _resolveDigiRefitConfig({"angleSource": "emu", "discScope": "all"}),
+              "emu with discScope all raises ValueError", contains="discScope")
+expect_raises(ValueError, lambda: _resolveDigiRefitConfig({"angleSource": "emu", "pixelavAngleSet": "x.json"}),
+              "emu with a pixelavAngleSet raises ValueError", contains="pixelavAngleSet")
+expect_raises(ValueError, lambda: _resolveDigiRefitConfig({"angleSource": "cnn"}),
+              "the removed cnn angle source raises ValueError", contains="angleSource")
 check(not hasattr(_p3nano.l1tPh3SmartPixelsClusterTable, "subdetector"),
       "cluster table has no subdetector option")
 check(not hasattr(_p3nano.l1tPh3SmartPixelsAllStubTable, "barrelOnly"),
