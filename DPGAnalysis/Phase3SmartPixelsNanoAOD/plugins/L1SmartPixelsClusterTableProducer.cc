@@ -153,7 +153,8 @@ public:
     std::vector<float> sigGlobalClusterPhi, sigGlobalClusterCotTheta;
     unsigned closureFail = 0;
     std::vector<float> localCotAlpha, localCotBeta, sigAlpha, sigBeta;
-    std::vector<uint8_t> hasAlpha, hasBeta;
+    std::vector<uint8_t> hasAlpha, hasBeta, satAlpha, satBeta;
+    std::vector<int16_t> tpEmuClass;
     std::vector<float> tpPt, tpVx, tpVy, tpVz, tpEta, tpPhi, tpChargeFrac, tpLocalCotAlpha, tpLocalCotBeta;
     std::vector<int32_t> tpKey;
 
@@ -224,6 +225,8 @@ public:
         sigBeta.push_back(rh.sigBeta());
         hasAlpha.push_back(rh.hasAlpha() ? 1 : 0);
         hasBeta.push_back(rh.hasBeta() ? 1 : 0);
+        satAlpha.push_back(rh.satAlpha() ? 1 : 0);
+        satBeta.push_back(rh.satBeta() ? 1 : 0);
 
         if (haveTruth) {
           const auto& tr = (*tsv)[j];
@@ -237,6 +240,7 @@ public:
           tpChargeFrac.push_back(tr.chargeFrac());
           tpLocalCotAlpha.push_back(tr.trueCotAlpha());
           tpLocalCotBeta.push_back(tr.trueCotBeta());
+          tpEmuClass.push_back(tr.emuClass());
           if (pdu != nullptr && tr.trueCotAlpha() > -900.f) {
             const auto gt = smartpixels::toGlobalDirection(*pdu, tr.trueCotAlpha(), tr.trueCotBeta());
             tpGlobalClusterPhi.push_back(gt.valid ? gt.dirPhi : -999.f);
@@ -322,6 +326,11 @@ public:
     tab->addColumn<uint8_t>("hasAlpha", hasAlpha,
                             "sensor reports an alpha at all (payload validity gate / grazing clamp)");
     tab->addColumn<uint8_t>("hasBeta", hasBeta, "sensor reports a beta at all");
+    tab->addColumn<uint8_t>("satAlpha", satAlpha,
+                            "the emulated alpha (angleSource emu) hit its clamp at +-(90 - 0.01) deg: the "
+                            "reported value is the bound (hasAlpha is then 0 through the |cot| gate); always 0 "
+                            "for the payload source");
+    tab->addColumn<uint8_t>("satBeta", satBeta, "as satAlpha, for beta");
     if (doTruth_) {
       tab->addColumn<int32_t>("tpKey", tpKey,
                               "TRUTH-ONLY: TrackingParticle collection key of the dominant charge "
@@ -350,6 +359,10 @@ public:
                             "TRUTH-ONLY: true direction, global cot(theta)", 16);
       tab->addColumn<float>("tpChargeFrac", tpChargeFrac,
                             "TRUTH-ONLY: dominant contributor share of the cluster charge", 10);
+      tab->addColumn<int16_t>("tpEmuClass", tpEmuClass,
+                             "TRUTH-ONLY, VALIDATION ONLY (a truth tell by construction; never a feature): "
+                             "SmartPixels-output emulator class, 1 = T (angle emulated from the dominant TP's "
+                             "truth), 0 = C (CNN + donor residual), -1 = not the emu angle source");
     }
     if (closureFail)
         throw cms::Exception("SmartPixelsFrameClosureFailed")
