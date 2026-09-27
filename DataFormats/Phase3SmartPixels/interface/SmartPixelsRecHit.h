@@ -82,6 +82,14 @@ public:
   bool hasAlpha() const { return hasAlpha_; }
   bool hasBeta() const { return hasBeta_; }
 
+  // The emulated angle hit its clamp at +-(90 - eps) deg (angleSource "emu"): the
+  // reported value is the bound, not a measurement. Never set by the payload source.
+  bool satAlpha() const { return angleFlags_ & kSatAlpha; }
+  bool satBeta() const { return angleFlags_ & kSatBeta; }
+  void setSaturation(bool satA, bool satB) {
+    angleFlags_ = static_cast<uint8_t>((satA ? kSatAlpha : 0) | (satB ? kSatBeta : 0));
+  }
+
   void setAngles(float cotAlpha, float cotBeta, float sigAlpha, float sigBeta, bool hasA, bool hasB) {
     cotAlpha_ = cotAlpha;
     cotBeta_ = cotBeta;
@@ -102,6 +110,8 @@ private:
   float cotAlpha_ = -999.f, cotBeta_ = -999.f;
   float sigAlpha_ = -999.f, sigBeta_ = -999.f;
   bool hasAlpha_ = false, hasBeta_ = false;
+  static constexpr uint8_t kSatAlpha = 1, kSatBeta = 2;
+  uint8_t angleFlags_ = 0;
 };
 
 using SmartPixelsRecHitCollection = edmNew::DetSetVector<SmartPixelsRecHit>;
