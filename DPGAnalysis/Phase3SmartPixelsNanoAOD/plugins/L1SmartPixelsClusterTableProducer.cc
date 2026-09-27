@@ -84,6 +84,7 @@
 #include "FWCore/ParameterSet/interface/ParameterSetDescription.h"
 #include "FWCore/Utilities/interface/Exception.h"
 
+#include "DPGAnalysis/Phase2L1TNanoAOD/interface/L1TPRowLink.h"
 #include "DataFormats/Common/interface/DetSetVector.h"
 #include "DataFormats/NanoAOD/interface/FlatTable.h"
 #include "DataFormats/SiPixelCluster/interface/SiPixelCluster.h"
@@ -124,6 +125,8 @@ public:
         maxLayer_(cfg.getParameter<unsigned>("maxLayer")),
         maxDisk_(smartpixels::discScopeMaxDisk(discScope_)),
         doTruth_(cfg.getParameter<bool>("doTruth")) {
+    if (doTruth_)
+      tpRowMapToken_ = consumes<edm::ValueMap<int>>(cfg.getParameter<edm::InputTag>("tpRowMap"));
     produces<nanoaod::FlatTable>();
   }
 
@@ -133,6 +136,10 @@ public:
     const auto recHitHandle = iEvent.getHandle(recHitToken_);
     const auto& recHits = *recHitHandle;
     const auto& truthColl = iEvent.get(truthToken_);
+    edm::Handle<edm::ValueMap<int>> tpRowMapHandle;
+    if (doTruth_)
+      iEvent.getByToken(tpRowMapToken_, tpRowMapHandle);
+    const edm::ValueMap<int>* tpRowMap = tpRowMapHandle.isValid() ? tpRowMapHandle.product() : nullptr;
     if (!scopeChecked_) {
       const auto& rhCfg = edm::parameterSet(recHitHandle.provenance()->stable(), iEvent.processHistory());
       if (rhCfg.getParameter<std::string>("discScope") != discScope_ ||
@@ -160,7 +167,7 @@ public:
     std::vector<uint8_t> hasAlpha, hasBeta, satAlpha, satBeta;
     std::vector<int16_t> tpEmuClass;
     std::vector<float> tpPt, tpVx, tpVy, tpVz, tpEta, tpPhi, tpChargeFrac, tpLocalCotAlpha, tpLocalCotBeta;
-    std::vector<int32_t> tpKey;
+    std::vector<int32_t> tpIdx;
 
     for (const auto& [dsv, surf] : order) {
       const DetId did(dsv.detId());
@@ -237,7 +244,7 @@ public:
 
         if (haveTruth) {
           const auto& tr = (*tsv)[j];
-          tpKey.push_back(tr.hasTp() ? static_cast<int32_t>(tr.dominantTp().key()) : -1);
+          tpIdx.push_back(l1tnano::tpIdx(tpRowMap, tr.dominantTp()));
           tpPt.push_back(tr.hasTp() ? static_cast<float>(tr.dominantTp()->pt()) : -999.f);
           tpVx.push_back(tr.hasTp() ? static_cast<float>(tr.dominantTp()->vx()) : -999.f);
           tpVy.push_back(tr.hasTp() ? static_cast<float>(tr.dominantTp()->vy()) : -999.f);
@@ -342,10 +349,8 @@ public:
                             "payload source");
     tab->addColumn<uint8_t>("satBeta", satBeta, "as satAlpha, for beta");
     if (doTruth_) {
-      tab->addColumn<int32_t>("tpKey", tpKey,
-                              "TRUTH-ONLY: TrackingParticle collection key of the dominant charge "
-                              "contributor, or -1 (a key, not a row). Joins L1TTP_key, L1TOTStub_tpKey, "
-                              "L1TTrack_tpKey and spixMatchedTpKey");
+      tab->addColumn<int32_t>("tpIdx", tpIdx,
+                              std::string("TRUTH-ONLY, dominant charge contributor: ") + l1tnano::tpIdxDoc());
       tab->addColumn<float>("tpPt", tpPt, "TRUTH-ONLY: pT [GeV] of the dominant TP", 10);
       // Full PRODUCTION STATE of the dominant TP. tpLocalCot{Alpha,Beta} are
       // helix-propagated from this vertex+direction and therefore IGNORE multiple
@@ -394,8 +399,10 @@ public:
     desc.add<unsigned>("maxLayer", 4)
         ->setComment("highest TBPX layer kept (SmartPixels scope is 1..4); MUST equal the rec hits' (checked)");
     desc.add<bool>("doTruth", true)
-        ->setComment("attach the TRUTH-ONLY tp* block (tpKey, tpPt, tpChargeFrac, "
+        ->setComment("attach the TRUTH-ONLY tp* block (tpIdx, tpPt, tpChargeFrac, "
                      "tpLocalCot*, tpGlobalCluster*)");
+    desc.add<edm::InputTag>("tpRowMap", edm::InputTag("l1tTrackingParticleTable"))
+        ->setComment("L1TTP key -> row map from L1TrackingParticleTableProducer; tpIdx = -2 when absent");
     descriptions.addWithDefaultLabel(desc);
   }
 
@@ -409,6 +416,7 @@ private:
   const unsigned maxLayer_;
   const unsigned maxDisk_;
   const bool doTruth_;
+  edm::EDGetTokenT<edm::ValueMap<int>> tpRowMapToken_;
   bool scopeChecked_ = false;
 };
 

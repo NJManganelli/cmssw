@@ -27,6 +27,7 @@
 #include "FWCore/ParameterSet/interface/ParameterSetDescription.h"
 #include "FWCore/Utilities/interface/Exception.h"
 
+#include "DPGAnalysis/Phase2L1TNanoAOD/interface/L1TPRowLink.h"
 #include "DataFormats/L1TrackTrigger/interface/TTTrack.h"
 #include "DataFormats/L1TrackTrigger/interface/TTTypes.h"
 #include "DataFormats/NanoAOD/interface/FlatTable.h"
@@ -35,6 +36,7 @@
 #include "L1Trigger/Phase3SmartPixels/interface/SmartPixelsTransmittedSubset.h"
 
 #include <cstdint>
+#include <string>
 #include <vector>
 
 class L1SmartPixelsRefitTableProducer : public edm::stream::EDProducer<> {
@@ -45,6 +47,7 @@ public:
   explicit L1SmartPixelsRefitTableProducer(const edm::ParameterSet& cfg)
       : tracksToken_(consumes<TTTrackCollection>(cfg.getParameter<edm::InputTag>("tracks"))),
         sidecarToken_(consumes<smartpixels::SmartPixelsRefitSidecar>(cfg.getParameter<edm::InputTag>("sidecar"))),
+        tpRowMapToken_(consumes<edm::ValueMap<int>>(cfg.getParameter<edm::InputTag>("tpRowMap"))),
         trackTableName_(cfg.getParameter<std::string>("trackTableName")),
         hitTableName_(cfg.getParameter<std::string>("hitTableName")) {
     produces<nanoaod::FlatTable>("hit");
@@ -54,6 +57,11 @@ public:
   void produce(edm::Event& iEvent, const edm::EventSetup&) override {
     const auto& tracks = iEvent.get(tracksToken_);
     const auto& sidecar = iEvent.get(sidecarToken_);
+    // The sidecar holds a bare key into the refit's TrackingParticle input, the same
+    // mix:MergedTrackTruth the row map covers.
+    const auto tpRowMapHandle = iEvent.getHandle(tpRowMapToken_);
+    const edm::ValueMap<int>* tpRowMap = tpRowMapHandle.isValid() ? tpRowMapHandle.product() : nullptr;
+    const edm::ProductID tpId = tpRowMap ? l1tnano::tpProductOf(*tpRowMap) : edm::ProductID();
 
     const size_t nTracks = tracks.size();
     if (sidecar.trackInfo.size() != nTracks || sidecar.hitInfo.size() != nTracks) {
@@ -68,7 +76,7 @@ public:
     std::vector<bool> refitPerformed, seedCovOK, anyWindowTruncated;
     std::vector<float> chi2IncXTot, chi2IncYTot, chi2IncAlphaTot, chi2IncBetaTot;
     std::vector<float> chi2ITAtSeed, chi2ITAtRefit, shiftChi2, logDetRatio;
-    std::vector<int32_t> matchedTpKey;
+    std::vector<int32_t> matchedTpIdx;
     std::vector<int32_t> compactWord;
     status.reserve(nTracks);
     nCrossings.reserve(nTracks);
@@ -126,7 +134,7 @@ public:
       chi2IncYTot.push_back(ti.chi2IncYTot);
       chi2IncAlphaTot.push_back(ti.chi2IncAlphaTot);
       chi2IncBetaTot.push_back(ti.chi2IncBetaTot);
-      matchedTpKey.push_back(ti.matchedTpIdx);
+      matchedTpIdx.push_back(l1tnano::tpIdxOfKey(tpRowMap, tpId, ti.matchedTpIdx));
       chi2ITAtSeed.push_back(ti.chi2ITAtSeed);
       chi2ITAtRefit.push_back(ti.chi2ITAtRefit);
       shiftChi2.push_back(ti.shiftChi2);
@@ -272,10 +280,10 @@ public:
     trkTable->addColumn<float>("spixChi2IncYTot", chi2IncYTot, "sum of local-y chi2 increments over crossings");
     trkTable->addColumn<float>("spixChi2IncAlphaTot", chi2IncAlphaTot, "sum of cotAlpha chi2 increments over crossings (r-phi total = X + Alpha)");
     trkTable->addColumn<float>("spixChi2IncBetaTot", chi2IncBetaTot, "sum of cotBeta chi2 increments over crossings (r-z total = Y + Beta)");
-    trkTable->addColumn<int32_t>("spixMatchedTpKey", matchedTpKey,
-        "TRUTH-ONLY: TrackingParticle collection key this track is matched to (-1 if none; a key, "
-        "not a row). Join against L1TSmartPixelsCluster_tpKey to find every cluster from this "
-        "track's own particle, including ones the search window never offered");
+    trkTable->addColumn<int32_t>("spixMatchedTpIdx", matchedTpIdx,
+        std::string("TRUTH-ONLY, TP this track is matched to (equal L1TSmartPixelsCluster_tpIdx finds every "
+                    "cluster from its particle, including ones the search window never offered): ") +
+            l1tnano::tpIdxDoc());
     trkTable->addColumn<float>("spixChi2ITAtSeed", chi2ITAtSeed,
         "chi2 of the ACCEPTED IT hits against the UNMODIFIED OT seed helix. Needs no stubs, so "
         "it travels with the track. CAVEAT: the refit selected these hits by minimising this, so "
@@ -295,6 +303,8 @@ public:
     edm::ParameterSetDescription desc;
     desc.add<edm::InputTag>("tracks", edm::InputTag("l1tSmartPixelsTrackProducer", "Level1TTTracks"));
     desc.add<edm::InputTag>("sidecar", edm::InputTag("l1tSmartPixelsTrackProducer", "Level1TTTracks"));
+    desc.add<edm::InputTag>("tpRowMap", edm::InputTag("l1tTrackingParticleTable"))
+        ->setComment("L1TTP key -> row map from L1TrackingParticleTableProducer; spixMatchedTpIdx = -2 when absent");
     desc.add<std::string>("trackTableName", "L1TSmartPixelsTrack");
     desc.add<std::string>("hitTableName", "L1TSmartPixelsRefitHit");
     descriptions.addWithDefaultLabel(desc);
@@ -303,6 +313,7 @@ public:
 private:
   const edm::EDGetTokenT<TTTrackCollection> tracksToken_;
   const edm::EDGetTokenT<smartpixels::SmartPixelsRefitSidecar> sidecarToken_;
+  const edm::EDGetTokenT<edm::ValueMap<int>> tpRowMapToken_;
   const std::string trackTableName_;
   const std::string hitTableName_;
 };

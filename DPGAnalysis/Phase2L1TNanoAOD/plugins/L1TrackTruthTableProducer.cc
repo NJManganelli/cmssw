@@ -6,8 +6,9 @@
 //     run, e.g. data or central workflows without the truth sequence).
 //   - the matched TrackingParticle's FULL helix parameters propagated to its
 //     POCA to the beamline (tp_pt/tp_eta/tp_phi/tp_tanL/tp_charge/tp_d0/tp_z0)
-//     plus its production vertex (tp_vx/tp_vy/tp_vz), and its collection key
-//     tpKey (joins L1TTP_key and the cluster/stub tables' tpKey). These enable
+//     plus its production vertex (tp_vx/tp_vy/tp_vz), and tpIdx, its L1TTP row
+//     (L1TPRowLink.h encoding; -2 when the association or the L1TTP row map
+//     is absent). These enable
 //     resolution-vs-truth for DISPLACED / b-decay tracks whose TRUE d0 is
 //     nonzero and is NOT captured by GenVtx (the PV). Sentinel -999 when the
 //     track is not genuinely matched to a TP.
@@ -30,6 +31,7 @@
 #include "FWCore/ParameterSet/interface/ParameterSet.h"
 #include "FWCore/ParameterSet/interface/ParameterSetDescription.h"
 
+#include "DPGAnalysis/Phase2L1TNanoAOD/interface/L1TPRowLink.h"
 #include "DataFormats/GeometryVector/interface/GlobalPoint.h"
 #include "DataFormats/L1TrackTrigger/interface/TTTrack.h"
 #include "DataFormats/L1TrackTrigger/interface/TTTypes.h"
@@ -52,6 +54,7 @@ public:
   explicit L1TrackTruthTableProducer(const edm::ParameterSet& cfg)
       : tracksToken_(consumes<L1TrackCollection>(cfg.getParameter<edm::InputTag>("tracks"))),
         assocToken_(consumes<AssocMap>(cfg.getParameter<edm::InputTag>("truthAssociation"))),
+        tpRowMapToken_(consumes<edm::ValueMap<int>>(cfg.getParameter<edm::InputTag>("tpRowMap"))),
         bFieldToken_(esConsumes<MagneticField, IdealMagneticFieldRecord>()),
         trackTableName_(cfg.getParameter<std::string>("trackTableName")) {
     produces<nanoaod::FlatTable>();
@@ -60,6 +63,8 @@ public:
   void produce(edm::Event& iEvent, const edm::EventSetup& iSetup) override {
     auto tracksHandle = iEvent.getHandle(tracksToken_);
     auto assocHandle = iEvent.getHandle(assocToken_);
+    const auto tpRowMapHandle = iEvent.getHandle(tpRowMapToken_);
+    const edm::ValueMap<int>* tpRowMap = tpRowMapHandle.isValid() ? tpRowMapHandle.product() : nullptr;
 
     // Conversion factor curvature-radius <-> pT (same as L1TrackNtupleMaker).
     const auto& bField = iSetup.getData(bFieldToken_);
@@ -72,7 +77,7 @@ public:
     std::vector<bool> genuine(nTracks, false), loose(nTracks, false), combinatoric(nTracks, false),
         unknown(nTracks, false);
     std::vector<float> tpPt(nTracks, -1.f), tpEta(nTracks, 0.f);
-    std::vector<int32_t> tpPdgId(nTracks, 0), tpKey(nTracks, -1);
+    std::vector<int32_t> tpPdgId(nTracks, 0), tpIdx(nTracks, assocHandle.isValid() ? -1 : -2);
     std::vector<bool> tpFromHardInteraction(nTracks, false);
     // Matched-TP full helix params @ POCA + production vertex (-999 sentinel for
     // tracks without a genuine TP match; consumers gate on genuine / tp_pt>0).
@@ -91,6 +96,7 @@ public:
         combinatoric[i] = assocHandle->isCombinatoric(ptr);
         unknown[i] = assocHandle->isUnknown(ptr);
         const auto& tp = assocHandle->findTrackingParticlePtr(ptr);
+        tpIdx[i] = l1tnano::tpIdx(tpRowMap, tp);
         if (tp.isNonnull()) {
           const float pt = tp->pt();
           const float phi = tp->phi();
@@ -98,7 +104,6 @@ public:
           const float vx = tp->vx();
           const float vy = tp->vy();
           const float vz = tp->vz();
-          tpKey[i] = static_cast<int32_t>(tp.key());
           tpPt[i] = pt;
           tpEta[i] = tp->eta();
           tpPdgId[i] = tp->pdgId();
@@ -139,10 +144,7 @@ public:
     table->addColumn<float>("tpPt", tpPt, "matched TrackingParticle pt (-1 if none)");
     table->addColumn<float>("tpEta", tpEta, "matched TrackingParticle eta");
     table->addColumn<int32_t>("tpPdgId", tpPdgId, "matched TrackingParticle pdgId");
-    table->addColumn<int32_t>("tpKey",
-                              tpKey,
-                              "matched TrackingParticle collection key (-1 if none; a key, not a row): "
-                              "joins L1TTP_key and the cluster/stub tpKey");
+    table->addColumn<int32_t>("tpIdx", tpIdx, l1tnano::tpIdxDoc());
     table->addColumn<bool>(
         "tpFromHardInteraction", tpFromHardInteraction, "matched TrackingParticle from the hard interaction");
     // Matched-TP full helix params for resolution-vs-truth (displaced/b-tracks).
@@ -172,6 +174,8 @@ public:
     edm::ParameterSetDescription desc;
     desc.add<edm::InputTag>("tracks", edm::InputTag("l1tTTTracksFromTrackletEmulation", "Level1TTTracks"));
     desc.add<edm::InputTag>("truthAssociation", edm::InputTag("TTTrackAssociatorFromPixelDigis", "Level1TTTracks"));
+    desc.add<edm::InputTag>("tpRowMap", edm::InputTag("l1tTrackingParticleTable"))
+        ->setComment("L1TTP key -> row map from L1TrackingParticleTableProducer; tpIdx = -2 when absent");
     desc.add<std::string>("trackTableName", "L1TTrack");
     descriptions.addWithDefaultLabel(desc);
   }
@@ -179,6 +183,7 @@ public:
 private:
   const edm::EDGetTokenT<L1TrackCollection> tracksToken_;
   const edm::EDGetTokenT<AssocMap> assocToken_;
+  const edm::EDGetTokenT<edm::ValueMap<int>> tpRowMapToken_;
   const edm::ESGetToken<MagneticField, IdealMagneticFieldRecord> bFieldToken_;
   const std::string trackTableName_;
 };
