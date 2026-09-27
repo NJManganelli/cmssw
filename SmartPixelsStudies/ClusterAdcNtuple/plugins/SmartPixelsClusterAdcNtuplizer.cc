@@ -64,6 +64,7 @@
 #include "SimDataFormats/TrackerDigiSimLink/interface/PixelDigiSimLink.h"
 #include "SimDataFormats/TrackingAnalysis/interface/TrackingParticle.h"
 #include "SimDataFormats/TrackingHit/interface/PSimHitContainer.h"
+#include "L1Trigger/Phase3SmartPixels/interface/SmartPixelsTpHelix.h"
 
 #include "TTree.h"
 
@@ -72,47 +73,6 @@
 #include <map>
 #include <unordered_map>
 #include <vector>
-
-namespace {
-  // Pure helix of a TrackingParticle from its production state in a uniform field
-  // along z. Parameter s = TRANSVERSE arc length from the production vertex. Same
-  // centre/sign convention as SmartPixelsRecHitProducer.
-  struct Helix {
-    bool curved = false;
-    double R = 0, sgn = 0, cx = 0, cy = 0, th0 = 0;
-    double vx = 0, vy = 0, vz = 0, ux = 0, uy = 0, cotTh = 0;
-
-    Helix(const TrackingParticle& tp, double bz) {
-      const double pt = std::hypot(tp.px(), tp.py());
-      vx = tp.vx();
-      vy = tp.vy();
-      vz = tp.vz();
-      ux = pt > 0 ? tp.px() / pt : 1.;
-      uy = pt > 0 ? tp.py() / pt : 0.;
-      cotTh = pt > 0 ? tp.pz() / pt : 0.;
-      if (tp.charge() != 0 && pt > 1e-6 && std::abs(bz) > 1e-6) {
-        curved = true;
-        R = pt / (0.29979246 * std::abs(bz)) * 100.0;  // cm
-        sgn = (tp.charge() * bz > 0.) ? +1.0 : -1.0;
-        cx = vx + sgn * R * uy;
-        cy = vy - sgn * R * ux;
-        th0 = std::atan2(vy - cy, vx - cx);
-      }
-    }
-    GlobalPoint pos(double s) const {
-      if (!curved)
-        return GlobalPoint(vx + s * ux, vy + s * uy, vz + s * cotTh);
-      const double th = th0 - sgn * s / R;
-      return GlobalPoint(cx + R * std::cos(th), cy + R * std::sin(th), vz + s * cotTh);
-    }
-    GlobalVector dir(double s) const {  // d(pos)/ds; transverse part has unit length
-      if (!curved)
-        return GlobalVector(ux, uy, cotTh);
-      const double th = th0 - sgn * s / R;
-      return GlobalVector(sgn * std::sin(th), -sgn * std::cos(th), cotTh);
-    }
-  };
-}  // namespace
 
 class SmartPixelsClusterAdcNtuplizer : public edm::one::EDAnalyzer<edm::one::SharedResources> {
 public:
@@ -598,42 +558,12 @@ void SmartPixelsClusterAdcNtuplizer::analyze(const edm::Event& iEvent, const edm
         tpVx_ = tp.vx(); tpVy_ = tp.vy(); tpVz_ = tp.vz();
         tpPx_ = tp.px(); tpPy_ = tp.py(); tpPz_ = tp.pz();
 
-        // ---- helix x module mid-plane: scan + bisection, keep the root nearest the hit
-        const Helix hx(tp, bz);
-        const GlobalVector n = surf.normalVector();
-        auto f = [&](double s) {
-          const GlobalPoint p = hx.pos(s);
-          return n.x() * (p.x() - mc.x()) + n.y() * (p.y() - mc.y()) + n.z() * (p.z() - mc.z());
-        };
-        const double sMax = hx.curved ? std::min(4. * M_PI * hx.R, 300.) : 300.;
-        double bestD = 1e9, bestS = -1;
-        double s0 = 0, f0 = f(0);
-        while (s0 < sMax) {
-          const double s1 = std::min(s0 + helixStep_, sMax);
-          const double f1 = f(s1);
-          if ((f0 <= 0 && f1 > 0) || (f0 >= 0 && f1 < 0)) {
-            double a = s0, b = s1, fa = f0;
-            for (int it = 0; it < 50; ++it) {
-              const double m = 0.5 * (a + b), fm = f(m);
-              if ((fa <= 0 && fm > 0) || (fa >= 0 && fm < 0))
-                b = m;
-              else {
-                a = m;
-                fa = fm;
-              }
-            }
-            const double sr = 0.5 * (a + b);
-            ++hxNRoots_;
-            const double d = (hx.pos(sr) - gp).mag();
-            if (d < bestD) {
-              bestD = d;
-              bestS = sr;
-            }
-          }
-          s0 = s1;
-          f0 = f1;
-        }
-        if (bestS >= 0) {
+        // ---- helix x module mid-plane: the crossing nearest the hit (shared with the emulator's class T)
+        const smartpixels::TpHelix hx(tp, bz);
+        const auto hc = smartpixels::helixPlaneCrossing(hx, surf, gp, helixStep_);
+        hxNRoots_ = hc.nRoots;
+        if (hc.s >= 0) {
+          const double bestS = hc.s;
           hxOk_ = 1;
           const LocalPoint lp = surf.toLocal(hx.pos(bestS));
           const LocalVector ld = surf.toLocal(hx.dir(bestS));
@@ -643,7 +573,7 @@ void SmartPixelsClusterAdcNtuplizer::analyze(const edm::Event& iEvent, const edm
           hxCotAlpha_ = ld.x() / lz;
           hxCotBeta_ = ld.y() / lz;
           hxS_ = bestS;
-          hxDist_ = bestD;
+          hxDist_ = hc.dist;
           hxTurns_ = hx.curved ? bestS / (2. * M_PI * hx.R) : 0.f;
         } else
           ++nHelixFail_;
