@@ -1,0 +1,4 @@
+<bin file="testSmartPixelsKnn.cpp" name="testSmartPixelsKnn">
+  <use name="catch2"/>
+  <use name="L1Trigger/Phase3SmartPixels"/>
+</bin>
