@@ -12,7 +12,7 @@ smartPixelsRecHits = cms.EDProducer(
     maxLayer=cms.uint32(4),
     discScope=cms.string("sp"),  # disc clusters: none | sp (ID1-ID4) | tfpx | all; payload gives them no angle
     clusterMergeFrac=cms.double(0.1),
-    measAngleMaxAbs=cms.double(12.0),
+    measAngleMaxAbs=cms.double(12.0),  # payload only: clears has* beyond it (emu reports every angle)
     angleSet=cms.string(""),   # REQUIRED: PixelAV angle-response payload
     noiseSet=cms.string(""),   # noise-angle inverse CDF; empty = unlinked clusters get NO
                                # angle, which makes "has an angle" a truth proxy

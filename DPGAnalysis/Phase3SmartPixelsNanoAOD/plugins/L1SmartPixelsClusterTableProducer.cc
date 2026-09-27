@@ -108,6 +108,10 @@
 #include <string>
 #include <vector>
 
+namespace {
+  constexpr double kClosureMaxAbsCot = 12.;  // the refit's measAngleMaxAbs
+}
+
 class L1SmartPixelsClusterTableProducer : public edm::stream::EDProducer<> {
 public:
   explicit L1SmartPixelsClusterTableProducer(const edm::ParameterSet& cfg)
@@ -202,8 +206,11 @@ public:
           sigGlobalClusterCotTheta.push_back(gr.valid ? gr.sigDirCotTheta : -999.f);
           // CLOSURE: rotate the global direction back and require the module-frame
           // angles to reappear. A mis-applied rotation on a tilted module would
-          // otherwise be a large, silent error.
-          if (rh.hasAlpha() && rh.hasBeta() &&
+          // otherwise be a large, silent error. The absolute tolerance is meaningless
+          // at grazing |cot| (the emu source reports up to ~5730), so the test keeps
+          // the range it had when hasAlpha/hasBeta still carried the |cot| <= 12 cap.
+          if (rh.hasAlpha() && rh.hasBeta() && std::abs(rh.cotAlpha()) <= kClosureMaxAbsCot &&
+              std::abs(rh.cotBeta()) <= kClosureMaxAbsCot &&
               !smartpixels::closesBackToModule(*pdu, gr, rh.cotAlpha(), rh.cotBeta()))
             ++closureFail;
         } else {
@@ -324,12 +331,15 @@ public:
     tab->addColumn<float>("sigAlpha", sigAlpha, "angle-estimator resolution, alpha", 10);
     tab->addColumn<float>("sigBeta", sigBeta, "angle-estimator resolution, beta", 10);
     tab->addColumn<uint8_t>("hasAlpha", hasAlpha,
-                            "sensor reports an alpha at all (payload validity gate / grazing clamp)");
-    tab->addColumn<uint8_t>("hasBeta", hasBeta, "sensor reports a beta at all");
+                            "sensor reports an alpha. angleSource emu: ALWAYS 1 (a flag that depended on the "
+                            "value would tell class C from class T); algorithms apply their own |cot| cap (the "
+                            "refit: measAngleMaxAbs = 12). payload: 0 outside the PixelAV validity gate or "
+                            "beyond |cot| 12");
+    tab->addColumn<uint8_t>("hasBeta", hasBeta, "sensor reports a beta; as hasAlpha");
     tab->addColumn<uint8_t>("satAlpha", satAlpha,
                             "the emulated alpha (angleSource emu) hit its clamp at +-(90 - 0.01) deg: the "
-                            "reported value is the bound (hasAlpha is then 0 through the |cot| gate); always 0 "
-                            "for the payload source");
+                            "reported value is the bound (|cot| ~ 5730; hasAlpha stays 1); always 0 for the "
+                            "payload source");
     tab->addColumn<uint8_t>("satBeta", satBeta, "as satAlpha, for beta");
     if (doTruth_) {
       tab->addColumn<int32_t>("tpKey", tpKey,
