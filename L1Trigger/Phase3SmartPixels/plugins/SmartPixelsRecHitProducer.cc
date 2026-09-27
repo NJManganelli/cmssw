@@ -77,10 +77,11 @@
 //     flag the clamp; never wrapped), reported as cot = tan(out) in the module frame.
 //  Every draw is a hash of (run, event, detId, idxInDet) with a salt per draw, so the
 //  output is reproducible and split-job invariant. sigAlpha/sigBeta come from a STATIC
-//  table (emuSigmaSet) keyed on the surface code and |reported cot| only. EVERY emu
-//  cluster reports both angles (hasAlpha = hasBeta = true): a validity flag that
-//  depended on the value would tell class C from class T, so the |cot| cap
-//  (measAngleMaxAbs) is applied by the algorithms that need it, e.g. the refit. The
+//  table (emuSigmaSet) keyed on sensor-reported quantities only: the surface code, the
+//  cluster size(s) (as the table declares; the size counts as sensor-reported) and the
+//  |reported cot|. EVERY emu cluster reports both angles (hasAlpha = hasBeta = true): a
+//  validity flag that depended on the value would tell class C from class T, so the |cot|
+//  cap (measAngleMaxAbs) is applied by the algorithms that need it, e.g. the refit. The
 //  class is TRUTH (SmartPixelsRecHitTruth::emuClass), for validation only.
 
 #include "FWCore/Framework/interface/Event.h"
@@ -357,8 +358,17 @@ private:
   unsigned emuDumpK_ = 0;
   double emuTruthMaxHelixDist_ = 0., emuHelixStep_ = 0.;
   bool emuDebug_ = false;
+  // emuSigmaSet inputs, resolved by name once (the table may key on the cluster sizes)
+  enum class SigmaKey { Surface, SizeX, SizeY, AbsCot };
+  static std::vector<SigmaKey> sigmaKeys(const correction::Correction&);
+  double emuSigma(const correction::Correction::Ref&,
+                  const std::vector<SigmaKey>&,
+                  unsigned surface,
+                  const SmartPixelsRecHit&,
+                  float cot) const;
   std::unique_ptr<correction::CorrectionSet> emuSigmaSet_;
   correction::Correction::Ref corrEmuAlphaSigma_, corrEmuBetaSigma_;
+  std::vector<SigmaKey> emuAlphaSigmaKeys_, emuBetaSigmaKeys_;
 
   std::unique_ptr<correction::CorrectionSet> angleSet_;
   correction::Correction::Ref corrAlphaSigma_, corrBetaSigma_;
@@ -481,6 +491,8 @@ SmartPixelsRecHitProducer::SmartPixelsRecHitProducer(const edm::ParameterSet& cf
         correction::CorrectionSet::from_file(edm::FileInPath(cfg.getParameter<std::string>("emuSigmaSet")).fullPath());
     corrEmuAlphaSigma_ = emuSigmaSet_->at("spix_emu_alpha_sigma");
     corrEmuBetaSigma_ = emuSigmaSet_->at("spix_emu_beta_sigma");
+    emuAlphaSigmaKeys_ = sigmaKeys(*corrEmuAlphaSigma_);
+    emuBetaSigmaKeys_ = sigmaKeys(*corrEmuBetaSigma_);
     if (emuDebug_)
       produces<std::vector<double>>("emuDebug");
   } else {
@@ -788,6 +800,48 @@ namespace {
   constexpr unsigned kEmuDebugStride = 15;
 }
 
+std::vector<SmartPixelsRecHitProducer::SigmaKey> SmartPixelsRecHitProducer::sigmaKeys(const correction::Correction& c) {
+  static const std::map<std::string, SigmaKey> known = {{"surface", SigmaKey::Surface},
+                                                        {"sizeX", SigmaKey::SizeX},
+                                                        {"sizeY", SigmaKey::SizeY},
+                                                        {"absCot", SigmaKey::AbsCot}};
+  std::vector<SigmaKey> keys;
+  for (const auto& v : c.inputs()) {
+    const auto it = known.find(v.name());
+    if (it == known.end())
+      throw cms::Exception("Configuration") << "emuSigmaSet " << c.name() << " has input '" << v.name()
+                                            << "'; only surface, sizeX, sizeY, absCot are sensor-reported";
+    keys.push_back(it->second);
+  }
+  return keys;
+}
+
+double SmartPixelsRecHitProducer::emuSigma(const correction::Correction::Ref& corr,
+                                           const std::vector<SigmaKey>& keys,
+                                           unsigned surface,
+                                           const SmartPixelsRecHit& hit,
+                                           float cot) const {
+  std::vector<correction::Variable::Type> in;
+  in.reserve(keys.size());
+  for (const auto k : keys) {
+    switch (k) {
+      case SigmaKey::Surface:
+        in.emplace_back(static_cast<int>(surface));
+        break;
+      case SigmaKey::SizeX:
+        in.emplace_back(static_cast<int>(hit.sizeX()));
+        break;
+      case SigmaKey::SizeY:
+        in.emplace_back(static_cast<int>(hit.sizeY()));
+        break;
+      case SigmaKey::AbsCot:
+        in.emplace_back(std::abs(static_cast<double>(cot)));
+        break;
+    }
+  }
+  return corr->evaluate(in);
+}
+
 void SmartPixelsRecHitProducer::setEmuAngles(std::vector<SmartPixelsRecHit>& hits,
                                              std::vector<SmartPixelsRecHitTruth>& truths,
                                              const std::vector<EmuHit>& emu,
@@ -984,8 +1038,8 @@ void SmartPixelsRecHitProducer::setEmuAngles(std::vector<SmartPixelsRecHit>& hit
     const float cotA = static_cast<float>(std::tan(outA * kRadPerDeg));
     const float cotB = static_cast<float>(std::tan(outB * kRadPerDeg));
 
-    const double sigA = corrEmuAlphaSigma_->evaluate({static_cast<int>(surface), std::abs(static_cast<double>(cotA))});
-    const double sigB = corrEmuBetaSigma_->evaluate({static_cast<int>(surface), std::abs(static_cast<double>(cotB))});
+    const double sigA = emuSigma(corrEmuAlphaSigma_, emuAlphaSigmaKeys_, surface, hits[i], cotA);
+    const double sigB = emuSigma(corrEmuBetaSigma_, emuBetaSigmaKeys_, surface, hits[i], cotB);
     if (!(sigA > 0. && sigB > 0.))
       throw cms::Exception("SmartPixelsEmu") << "emuSigmaSet gives a non-positive sigma (" << sigA << ", " << sigB
                                              << ") on surface " << surface << ": every emu angle must be reported";
@@ -1067,8 +1121,8 @@ void SmartPixelsRecHitProducer::fillDescriptions(edm::ConfigurationDescriptions&
   desc.add<std::string>("emuLibrary", "")
       ->setComment("emu: ROOT file with the rescaled SmartPixels dump (tree dump); emu_build_library.py");
   desc.add<std::string>("emuSigmaSet", "")
-      ->setComment("emu: correctionlib spix_emu_{alpha,beta}_sigma(surface, |reported cot|), the emulated "
-                   "residual width used as sigAlpha/sigBeta");
+      ->setComment("emu: correctionlib spix_emu_{alpha,beta}_sigma, the emulated residual width used as "
+                   "sigAlpha/sigBeta; inputs taken by name from surface, sizeX, sizeY, absCot (|reported cot|)");
   desc.add<double>("emuInflation", 1.5)->setComment("emu: out = pseudo + bias + emuInflation (r - bias)");
   desc.add<double>("emuDiscAlphaOffset", -0.312)
       ->setComment("emu: disc alpha lookup key atan(cotAlpha + offset), the PixelAV Lorentz offset (key only)");

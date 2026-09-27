@@ -1,0 +1,4618 @@
+{
+ "schema_version": 2,
+ "description": "SmartPixels-output emulator angle resolution (sigma) tables, v3 (inclusive; key = surface x cluster size x |cot|; variant 'own')",
+ "corrections": [
+  {
+   "name": "spix_emu_alpha_sigma",
+   "description": "SmartPixels-output emulator cotAlpha resolution: weighted (q84-q16)/2 of (emitted - true) cot of the INCLUSIVE emulated population (class-T and class-C routes on the class-T clusters of the training events, weighted by the class fractions of the key cell), by surface code (1-4 IL, 11-14 ID) x cluster size along x (sizeX) and |reported cot| <= 12.0 (clamped above). Saturated rows excluded; bins merged from the data (>= 500 per route). Inputs are sensor-reported only (the cluster size is assumed sensor-reported).",
+   "version": 3,
+   "inputs": [
+    {
+     "name": "surface",
+     "type": "int",
+     "description": "IT surface code: 1-4 = IL1-IL4, 11-14 = ID1-ID4"
+    },
+    {
+     "name": "sizeX",
+     "type": "int",
+     "description": "cluster bounding-box extent in pixels, local x"
+    },
+    {
+     "name": "absCot",
+     "type": "real",
+     "description": "|reported cotAlpha|"
+    }
+   ],
+   "output": {
+    "name": "sigma",
+    "type": "real",
+    "description": "cotAlpha resolution"
+   },
+   "data": {
+    "nodetype": "category",
+    "input": "surface",
+    "content": [
+     {
+      "key": 1,
+      "value": {
+       "nodetype": "binning",
+       "input": "sizeX",
+       "edges": [
+        0.5,
+        1.5,
+        2.5,
+        3.5,
+        4.5,
+        5.5,
+        6.5,
+        7.5,
+        8.5,
+        9.5,
+        10.5,
+        11.5,
+        12.5,
+        13.5,
+        14.5,
+        15.5,
+        16.5,
+        17.5,
+        18.5,
+        19.5,
+        20.5,
+        22.5,
+        24.5,
+        26.5,
+        29.5,
+        33.5,
+        38.5,
+        48.5,
+        242.5
+       ],
+       "content": [
+        {
+         "nodetype": "binning",
+         "input": "absCot",
+         "edges": [
+          0.0,
+          0.025,
+          0.05,
+          0.1,
+          0.15,
+          0.2,
+          0.3,
+          0.5,
+          0.75,
+          1.07,
+          12.0
+         ],
+         "content": [
+          0.056307,
+          0.05702,
+          0.065992,
+          0.081882,
+          0.113022,
+          0.155294,
+          0.304163,
+          0.556407,
+          0.942954,
+          1.132884
+         ],
+         "flow": "clamp"
+        },
+        {
+         "nodetype": "binning",
+         "input": "absCot",
+         "edges": [
+          0.0,
+          0.025,
+          0.05,
+          0.1,
+          0.15,
+          0.2,
+          0.3,
+          0.5,
+          0.75,
+          1.07,
+          1.5,
+          12.0
+         ],
+         "content": [
+          0.109289,
+          0.102633,
+          0.082217,
+          0.060138,
+          0.051199,
+          0.065985,
+          0.130303,
+          0.50106,
+          0.890495,
+          1.208966,
+          1.296599
+         ],
+         "flow": "clamp"
+        },
+        {
+         "nodetype": "binning",
+         "input": "absCot",
+         "edges": [
+          0.0,
+          0.025,
+          0.05,
+          0.1,
+          0.15,
+          0.2,
+          0.3,
+          0.5,
+          0.75,
+          12.0
+         ],
+         "content": [
+          0.160968,
+          0.161424,
+          0.151544,
+          0.131204,
+          0.093366,
+          0.054218,
+          0.06731,
+          0.166538,
+          1.169672
+         ],
+         "flow": "clamp"
+        },
+        {
+         "nodetype": "binning",
+         "input": "absCot",
+         "edges": [
+          0.0,
+          0.025,
+          0.05,
+          0.1,
+          0.15,
+          0.2,
+          0.3,
+          0.5,
+          0.75,
+          12.0
+         ],
+         "content": [
+          0.109166,
+          0.104854,
+          0.1049,
+          0.105806,
+          0.100744,
+          0.122023,
+          0.077043,
+          0.073317,
+          0.908516
+         ],
+         "flow": "clamp"
+        },
+        {
+         "nodetype": "binning",
+         "input": "absCot",
+         "edges": [
+          0.0,
+          0.025,
+          0.05,
+          0.1,
+          0.15,
+          0.2,
+          0.3,
+          0.5,
+          0.75,
+          12.0
+         ],
+         "content": [
+          0.132648,
+          0.129709,
+          0.114414,
+          0.116228,
+          0.108993,
+          0.118414,
+          0.201875,
+          0.10134,
+          0.792002
+         ],
+         "flow": "clamp"
+        },
+        {
+         "nodetype": "binning",
+         "input": "absCot",
+         "edges": [
+          0.0,
+          0.05,
+          0.1,
+          0.15,
+          0.2,
+          0.3,
+          0.5,
+          12.0
+         ],
+         "content": [
+          0.134919,
+          0.126255,
+          0.117894,
+          0.109584,
+          0.113979,
+          0.201837,
+          0.678506
+         ],
+         "flow": "clamp"
+        },
+        {
+         "nodetype": "binning",
+         "input": "absCot",
+         "edges": [
+          0.0,
+          0.05,
+          0.1,
+          0.15,
+          0.2,
+          0.3,
+          0.5,
+          1.07,
+          12.0
+         ],
+         "content": [
+          0.136938,
+          0.125297,
+          0.122134,
+          0.110154,
+          0.128816,
+          0.197605,
+          0.572135,
+          1.344303
+         ],
+         "flow": "clamp"
+        },
+        {
+         "nodetype": "binning",
+         "input": "absCot",
+         "edges": [
+          0.0,
+          0.05,
+          0.1,
+          0.2,
+          0.3,
+          0.75,
+          12.0
+         ],
+         "content": [
+          0.136388,
+          0.123521,
+          0.108403,
+          0.107102,
+          0.21958,
+          1.232631
+         ],
+         "flow": "clamp"
+        },
+        {
+         "nodetype": "binning",
+         "input": "absCot",
+         "edges": [
+          0.0,
+          0.1,
+          0.2,
+          0.3,
+          0.75,
+          12.0
+         ],
+         "content": [
+          0.128897,
+          0.118267,
+          0.110773,
+          0.201014,
+          1.288909
+         ],
+         "flow": "clamp"
+        },
+        {
+         "nodetype": "binning",
+         "input": "absCot",
+         "edges": [
+          0.0,
+          0.1,
+          0.2,
+          0.5,
+          12.0
+         ],
+         "content": [
+          0.121563,
+          0.107549,
+          0.136345,
+          1.31061
+         ],
+         "flow": "clamp"
+        },
+        {
+         "nodetype": "binning",
+         "input": "absCot",
+         "edges": [
+          0.0,
+          0.1,
+          0.2,
+          12.0
+         ],
+         "content": [
+          0.124831,
+          0.10229,
+          0.247084
+         ],
+         "flow": "clamp"
+        },
+        {
+         "nodetype": "binning",
+         "input": "absCot",
+         "edges": [
+          0.0,
+          0.15,
+          12.0
+         ],
+         "content": [
+          0.120976,
+          0.172431
+         ],
+         "flow": "clamp"
+        },
+        {
+         "nodetype": "binning",
+         "input": "absCot",
+         "edges": [
+          0.0,
+          0.15,
+          12.0
+         ],
+         "content": [
+          0.114515,
+          0.173504
+         ],
+         "flow": "clamp"
+        },
+        {
+         "nodetype": "binning",
+         "input": "absCot",
+         "edges": [
+          0.0,
+          0.15,
+          12.0
+         ],
+         "content": [
+          0.111316,
+          0.178679
+         ],
+         "flow": "clamp"
+        },
+        {
+         "nodetype": "binning",
+         "input": "absCot",
+         "edges": [
+          0.0,
+          0.2,
+          12.0
+         ],
+         "content": [
+          0.104319,
+          0.205617
+         ],
+         "flow": "clamp"
+        },
+        {
+         "nodetype": "binning",
+         "input": "absCot",
+         "edges": [
+          0.0,
+          12.0
+         ],
+         "content": [
+          0.14768
+         ],
+         "flow": "clamp"
+        },
+        {
+         "nodetype": "binning",
+         "input": "absCot",
+         "edges": [
+          0.0,
+          12.0
+         ],
+         "content": [
+          0.125136
+         ],
+         "flow": "clamp"
+        },
+        {
+         "nodetype": "binning",
+         "input": "absCot",
+         "edges": [
+          0.0,
+          12.0
+         ],
+         "content": [
+          0.13633
+         ],
+         "flow": "clamp"
+        },
+        {
+         "nodetype": "binning",
+         "input": "absCot",
+         "edges": [
+          0.0,
+          12.0
+         ],
+         "content": [
+          0.150456
+         ],
+         "flow": "clamp"
+        },
+        {
+         "nodetype": "binning",
+         "input": "absCot",
+         "edges": [
+          0.0,
+          12.0
+         ],
+         "content": [
+          0.131592
+         ],
+         "flow": "clamp"
+        },
+        {
+         "nodetype": "binning",
+         "input": "absCot",
+         "edges": [
+          0.0,
+          12.0
+         ],
+         "content": [
+          0.141414
+         ],
+         "flow": "clamp"
+        },
+        {
+         "nodetype": "binning",
+         "input": "absCot",
+         "edges": [
+          0.0,
+          12.0
+         ],
+         "content": [
+          0.125889
+         ],
+         "flow": "clamp"
+        },
+        {
+         "nodetype": "binning",
+         "input": "absCot",
+         "edges": [
+          0.0,
+          12.0
+         ],
+         "content": [
+          0.14175
+         ],
+         "flow": "clamp"
+        },
+        {
+         "nodetype": "binning",
+         "input": "absCot",
+         "edges": [
+          0.0,
+          12.0
+         ],
+         "content": [
+          0.146127
+         ],
+         "flow": "clamp"
+        },
+        {
+         "nodetype": "binning",
+         "input": "absCot",
+         "edges": [
+          0.0,
+          12.0
+         ],
+         "content": [
+          0.16311
+         ],
+         "flow": "clamp"
+        },
+        {
+         "nodetype": "binning",
+         "input": "absCot",
+         "edges": [
+          0.0,
+          12.0
+         ],
+         "content": [
+          0.159515
+         ],
+         "flow": "clamp"
+        },
+        {
+         "nodetype": "binning",
+         "input": "absCot",
+         "edges": [
+          0.0,
+          12.0
+         ],
+         "content": [
+          0.180796
+         ],
+         "flow": "clamp"
+        },
+        {
+         "nodetype": "binning",
+         "input": "absCot",
+         "edges": [
+          0.0,
+          12.0
+         ],
+         "content": [
+          0.269926
+         ],
+         "flow": "clamp"
+        }
+       ],
+       "flow": "clamp"
+      }
+     },
+     {
+      "key": 2,
+      "value": {
+       "nodetype": "binning",
+       "input": "sizeX",
+       "edges": [
+        0.5,
+        1.5,
+        2.5,
+        3.5,
+        4.5,
+        5.5,
+        6.5,
+        7.5,
+        8.5,
+        9.5,
+        10.5,
+        11.5,
+        12.5,
+        13.5,
+        14.5,
+        15.5,
+        17.5,
+        19.5,
+        22.5,
+        26.5,
+        32.5,
+        249.5
+       ],
+       "content": [
+        {
+         "nodetype": "binning",
+         "input": "absCot",
+         "edges": [
+          0.0,
+          0.025,
+          0.05,
+          0.1,
+          0.15,
+          0.2,
+          0.3,
+          0.5,
+          0.75,
+          12.0
+         ],
+         "content": [
+          0.056853,
+          0.064297,
+          0.069083,
+          0.063814,
+          0.059414,
+          0.066377,
+          0.093931,
+          0.607069,
+          1.2579
+         ],
+         "flow": "clamp"
+        },
+        {
+         "nodetype": "binning",
+         "input": "absCot",
+         "edges": [
+          0.0,
+          0.025,
+          0.05,
+          0.1,
+          0.15,
+          0.2,
+          0.3,
+          0.5,
+          0.75,
+          1.07,
+          12.0
+         ],
+         "content": [
+          0.058323,
+          0.061384,
+          0.076736,
+          0.102214,
+          0.133275,
+          0.158996,
+          0.187407,
+          0.331825,
+          0.920826,
+          0.922746
+         ],
+         "flow": "clamp"
+        },
+        {
+         "nodetype": "binning",
+         "input": "absCot",
+         "edges": [
+          0.0,
+          0.025,
+          0.05,
+          0.1,
+          0.15,
+          0.2,
+          0.3,
+          0.5,
+          0.75,
+          12.0
+         ],
+         "content": [
+          0.05918,
+          0.062203,
+          0.068716,
+          0.057739,
+          0.056526,
+          0.060762,
+          0.091382,
+          0.481049,
+          1.214511
+         ],
+         "flow": "clamp"
+        },
+        {
+         "nodetype": "binning",
+         "input": "absCot",
+         "edges": [
+          0.0,
+          0.025,
+          0.05,
+          0.1,
+          0.15,
+          0.2,
+          0.3,
+          0.5,
+          12.0
+         ],
+         "content": [
+          0.156488,
+          0.153458,
+          0.1363,
+          0.106008,
+          0.073333,
+          0.065401,
+          0.07305,
+          0.147478
+         ],
+         "flow": "clamp"
+        },
+        {
+         "nodetype": "binning",
+         "input": "absCot",
+         "edges": [
+          0.0,
+          0.025,
+          0.1,
+          0.15,
+          0.2,
+          0.3,
+          0.5,
+          12.0
+         ],
+         "content": [
+          0.166543,
+          0.186797,
+          0.19109,
+          0.207846,
+          0.182306,
+          0.091024,
+          0.113346
+         ],
+         "flow": "clamp"
+        },
+        {
+         "nodetype": "binning",
+         "input": "absCot",
+         "edges": [
+          0.0,
+          0.05,
+          0.1,
+          0.15,
+          0.3,
+          0.5,
+          0.75,
+          12.0
+         ],
+         "content": [
+          0.162353,
+          0.174464,
+          0.195133,
+          0.256946,
+          0.312835,
+          0.168037,
+          0.82176
+         ],
+         "flow": "clamp"
+        },
+        {
+         "nodetype": "binning",
+         "input": "absCot",
+         "edges": [
+          0.0,
+          0.1,
+          0.2,
+          0.5,
+          12.0
+         ],
+         "content": [
+          0.166326,
+          0.198754,
+          0.337095,
+          0.469979
+         ],
+         "flow": "clamp"
+        },
+        {
+         "nodetype": "binning",
+         "input": "absCot",
+         "edges": [
+          0.0,
+          0.1,
+          0.3,
+          12.0
+         ],
+         "content": [
+          0.15268,
+          0.21433,
+          0.733618
+         ],
+         "flow": "clamp"
+        },
+        {
+         "nodetype": "binning",
+         "input": "absCot",
+         "edges": [
+          0.0,
+          0.1,
+          12.0
+         ],
+         "content": [
+          0.149627,
+          0.361041
+         ],
+         "flow": "clamp"
+        },
+        {
+         "nodetype": "binning",
+         "input": "absCot",
+         "edges": [
+          0.0,
+          0.15,
+          12.0
+         ],
+         "content": [
+          0.161514,
+          0.406628
+         ],
+         "flow": "clamp"
+        },
+        {
+         "nodetype": "binning",
+         "input": "absCot",
+         "edges": [
+          0.0,
+          12.0
+         ],
+         "content": [
+          0.254246
+         ],
+         "flow": "clamp"
+        },
+        {
+         "nodetype": "binning",
+         "input": "absCot",
+         "edges": [
+          0.0,
+          12.0
+         ],
+         "content": [
+          0.236587
+         ],
+         "flow": "clamp"
+        },
+        {
+         "nodetype": "binning",
+         "input": "absCot",
+         "edges": [
+          0.0,
+          12.0
+         ],
+         "content": [
+          0.243524
+         ],
+         "flow": "clamp"
+        },
+        {
+         "nodetype": "binning",
+         "input": "absCot",
+         "edges": [
+          0.0,
+          12.0
+         ],
+         "content": [
+          0.250627
+         ],
+         "flow": "clamp"
+        },
+        {
+         "nodetype": "binning",
+         "input": "absCot",
+         "edges": [
+          0.0,
+          12.0
+         ],
+         "content": [
+          0.215535
+         ],
+         "flow": "clamp"
+        },
+        {
+         "nodetype": "binning",
+         "input": "absCot",
+         "edges": [
+          0.0,
+          12.0
+         ],
+         "content": [
+          0.221667
+         ],
+         "flow": "clamp"
+        },
+        {
+         "nodetype": "binning",
+         "input": "absCot",
+         "edges": [
+          0.0,
+          12.0
+         ],
+         "content": [
+          0.221898
+         ],
+         "flow": "clamp"
+        },
+        {
+         "nodetype": "binning",
+         "input": "absCot",
+         "edges": [
+          0.0,
+          12.0
+         ],
+         "content": [
+          0.208058
+         ],
+         "flow": "clamp"
+        },
+        {
+         "nodetype": "binning",
+         "input": "absCot",
+         "edges": [
+          0.0,
+          12.0
+         ],
+         "content": [
+          0.23472
+         ],
+         "flow": "clamp"
+        },
+        {
+         "nodetype": "binning",
+         "input": "absCot",
+         "edges": [
+          0.0,
+          12.0
+         ],
+         "content": [
+          0.229592
+         ],
+         "flow": "clamp"
+        },
+        {
+         "nodetype": "binning",
+         "input": "absCot",
+         "edges": [
+          0.0,
+          12.0
+         ],
+         "content": [
+          0.258946
+         ],
+         "flow": "clamp"
+        }
+       ],
+       "flow": "clamp"
+      }
+     },
+     {
+      "key": 3,
+      "value": {
+       "nodetype": "binning",
+       "input": "sizeX",
+       "edges": [
+        0.5,
+        1.5,
+        2.5,
+        3.5,
+        4.5,
+        5.5,
+        6.5,
+        7.5,
+        8.5,
+        9.5,
+        10.5,
+        11.5,
+        13.5,
+        15.5,
+        18.5,
+        23.5,
+        228.5
+       ],
+       "content": [
+        {
+         "nodetype": "binning",
+         "input": "absCot",
+         "edges": [
+          0.0,
+          0.025,
+          0.05,
+          0.1,
+          0.15,
+          0.2,
+          0.3,
+          0.5,
+          12.0
+         ],
+         "content": [
+          0.066955,
+          0.075537,
+          0.079814,
+          0.072091,
+          0.065074,
+          0.069153,
+          0.086636,
+          0.830554
+         ],
+         "flow": "clamp"
+        },
+        {
+         "nodetype": "binning",
+         "input": "absCot",
+         "edges": [
+          0.0,
+          0.025,
+          0.05,
+          0.1,
+          0.15,
+          0.2,
+          0.3,
+          0.5,
+          0.75,
+          1.07,
+          12.0
+         ],
+         "content": [
+          0.065801,
+          0.069476,
+          0.084617,
+          0.10983,
+          0.138015,
+          0.160516,
+          0.140187,
+          0.266833,
+          0.923412,
+          1.594947
+         ],
+         "flow": "clamp"
+        },
+        {
+         "nodetype": "binning",
+         "input": "absCot",
+         "edges": [
+          0.0,
+          0.025,
+          0.05,
+          0.1,
+          0.15,
+          0.2,
+          0.3,
+          0.5,
+          0.75,
+          12.0
+         ],
+         "content": [
+          0.07044,
+          0.07042,
+          0.07476,
+          0.069021,
+          0.063065,
+          0.063368,
+          0.08418,
+          0.108479,
+          1.106914
+         ],
+         "flow": "clamp"
+        },
+        {
+         "nodetype": "binning",
+         "input": "absCot",
+         "edges": [
+          0.0,
+          0.025,
+          0.05,
+          0.1,
+          0.15,
+          0.2,
+          0.3,
+          0.5,
+          0.75,
+          12.0
+         ],
+         "content": [
+          0.191502,
+          0.175297,
+          0.14812,
+          0.103929,
+          0.076708,
+          0.067964,
+          0.075939,
+          0.117597,
+          0.584516
+         ],
+         "flow": "clamp"
+        },
+        {
+         "nodetype": "binning",
+         "input": "absCot",
+         "edges": [
+          0.0,
+          0.1,
+          0.2,
+          0.3,
+          0.5,
+          0.75,
+          12.0
+         ],
+         "content": [
+          0.281272,
+          0.257005,
+          0.176505,
+          0.094182,
+          0.097479,
+          0.663221
+         ],
+         "flow": "clamp"
+        },
+        {
+         "nodetype": "binning",
+         "input": "absCot",
+         "edges": [
+          0.0,
+          0.1,
+          0.2,
+          0.5,
+          0.75,
+          12.0
+         ],
+         "content": [
+          0.331586,
+          0.334591,
+          0.32521,
+          0.11992,
+          0.206227
+         ],
+         "flow": "clamp"
+        },
+        {
+         "nodetype": "binning",
+         "input": "absCot",
+         "edges": [
+          0.0,
+          0.15,
+          0.5,
+          0.75,
+          12.0
+         ],
+         "content": [
+          0.365483,
+          0.408415,
+          0.353864,
+          0.331504
+         ],
+         "flow": "clamp"
+        },
+        {
+         "nodetype": "binning",
+         "input": "absCot",
+         "edges": [
+          0.0,
+          0.2,
+          12.0
+         ],
+         "content": [
+          0.372726,
+          0.6153
+         ],
+         "flow": "clamp"
+        },
+        {
+         "nodetype": "binning",
+         "input": "absCot",
+         "edges": [
+          0.0,
+          12.0
+         ],
+         "content": [
+          0.545302
+         ],
+         "flow": "clamp"
+        },
+        {
+         "nodetype": "binning",
+         "input": "absCot",
+         "edges": [
+          0.0,
+          12.0
+         ],
+         "content": [
+          0.490439
+         ],
+         "flow": "clamp"
+        },
+        {
+         "nodetype": "binning",
+         "input": "absCot",
+         "edges": [
+          0.0,
+          12.0
+         ],
+         "content": [
+          0.510282
+         ],
+         "flow": "clamp"
+        },
+        {
+         "nodetype": "binning",
+         "input": "absCot",
+         "edges": [
+          0.0,
+          12.0
+         ],
+         "content": [
+          0.434575
+         ],
+         "flow": "clamp"
+        },
+        {
+         "nodetype": "binning",
+         "input": "absCot",
+         "edges": [
+          0.0,
+          12.0
+         ],
+         "content": [
+          0.400598
+         ],
+         "flow": "clamp"
+        },
+        {
+         "nodetype": "binning",
+         "input": "absCot",
+         "edges": [
+          0.0,
+          12.0
+         ],
+         "content": [
+          0.363207
+         ],
+         "flow": "clamp"
+        },
+        {
+         "nodetype": "binning",
+         "input": "absCot",
+         "edges": [
+          0.0,
+          12.0
+         ],
+         "content": [
+          0.399664
+         ],
+         "flow": "clamp"
+        },
+        {
+         "nodetype": "binning",
+         "input": "absCot",
+         "edges": [
+          0.0,
+          12.0
+         ],
+         "content": [
+          0.395358
+         ],
+         "flow": "clamp"
+        }
+       ],
+       "flow": "clamp"
+      }
+     },
+     {
+      "key": 4,
+      "value": {
+       "nodetype": "binning",
+       "input": "sizeX",
+       "edges": [
+        0.5,
+        1.5,
+        2.5,
+        3.5,
+        4.5,
+        5.5,
+        6.5,
+        7.5,
+        8.5,
+        9.5,
+        10.5,
+        11.5,
+        13.5,
+        15.5,
+        19.5,
+        226.5
+       ],
+       "content": [
+        {
+         "nodetype": "binning",
+         "input": "absCot",
+         "edges": [
+          0.0,
+          0.025,
+          0.05,
+          0.1,
+          0.15,
+          0.2,
+          0.3,
+          0.5,
+          12.0
+         ],
+         "content": [
+          0.06971,
+          0.079174,
+          0.080766,
+          0.069657,
+          0.064696,
+          0.068202,
+          0.083088,
+          0.791032
+         ],
+         "flow": "clamp"
+        },
+        {
+         "nodetype": "binning",
+         "input": "absCot",
+         "edges": [
+          0.0,
+          0.025,
+          0.05,
+          0.1,
+          0.15,
+          0.2,
+          0.3,
+          0.5,
+          0.75,
+          12.0
+         ],
+         "content": [
+          0.078881,
+          0.082232,
+          0.09328,
+          0.114591,
+          0.135035,
+          0.159137,
+          0.128342,
+          0.234301,
+          1.203252
+         ],
+         "flow": "clamp"
+        },
+        {
+         "nodetype": "binning",
+         "input": "absCot",
+         "edges": [
+          0.0,
+          0.025,
+          0.05,
+          0.1,
+          0.15,
+          0.2,
+          0.3,
+          0.5,
+          0.75,
+          12.0
+         ],
+         "content": [
+          0.075707,
+          0.074446,
+          0.075624,
+          0.068096,
+          0.064297,
+          0.066767,
+          0.087236,
+          0.109544,
+          1.078875
+         ],
+         "flow": "clamp"
+        },
+        {
+         "nodetype": "binning",
+         "input": "absCot",
+         "edges": [
+          0.0,
+          0.05,
+          0.1,
+          0.15,
+          0.2,
+          0.3,
+          0.5,
+          0.75,
+          12.0
+         ],
+         "content": [
+          0.206095,
+          0.152895,
+          0.098751,
+          0.081608,
+          0.073396,
+          0.081293,
+          0.115883,
+          0.512245
+         ],
+         "flow": "clamp"
+        },
+        {
+         "nodetype": "binning",
+         "input": "absCot",
+         "edges": [
+          0.0,
+          0.1,
+          0.2,
+          0.3,
+          0.5,
+          0.75,
+          12.0
+         ],
+         "content": [
+          0.325435,
+          0.272144,
+          0.200293,
+          0.100112,
+          0.104733,
+          0.55932
+         ],
+         "flow": "clamp"
+        },
+        {
+         "nodetype": "binning",
+         "input": "absCot",
+         "edges": [
+          0.0,
+          0.15,
+          0.5,
+          0.75,
+          12.0
+         ],
+         "content": [
+          0.423875,
+          0.376113,
+          0.123918,
+          0.199635
+         ],
+         "flow": "clamp"
+        },
+        {
+         "nodetype": "binning",
+         "input": "absCot",
+         "edges": [
+          0.0,
+          0.3,
+          0.75,
+          12.0
+         ],
+         "content": [
+          0.575179,
+          0.429139,
+          0.188436
+         ],
+         "flow": "clamp"
+        },
+        {
+         "nodetype": "binning",
+         "input": "absCot",
+         "edges": [
+          0.0,
+          0.3,
+          1.07,
+          12.0
+         ],
+         "content": [
+          0.617262,
+          0.473236,
+          0.663279
+         ],
+         "flow": "clamp"
+        },
+        {
+         "nodetype": "binning",
+         "input": "absCot",
+         "edges": [
+          0.0,
+          0.5,
+          12.0
+         ],
+         "content": [
+          0.694422,
+          0.667765
+         ],
+         "flow": "clamp"
+        },
+        {
+         "nodetype": "binning",
+         "input": "absCot",
+         "edges": [
+          0.0,
+          12.0
+         ],
+         "content": [
+          0.901877
+         ],
+         "flow": "clamp"
+        },
+        {
+         "nodetype": "binning",
+         "input": "absCot",
+         "edges": [
+          0.0,
+          12.0
+         ],
+         "content": [
+          0.951462
+         ],
+         "flow": "clamp"
+        },
+        {
+         "nodetype": "binning",
+         "input": "absCot",
+         "edges": [
+          0.0,
+          12.0
+         ],
+         "content": [
+          1.132551
+         ],
+         "flow": "clamp"
+        },
+        {
+         "nodetype": "binning",
+         "input": "absCot",
+         "edges": [
+          0.0,
+          12.0
+         ],
+         "content": [
+          0.826967
+         ],
+         "flow": "clamp"
+        },
+        {
+         "nodetype": "binning",
+         "input": "absCot",
+         "edges": [
+          0.0,
+          12.0
+         ],
+         "content": [
+          0.796999
+         ],
+         "flow": "clamp"
+        },
+        {
+         "nodetype": "binning",
+         "input": "absCot",
+         "edges": [
+          0.0,
+          12.0
+         ],
+         "content": [
+          0.543246
+         ],
+         "flow": "clamp"
+        }
+       ],
+       "flow": "clamp"
+      }
+     },
+     {
+      "key": 11,
+      "value": {
+       "nodetype": "binning",
+       "input": "sizeX",
+       "edges": [
+        0.5,
+        1.5,
+        2.5,
+        3.5,
+        4.5,
+        5.5,
+        6.5,
+        7.5,
+        8.5,
+        9.5,
+        10.5,
+        11.5,
+        12.5,
+        14.5,
+        16.5,
+        19.5,
+        23.5,
+        242.5
+       ],
+       "content": [
+        {
+         "nodetype": "binning",
+         "input": "absCot",
+         "edges": [
+          0.0,
+          0.025,
+          0.05,
+          0.1,
+          0.15,
+          0.2,
+          0.3,
+          0.5,
+          0.75,
+          1.07,
+          12.0
+         ],
+         "content": [
+          0.035072,
+          0.047718,
+          0.077924,
+          0.114831,
+          0.145601,
+          0.163184,
+          0.132454,
+          0.017074,
+          0.112035,
+          0.102054
+         ],
+         "flow": "clamp"
+        },
+        {
+         "nodetype": "binning",
+         "input": "absCot",
+         "edges": [
+          0.0,
+          0.025,
+          0.05,
+          0.1,
+          0.15,
+          0.2,
+          0.3,
+          0.5,
+          0.75,
+          1.07,
+          12.0
+         ],
+         "content": [
+          0.058441,
+          0.067678,
+          0.081644,
+          0.099069,
+          0.118279,
+          0.132866,
+          0.181324,
+          0.510405,
+          0.147796,
+          0.117582
+         ],
+         "flow": "clamp"
+        },
+        {
+         "nodetype": "binning",
+         "input": "absCot",
+         "edges": [
+          0.0,
+          0.025,
+          0.05,
+          0.1,
+          0.15,
+          0.2,
+          0.3,
+          0.5,
+          12.0
+         ],
+         "content": [
+          0.081068,
+          0.11139,
+          0.134929,
+          0.15663,
+          0.176372,
+          0.133572,
+          0.12749,
+          0.441761
+         ],
+         "flow": "clamp"
+        },
+        {
+         "nodetype": "binning",
+         "input": "absCot",
+         "edges": [
+          0.0,
+          0.025,
+          0.05,
+          0.1,
+          0.15,
+          0.2,
+          0.5,
+          12.0
+         ],
+         "content": [
+          0.062369,
+          0.068868,
+          0.104533,
+          0.157084,
+          0.215591,
+          0.281251,
+          0.55955
+         ],
+         "flow": "clamp"
+        },
+        {
+         "nodetype": "binning",
+         "input": "absCot",
+         "edges": [
+          0.0,
+          0.025,
+          0.05,
+          0.1,
+          0.15,
+          0.3,
+          12.0
+         ],
+         "content": [
+          0.059606,
+          0.075082,
+          0.105711,
+          0.15063,
+          0.241935,
+          0.701815
+         ],
+         "flow": "clamp"
+        },
+        {
+         "nodetype": "binning",
+         "input": "absCot",
+         "edges": [
+          0.0,
+          0.05,
+          0.1,
+          0.2,
+          12.0
+         ],
+         "content": [
+          0.064127,
+          0.101873,
+          0.168196,
+          0.815438
+         ],
+         "flow": "clamp"
+        },
+        {
+         "nodetype": "binning",
+         "input": "absCot",
+         "edges": [
+          0.0,
+          0.05,
+          0.1,
+          12.0
+         ],
+         "content": [
+          0.062628,
+          0.09872,
+          0.636356
+         ],
+         "flow": "clamp"
+        },
+        {
+         "nodetype": "binning",
+         "input": "absCot",
+         "edges": [
+          0.0,
+          0.1,
+          12.0
+         ],
+         "content": [
+          0.086951,
+          0.561989
+         ],
+         "flow": "clamp"
+        },
+        {
+         "nodetype": "binning",
+         "input": "absCot",
+         "edges": [
+          0.0,
+          0.1,
+          12.0
+         ],
+         "content": [
+          0.083404,
+          0.925675
+         ],
+         "flow": "clamp"
+        },
+        {
+         "nodetype": "binning",
+         "input": "absCot",
+         "edges": [
+          0.0,
+          12.0
+         ],
+         "content": [
+          0.172247
+         ],
+         "flow": "clamp"
+        },
+        {
+         "nodetype": "binning",
+         "input": "absCot",
+         "edges": [
+          0.0,
+          12.0
+         ],
+         "content": [
+          0.17462
+         ],
+         "flow": "clamp"
+        },
+        {
+         "nodetype": "binning",
+         "input": "absCot",
+         "edges": [
+          0.0,
+          12.0
+         ],
+         "content": [
+          0.176513
+         ],
+         "flow": "clamp"
+        },
+        {
+         "nodetype": "binning",
+         "input": "absCot",
+         "edges": [
+          0.0,
+          12.0
+         ],
+         "content": [
+          0.167928
+         ],
+         "flow": "clamp"
+        },
+        {
+         "nodetype": "binning",
+         "input": "absCot",
+         "edges": [
+          0.0,
+          12.0
+         ],
+         "content": [
+          0.187757
+         ],
+         "flow": "clamp"
+        },
+        {
+         "nodetype": "binning",
+         "input": "absCot",
+         "edges": [
+          0.0,
+          12.0
+         ],
+         "content": [
+          0.178973
+         ],
+         "flow": "clamp"
+        },
+        {
+         "nodetype": "binning",
+         "input": "absCot",
+         "edges": [
+          0.0,
+          12.0
+         ],
+         "content": [
+          0.187567
+         ],
+         "flow": "clamp"
+        },
+        {
+         "nodetype": "binning",
+         "input": "absCot",
+         "edges": [
+          0.0,
+          12.0
+         ],
+         "content": [
+          0.203351
+         ],
+         "flow": "clamp"
+        }
+       ],
+       "flow": "clamp"
+      }
+     },
+     {
+      "key": 12,
+      "value": {
+       "nodetype": "binning",
+       "input": "sizeX",
+       "edges": [
+        0.5,
+        1.5,
+        2.5,
+        3.5,
+        4.5,
+        5.5,
+        6.5,
+        7.5,
+        8.5,
+        9.5,
+        10.5,
+        11.5,
+        12.5,
+        13.5,
+        15.5,
+        17.5,
+        20.5,
+        24.5,
+        31.5,
+        236.5
+       ],
+       "content": [
+        {
+         "nodetype": "binning",
+         "input": "absCot",
+         "edges": [
+          0.0,
+          0.025,
+          0.05,
+          0.1,
+          0.15,
+          0.2,
+          0.3,
+          0.5,
+          0.75,
+          1.07,
+          12.0
+         ],
+         "content": [
+          0.032604,
+          0.046965,
+          0.0782,
+          0.116143,
+          0.142586,
+          0.142257,
+          0.129855,
+          0.017049,
+          0.094117,
+          0.289481
+         ],
+         "flow": "clamp"
+        },
+        {
+         "nodetype": "binning",
+         "input": "absCot",
+         "edges": [
+          0.0,
+          0.025,
+          0.05,
+          0.1,
+          0.15,
+          0.2,
+          0.3,
+          0.5,
+          0.75,
+          1.07,
+          12.0
+         ],
+         "content": [
+          0.053964,
+          0.062982,
+          0.081935,
+          0.105927,
+          0.13167,
+          0.147169,
+          0.188115,
+          0.125044,
+          0.143592,
+          0.278768
+         ],
+         "flow": "clamp"
+        },
+        {
+         "nodetype": "binning",
+         "input": "absCot",
+         "edges": [
+          0.0,
+          0.025,
+          0.05,
+          0.1,
+          0.15,
+          0.2,
+          0.3,
+          0.5,
+          12.0
+         ],
+         "content": [
+          0.068751,
+          0.083141,
+          0.116159,
+          0.156852,
+          0.182418,
+          0.178681,
+          0.207976,
+          0.508176
+         ],
+         "flow": "clamp"
+        },
+        {
+         "nodetype": "binning",
+         "input": "absCot",
+         "edges": [
+          0.0,
+          0.025,
+          0.05,
+          0.1,
+          0.15,
+          0.2,
+          0.5,
+          12.0
+         ],
+         "content": [
+          0.059578,
+          0.073157,
+          0.101811,
+          0.1463,
+          0.209697,
+          0.371921,
+          0.628864
+         ],
+         "flow": "clamp"
+        },
+        {
+         "nodetype": "binning",
+         "input": "absCot",
+         "edges": [
+          0.0,
+          0.025,
+          0.05,
+          0.1,
+          0.15,
+          0.3,
+          12.0
+         ],
+         "content": [
+          0.054553,
+          0.068582,
+          0.099621,
+          0.137769,
+          0.236738,
+          0.766863
+         ],
+         "flow": "clamp"
+        },
+        {
+         "nodetype": "binning",
+         "input": "absCot",
+         "edges": [
+          0.0,
+          0.025,
+          0.1,
+          0.15,
+          12.0
+         ],
+         "content": [
+          0.051578,
+          0.088597,
+          0.144484,
+          0.812077
+         ],
+         "flow": "clamp"
+        },
+        {
+         "nodetype": "binning",
+         "input": "absCot",
+         "edges": [
+          0.0,
+          0.05,
+          0.1,
+          12.0
+         ],
+         "content": [
+          0.054462,
+          0.096122,
+          0.555792
+         ],
+         "flow": "clamp"
+        },
+        {
+         "nodetype": "binning",
+         "input": "absCot",
+         "edges": [
+          0.0,
+          0.05,
+          12.0
+         ],
+         "content": [
+          0.062563,
+          0.250096
+         ],
+         "flow": "clamp"
+        },
+        {
+         "nodetype": "binning",
+         "input": "absCot",
+         "edges": [
+          0.0,
+          0.1,
+          12.0
+         ],
+         "content": [
+          0.084758,
+          0.759501
+         ],
+         "flow": "clamp"
+        },
+        {
+         "nodetype": "binning",
+         "input": "absCot",
+         "edges": [
+          0.0,
+          12.0
+         ],
+         "content": [
+          0.163447
+         ],
+         "flow": "clamp"
+        },
+        {
+         "nodetype": "binning",
+         "input": "absCot",
+         "edges": [
+          0.0,
+          12.0
+         ],
+         "content": [
+          0.170617
+         ],
+         "flow": "clamp"
+        },
+        {
+         "nodetype": "binning",
+         "input": "absCot",
+         "edges": [
+          0.0,
+          12.0
+         ],
+         "content": [
+          0.180698
+         ],
+         "flow": "clamp"
+        },
+        {
+         "nodetype": "binning",
+         "input": "absCot",
+         "edges": [
+          0.0,
+          12.0
+         ],
+         "content": [
+          0.140336
+         ],
+         "flow": "clamp"
+        },
+        {
+         "nodetype": "binning",
+         "input": "absCot",
+         "edges": [
+          0.0,
+          12.0
+         ],
+         "content": [
+          0.134504
+         ],
+         "flow": "clamp"
+        },
+        {
+         "nodetype": "binning",
+         "input": "absCot",
+         "edges": [
+          0.0,
+          12.0
+         ],
+         "content": [
+          0.138234
+         ],
+         "flow": "clamp"
+        },
+        {
+         "nodetype": "binning",
+         "input": "absCot",
+         "edges": [
+          0.0,
+          12.0
+         ],
+         "content": [
+          0.148475
+         ],
+         "flow": "clamp"
+        },
+        {
+         "nodetype": "binning",
+         "input": "absCot",
+         "edges": [
+          0.0,
+          12.0
+         ],
+         "content": [
+          0.18062
+         ],
+         "flow": "clamp"
+        },
+        {
+         "nodetype": "binning",
+         "input": "absCot",
+         "edges": [
+          0.0,
+          12.0
+         ],
+         "content": [
+          0.166127
+         ],
+         "flow": "clamp"
+        },
+        {
+         "nodetype": "binning",
+         "input": "absCot",
+         "edges": [
+          0.0,
+          12.0
+         ],
+         "content": [
+          0.195652
+         ],
+         "flow": "clamp"
+        }
+       ],
+       "flow": "clamp"
+      }
+     },
+     {
+      "key": 13,
+      "value": {
+       "nodetype": "binning",
+       "input": "sizeX",
+       "edges": [
+        0.5,
+        1.5,
+        2.5,
+        3.5,
+        4.5,
+        5.5,
+        6.5,
+        7.5,
+        8.5,
+        9.5,
+        10.5,
+        11.5,
+        12.5,
+        14.5,
+        16.5,
+        18.5,
+        21.5,
+        26.5,
+        239.5
+       ],
+       "content": [
+        {
+         "nodetype": "binning",
+         "input": "absCot",
+         "edges": [
+          0.0,
+          0.025,
+          0.05,
+          0.1,
+          0.15,
+          0.2,
+          0.3,
+          0.5,
+          0.75,
+          1.07,
+          1.5,
+          12.0
+         ],
+         "content": [
+          0.030956,
+          0.046236,
+          0.077597,
+          0.116932,
+          0.133665,
+          0.105378,
+          0.130907,
+          0.017707,
+          0.092012,
+          0.070035,
+          0.053971
+         ],
+         "flow": "clamp"
+        },
+        {
+         "nodetype": "binning",
+         "input": "absCot",
+         "edges": [
+          0.0,
+          0.025,
+          0.05,
+          0.1,
+          0.15,
+          0.2,
+          0.3,
+          0.5,
+          0.75,
+          1.07,
+          12.0
+         ],
+         "content": [
+          0.049575,
+          0.059211,
+          0.08133,
+          0.110887,
+          0.137079,
+          0.159741,
+          0.211092,
+          0.042284,
+          0.095607,
+          0.316719
+         ],
+         "flow": "clamp"
+        },
+        {
+         "nodetype": "binning",
+         "input": "absCot",
+         "edges": [
+          0.0,
+          0.025,
+          0.05,
+          0.1,
+          0.15,
+          0.2,
+          0.3,
+          0.5,
+          12.0
+         ],
+         "content": [
+          0.068552,
+          0.074693,
+          0.111996,
+          0.154458,
+          0.186533,
+          0.235041,
+          0.355139,
+          0.671935
+         ],
+         "flow": "clamp"
+        },
+        {
+         "nodetype": "binning",
+         "input": "absCot",
+         "edges": [
+          0.0,
+          0.025,
+          0.05,
+          0.1,
+          0.15,
+          0.3,
+          0.5,
+          12.0
+         ],
+         "content": [
+          0.053223,
+          0.064417,
+          0.095434,
+          0.142647,
+          0.253157,
+          0.433325,
+          0.643706
+         ],
+         "flow": "clamp"
+        },
+        {
+         "nodetype": "binning",
+         "input": "absCot",
+         "edges": [
+          0.0,
+          0.025,
+          0.05,
+          0.1,
+          0.15,
+          0.5,
+          12.0
+         ],
+         "content": [
+          0.045803,
+          0.060229,
+          0.093973,
+          0.138187,
+          0.313988,
+          0.811187
+         ],
+         "flow": "clamp"
+        },
+        {
+         "nodetype": "binning",
+         "input": "absCot",
+         "edges": [
+          0.0,
+          0.05,
+          0.1,
+          0.2,
+          12.0
+         ],
+         "content": [
+          0.055781,
+          0.092517,
+          0.159404,
+          0.951168
+         ],
+         "flow": "clamp"
+        },
+        {
+         "nodetype": "binning",
+         "input": "absCot",
+         "edges": [
+          0.0,
+          0.05,
+          0.1,
+          12.0
+         ],
+         "content": [
+          0.058072,
+          0.092974,
+          0.555674
+         ],
+         "flow": "clamp"
+        },
+        {
+         "nodetype": "binning",
+         "input": "absCot",
+         "edges": [
+          0.0,
+          0.1,
+          12.0
+         ],
+         "content": [
+          0.079253,
+          0.657644
+         ],
+         "flow": "clamp"
+        },
+        {
+         "nodetype": "binning",
+         "input": "absCot",
+         "edges": [
+          0.0,
+          0.1,
+          12.0
+         ],
+         "content": [
+          0.079331,
+          0.792928
+         ],
+         "flow": "clamp"
+        },
+        {
+         "nodetype": "binning",
+         "input": "absCot",
+         "edges": [
+          0.0,
+          12.0
+         ],
+         "content": [
+          0.14837
+         ],
+         "flow": "clamp"
+        },
+        {
+         "nodetype": "binning",
+         "input": "absCot",
+         "edges": [
+          0.0,
+          12.0
+         ],
+         "content": [
+          0.14729
+         ],
+         "flow": "clamp"
+        },
+        {
+         "nodetype": "binning",
+         "input": "absCot",
+         "edges": [
+          0.0,
+          12.0
+         ],
+         "content": [
+          0.159515
+         ],
+         "flow": "clamp"
+        },
+        {
+         "nodetype": "binning",
+         "input": "absCot",
+         "edges": [
+          0.0,
+          12.0
+         ],
+         "content": [
+          0.146923
+         ],
+         "flow": "clamp"
+        },
+        {
+         "nodetype": "binning",
+         "input": "absCot",
+         "edges": [
+          0.0,
+          12.0
+         ],
+         "content": [
+          0.145026
+         ],
+         "flow": "clamp"
+        },
+        {
+         "nodetype": "binning",
+         "input": "absCot",
+         "edges": [
+          0.0,
+          12.0
+         ],
+         "content": [
+          0.137277
+         ],
+         "flow": "clamp"
+        },
+        {
+         "nodetype": "binning",
+         "input": "absCot",
+         "edges": [
+          0.0,
+          12.0
+         ],
+         "content": [
+          0.14535
+         ],
+         "flow": "clamp"
+        },
+        {
+         "nodetype": "binning",
+         "input": "absCot",
+         "edges": [
+          0.0,
+          12.0
+         ],
+         "content": [
+          0.145019
+         ],
+         "flow": "clamp"
+        },
+        {
+         "nodetype": "binning",
+         "input": "absCot",
+         "edges": [
+          0.0,
+          12.0
+         ],
+         "content": [
+          0.15833
+         ],
+         "flow": "clamp"
+        }
+       ],
+       "flow": "clamp"
+      }
+     },
+     {
+      "key": 14,
+      "value": {
+       "nodetype": "binning",
+       "input": "sizeX",
+       "edges": [
+        0.5,
+        1.5,
+        2.5,
+        3.5,
+        4.5,
+        5.5,
+        6.5,
+        7.5,
+        8.5,
+        9.5,
+        10.5,
+        11.5,
+        12.5,
+        14.5,
+        16.5,
+        18.5,
+        21.5,
+        26.5,
+        241.5
+       ],
+       "content": [
+        {
+         "nodetype": "binning",
+         "input": "absCot",
+         "edges": [
+          0.0,
+          0.025,
+          0.05,
+          0.1,
+          0.15,
+          0.2,
+          0.3,
+          0.5,
+          0.75,
+          1.07,
+          12.0
+         ],
+         "content": [
+          0.028554,
+          0.045948,
+          0.076974,
+          0.117301,
+          0.12719,
+          0.080542,
+          0.131402,
+          0.01436,
+          0.088992,
+          0.054494
+         ],
+         "flow": "clamp"
+        },
+        {
+         "nodetype": "binning",
+         "input": "absCot",
+         "edges": [
+          0.0,
+          0.025,
+          0.05,
+          0.1,
+          0.15,
+          0.2,
+          0.3,
+          0.5,
+          0.75,
+          1.07,
+          12.0
+         ],
+         "content": [
+          0.045848,
+          0.056438,
+          0.080968,
+          0.115127,
+          0.140765,
+          0.172996,
+          0.234923,
+          0.03463,
+          0.091516,
+          0.143938
+         ],
+         "flow": "clamp"
+        },
+        {
+         "nodetype": "binning",
+         "input": "absCot",
+         "edges": [
+          0.0,
+          0.025,
+          0.05,
+          0.1,
+          0.15,
+          0.2,
+          0.3,
+          0.5,
+          12.0
+         ],
+         "content": [
+          0.056681,
+          0.069835,
+          0.103917,
+          0.146139,
+          0.189831,
+          0.250874,
+          0.391161,
+          0.727379
+         ],
+         "flow": "clamp"
+        },
+        {
+         "nodetype": "binning",
+         "input": "absCot",
+         "edges": [
+          0.0,
+          0.025,
+          0.05,
+          0.1,
+          0.15,
+          0.3,
+          0.5,
+          12.0
+         ],
+         "content": [
+          0.043293,
+          0.059738,
+          0.093756,
+          0.14581,
+          0.248362,
+          0.444989,
+          0.677489
+         ],
+         "flow": "clamp"
+        },
+        {
+         "nodetype": "binning",
+         "input": "absCot",
+         "edges": [
+          0.0,
+          0.025,
+          0.05,
+          0.1,
+          0.15,
+          12.0
+         ],
+         "content": [
+          0.041785,
+          0.057328,
+          0.089109,
+          0.13522,
+          0.679613
+         ],
+         "flow": "clamp"
+        },
+        {
+         "nodetype": "binning",
+         "input": "absCot",
+         "edges": [
+          0.0,
+          0.05,
+          0.1,
+          0.2,
+          12.0
+         ],
+         "content": [
+          0.051174,
+          0.091529,
+          0.160444,
+          0.94495
+         ],
+         "flow": "clamp"
+        },
+        {
+         "nodetype": "binning",
+         "input": "absCot",
+         "edges": [
+          0.0,
+          0.05,
+          0.1,
+          12.0
+         ],
+         "content": [
+          0.051303,
+          0.091379,
+          0.733442
+         ],
+         "flow": "clamp"
+        },
+        {
+         "nodetype": "binning",
+         "input": "absCot",
+         "edges": [
+          0.0,
+          0.1,
+          12.0
+         ],
+         "content": [
+          0.079827,
+          0.749883
+         ],
+         "flow": "clamp"
+        },
+        {
+         "nodetype": "binning",
+         "input": "absCot",
+         "edges": [
+          0.0,
+          0.1,
+          12.0
+         ],
+         "content": [
+          0.082262,
+          1.027758
+         ],
+         "flow": "clamp"
+        },
+        {
+         "nodetype": "binning",
+         "input": "absCot",
+         "edges": [
+          0.0,
+          12.0
+         ],
+         "content": [
+          0.153233
+         ],
+         "flow": "clamp"
+        },
+        {
+         "nodetype": "binning",
+         "input": "absCot",
+         "edges": [
+          0.0,
+          12.0
+         ],
+         "content": [
+          0.151744
+         ],
+         "flow": "clamp"
+        },
+        {
+         "nodetype": "binning",
+         "input": "absCot",
+         "edges": [
+          0.0,
+          12.0
+         ],
+         "content": [
+          0.147465
+         ],
+         "flow": "clamp"
+        },
+        {
+         "nodetype": "binning",
+         "input": "absCot",
+         "edges": [
+          0.0,
+          12.0
+         ],
+         "content": [
+          0.155196
+         ],
+         "flow": "clamp"
+        },
+        {
+         "nodetype": "binning",
+         "input": "absCot",
+         "edges": [
+          0.0,
+          12.0
+         ],
+         "content": [
+          0.151588
+         ],
+         "flow": "clamp"
+        },
+        {
+         "nodetype": "binning",
+         "input": "absCot",
+         "edges": [
+          0.0,
+          12.0
+         ],
+         "content": [
+          0.145967
+         ],
+         "flow": "clamp"
+        },
+        {
+         "nodetype": "binning",
+         "input": "absCot",
+         "edges": [
+          0.0,
+          12.0
+         ],
+         "content": [
+          0.137324
+         ],
+         "flow": "clamp"
+        },
+        {
+         "nodetype": "binning",
+         "input": "absCot",
+         "edges": [
+          0.0,
+          12.0
+         ],
+         "content": [
+          0.148656
+         ],
+         "flow": "clamp"
+        },
+        {
+         "nodetype": "binning",
+         "input": "absCot",
+         "edges": [
+          0.0,
+          12.0
+         ],
+         "content": [
+          0.1533
+         ],
+         "flow": "clamp"
+        }
+       ],
+       "flow": "clamp"
+      }
+     }
+    ]
+   }
+  },
+  {
+   "name": "spix_emu_beta_sigma",
+   "description": "SmartPixels-output emulator cotBeta resolution: weighted (q84-q16)/2 of (emitted - true) cot of the INCLUSIVE emulated population (class-T and class-C routes on the class-T clusters of the training events, weighted by the class fractions of the key cell), by surface code (1-4 IL, 11-14 ID) x cluster size along y (sizeY) and |reported cot| <= 12.0 (clamped above). Saturated rows excluded; bins merged from the data (>= 500 per route). Inputs are sensor-reported only (the cluster size is assumed sensor-reported).",
+   "version": 3,
+   "inputs": [
+    {
+     "name": "surface",
+     "type": "int",
+     "description": "IT surface code: 1-4 = IL1-IL4, 11-14 = ID1-ID4"
+    },
+    {
+     "name": "sizeY",
+     "type": "int",
+     "description": "cluster bounding-box extent in pixels, local y"
+    },
+    {
+     "name": "absCot",
+     "type": "real",
+     "description": "|reported cotBeta|"
+    }
+   ],
+   "output": {
+    "name": "sigma",
+    "type": "real",
+    "description": "cotBeta resolution"
+   },
+   "data": {
+    "nodetype": "category",
+    "input": "surface",
+    "content": [
+     {
+      "key": 1,
+      "value": {
+       "nodetype": "binning",
+       "input": "sizeY",
+       "edges": [
+        0.5,
+        1.5,
+        2.5,
+        3.5,
+        4.5,
+        5.5,
+        6.5,
+        7.5,
+        8.5,
+        9.5,
+        10.5,
+        11.5,
+        12.5,
+        13.5,
+        14.5,
+        15.5,
+        16.5,
+        18.5,
+        173.5
+       ],
+       "content": [
+        {
+         "nodetype": "binning",
+         "input": "absCot",
+         "edges": [
+          0.0,
+          0.025,
+          0.05,
+          0.1,
+          0.15,
+          0.2,
+          0.3,
+          0.5,
+          0.75,
+          1.07,
+          1.5,
+          2.0,
+          3.0,
+          4.0,
+          6.0,
+          12.0
+         ],
+         "content": [
+          0.246034,
+          0.256738,
+          0.287748,
+          0.352741,
+          0.413367,
+          0.426403,
+          0.368339,
+          0.500655,
+          0.789478,
+          1.090687,
+          1.319288,
+          1.020931,
+          0.686041,
+          0.436084,
+          0.923412
+         ],
+         "flow": "clamp"
+        },
+        {
+         "nodetype": "binning",
+         "input": "absCot",
+         "edges": [
+          0.0,
+          0.025,
+          0.05,
+          0.1,
+          0.15,
+          0.2,
+          0.3,
+          0.5,
+          0.75,
+          1.07,
+          1.5,
+          2.0,
+          3.0,
+          4.0,
+          6.0,
+          12.0
+         ],
+         "content": [
+          0.478817,
+          0.493747,
+          0.511136,
+          0.56681,
+          0.607435,
+          0.612992,
+          0.418072,
+          0.262805,
+          0.278366,
+          0.329812,
+          0.64926,
+          0.490521,
+          0.354875,
+          0.296804,
+          0.418122
+         ],
+         "flow": "clamp"
+        },
+        {
+         "nodetype": "binning",
+         "input": "absCot",
+         "edges": [
+          0.0,
+          0.1,
+          0.2,
+          0.3,
+          0.5,
+          0.75,
+          1.07,
+          1.5,
+          2.0,
+          3.0,
+          4.0,
+          6.0,
+          12.0
+         ],
+         "content": [
+          1.327282,
+          1.159645,
+          1.234158,
+          0.863717,
+          0.546861,
+          0.363469,
+          0.214676,
+          0.215321,
+          0.38468,
+          0.321257,
+          0.272182,
+          0.353594
+         ],
+         "flow": "clamp"
+        },
+        {
+         "nodetype": "binning",
+         "input": "absCot",
+         "edges": [
+          0.0,
+          0.3,
+          0.75,
+          1.07,
+          1.5,
+          2.0,
+          3.0,
+          4.0,
+          6.0,
+          12.0
+         ],
+         "content": [
+          1.965888,
+          1.692755,
+          1.005687,
+          0.509239,
+          0.240924,
+          0.218499,
+          0.493429,
+          0.271628,
+          0.328707
+         ],
+         "flow": "clamp"
+        },
+        {
+         "nodetype": "binning",
+         "input": "absCot",
+         "edges": [
+          0.0,
+          0.75,
+          1.5,
+          2.0,
+          3.0,
+          4.0,
+          6.0,
+          12.0
+         ],
+         "content": [
+          1.406166,
+          1.356624,
+          0.70415,
+          0.213391,
+          0.252291,
+          0.288594,
+          0.325046
+         ],
+         "flow": "clamp"
+        },
+        {
+         "nodetype": "binning",
+         "input": "absCot",
+         "edges": [
+          0.0,
+          1.5,
+          3.0,
+          4.0,
+          6.0,
+          12.0
+         ],
+         "content": [
+          1.504713,
+          0.396501,
+          0.207315,
+          0.337721,
+          0.31327
+         ],
+         "flow": "clamp"
+        },
+        {
+         "nodetype": "binning",
+         "input": "absCot",
+         "edges": [
+          0.0,
+          2.0,
+          3.0,
+          4.0,
+          6.0,
+          12.0
+         ],
+         "content": [
+          1.296407,
+          0.805649,
+          0.264485,
+          0.215082,
+          0.33926
+         ],
+         "flow": "clamp"
+        },
+        {
+         "nodetype": "binning",
+         "input": "absCot",
+         "edges": [
+          0.0,
+          3.0,
+          4.0,
+          6.0,
+          12.0
+         ],
+         "content": [
+          0.496711,
+          0.568719,
+          0.228394,
+          0.391112
+         ],
+         "flow": "clamp"
+        },
+        {
+         "nodetype": "binning",
+         "input": "absCot",
+         "edges": [
+          0.0,
+          4.0,
+          6.0,
+          12.0
+         ],
+         "content": [
+          0.353409,
+          0.227896,
+          0.368795
+         ],
+         "flow": "clamp"
+        },
+        {
+         "nodetype": "binning",
+         "input": "absCot",
+         "edges": [
+          0.0,
+          4.0,
+          6.0,
+          12.0
+         ],
+         "content": [
+          0.294757,
+          0.291594,
+          0.217069
+         ],
+         "flow": "clamp"
+        },
+        {
+         "nodetype": "binning",
+         "input": "absCot",
+         "edges": [
+          0.0,
+          6.0,
+          12.0
+         ],
+         "content": [
+          0.493455,
+          0.264167
+         ],
+         "flow": "clamp"
+        },
+        {
+         "nodetype": "binning",
+         "input": "absCot",
+         "edges": [
+          0.0,
+          6.0,
+          12.0
+         ],
+         "content": [
+          0.307291,
+          0.322544
+         ],
+         "flow": "clamp"
+        },
+        {
+         "nodetype": "binning",
+         "input": "absCot",
+         "edges": [
+          0.0,
+          12.0
+         ],
+         "content": [
+          0.379311
+         ],
+         "flow": "clamp"
+        },
+        {
+         "nodetype": "binning",
+         "input": "absCot",
+         "edges": [
+          0.0,
+          12.0
+         ],
+         "content": [
+          0.456351
+         ],
+         "flow": "clamp"
+        },
+        {
+         "nodetype": "binning",
+         "input": "absCot",
+         "edges": [
+          0.0,
+          12.0
+         ],
+         "content": [
+          0.517891
+         ],
+         "flow": "clamp"
+        },
+        {
+         "nodetype": "binning",
+         "input": "absCot",
+         "edges": [
+          0.0,
+          12.0
+         ],
+         "content": [
+          0.64181
+         ],
+         "flow": "clamp"
+        },
+        {
+         "nodetype": "binning",
+         "input": "absCot",
+         "edges": [
+          0.0,
+          12.0
+         ],
+         "content": [
+          0.857875
+         ],
+         "flow": "clamp"
+        },
+        {
+         "nodetype": "binning",
+         "input": "absCot",
+         "edges": [
+          0.0,
+          12.0
+         ],
+         "content": [
+          2.641823
+         ],
+         "flow": "clamp"
+        }
+       ],
+       "flow": "clamp"
+      }
+     },
+     {
+      "key": 2,
+      "value": {
+       "nodetype": "binning",
+       "input": "sizeY",
+       "edges": [
+        0.5,
+        1.5,
+        2.5,
+        3.5,
+        4.5,
+        5.5,
+        6.5,
+        7.5,
+        8.5,
+        9.5,
+        11.5,
+        147.5
+       ],
+       "content": [
+        {
+         "nodetype": "binning",
+         "input": "absCot",
+         "edges": [
+          0.0,
+          0.025,
+          0.05,
+          0.1,
+          0.15,
+          0.2,
+          0.3,
+          0.5,
+          0.75,
+          1.07,
+          1.5,
+          2.0,
+          3.0,
+          12.0
+         ],
+         "content": [
+          0.255975,
+          0.266926,
+          0.293426,
+          0.347238,
+          0.403427,
+          0.412449,
+          0.379253,
+          0.52873,
+          0.80075,
+          1.101484,
+          1.165449,
+          0.69484,
+          2.810143
+         ],
+         "flow": "clamp"
+        },
+        {
+         "nodetype": "binning",
+         "input": "absCot",
+         "edges": [
+          0.0,
+          0.025,
+          0.05,
+          0.1,
+          0.15,
+          0.2,
+          0.3,
+          0.5,
+          0.75,
+          1.07,
+          1.5,
+          2.0,
+          3.0,
+          12.0
+         ],
+         "content": [
+          0.487879,
+          0.502677,
+          0.515655,
+          0.569233,
+          0.602196,
+          0.602571,
+          0.424586,
+          0.263312,
+          0.281865,
+          0.335018,
+          0.658724,
+          0.465864,
+          1.30428
+         ],
+         "flow": "clamp"
+        },
+        {
+         "nodetype": "binning",
+         "input": "absCot",
+         "edges": [
+          0.0,
+          0.1,
+          0.2,
+          0.3,
+          0.5,
+          0.75,
+          1.07,
+          1.5,
+          2.0,
+          3.0,
+          12.0
+         ],
+         "content": [
+          1.111541,
+          1.103225,
+          1.237274,
+          0.851971,
+          0.522141,
+          0.356323,
+          0.214252,
+          0.214413,
+          0.384544,
+          1.223041
+         ],
+         "flow": "clamp"
+        },
+        {
+         "nodetype": "binning",
+         "input": "absCot",
+         "edges": [
+          0.0,
+          0.2,
+          0.75,
+          1.07,
+          1.5,
+          2.0,
+          3.0,
+          12.0
+         ],
+         "content": [
+          1.972148,
+          1.592394,
+          0.951861,
+          0.50363,
+          0.232079,
+          0.219315,
+          0.631542
+         ],
+         "flow": "clamp"
+        },
+        {
+         "nodetype": "binning",
+         "input": "absCot",
+         "edges": [
+          0.0,
+          1.07,
+          2.0,
+          3.0,
+          12.0
+         ],
+         "content": [
+          1.341814,
+          0.696021,
+          0.212245,
+          0.272366
+         ],
+         "flow": "clamp"
+        },
+        {
+         "nodetype": "binning",
+         "input": "absCot",
+         "edges": [
+          0.0,
+          1.5,
+          3.0,
+          4.0,
+          12.0
+         ],
+         "content": [
+          1.274241,
+          0.365468,
+          0.211015,
+          0.494464
+         ],
+         "flow": "clamp"
+        },
+        {
+         "nodetype": "binning",
+         "input": "absCot",
+         "edges": [
+          0.0,
+          3.0,
+          4.0,
+          12.0
+         ],
+         "content": [
+          0.531828,
+          0.262971,
+          0.26461
+         ],
+         "flow": "clamp"
+        },
+        {
+         "nodetype": "binning",
+         "input": "absCot",
+         "edges": [
+          0.0,
+          4.0,
+          12.0
+         ],
+         "content": [
+          0.69522,
+          0.333686
+         ],
+         "flow": "clamp"
+        },
+        {
+         "nodetype": "binning",
+         "input": "absCot",
+         "edges": [
+          0.0,
+          12.0
+         ],
+         "content": [
+          0.920549
+         ],
+         "flow": "clamp"
+        },
+        {
+         "nodetype": "binning",
+         "input": "absCot",
+         "edges": [
+          0.0,
+          12.0
+         ],
+         "content": [
+          1.025286
+         ],
+         "flow": "clamp"
+        },
+        {
+         "nodetype": "binning",
+         "input": "absCot",
+         "edges": [
+          0.0,
+          12.0
+         ],
+         "content": [
+          1.341582
+         ],
+         "flow": "clamp"
+        }
+       ],
+       "flow": "clamp"
+      }
+     },
+     {
+      "key": 3,
+      "value": {
+       "nodetype": "binning",
+       "input": "sizeY",
+       "edges": [
+        0.5,
+        1.5,
+        2.5,
+        3.5,
+        4.5,
+        5.5,
+        6.5,
+        8.5,
+        82.5
+       ],
+       "content": [
+        {
+         "nodetype": "binning",
+         "input": "absCot",
+         "edges": [
+          0.0,
+          0.025,
+          0.05,
+          0.1,
+          0.15,
+          0.2,
+          0.3,
+          0.5,
+          0.75,
+          1.07,
+          1.5,
+          2.0,
+          12.0
+         ],
+         "content": [
+          0.25517,
+          0.264892,
+          0.292454,
+          0.349106,
+          0.401727,
+          0.407402,
+          0.354314,
+          0.492596,
+          0.773976,
+          1.074757,
+          1.183325,
+          2.50217
+         ],
+         "flow": "clamp"
+        },
+        {
+         "nodetype": "binning",
+         "input": "absCot",
+         "edges": [
+          0.0,
+          0.025,
+          0.05,
+          0.1,
+          0.15,
+          0.2,
+          0.3,
+          0.5,
+          0.75,
+          1.07,
+          1.5,
+          2.0,
+          12.0
+         ],
+         "content": [
+          0.469586,
+          0.484516,
+          0.500075,
+          0.564758,
+          0.59906,
+          0.602516,
+          0.409713,
+          0.25853,
+          0.275936,
+          0.332713,
+          0.643401,
+          2.092039
+         ],
+         "flow": "clamp"
+        },
+        {
+         "nodetype": "binning",
+         "input": "absCot",
+         "edges": [
+          0.0,
+          0.1,
+          0.2,
+          0.3,
+          0.5,
+          0.75,
+          1.07,
+          1.5,
+          2.0,
+          12.0
+         ],
+         "content": [
+          1.110625,
+          1.056659,
+          1.095797,
+          0.726653,
+          0.490065,
+          0.34013,
+          0.204199,
+          0.222645,
+          0.453343
+         ],
+         "flow": "clamp"
+        },
+        {
+         "nodetype": "binning",
+         "input": "absCot",
+         "edges": [
+          0.0,
+          0.5,
+          1.07,
+          1.5,
+          2.0,
+          12.0
+         ],
+         "content": [
+          1.444248,
+          0.784876,
+          0.440381,
+          0.204122,
+          0.249642
+         ],
+         "flow": "clamp"
+        },
+        {
+         "nodetype": "binning",
+         "input": "absCot",
+         "edges": [
+          0.0,
+          1.5,
+          12.0
+         ],
+         "content": [
+          0.612407,
+          0.296721
+         ],
+         "flow": "clamp"
+        },
+        {
+         "nodetype": "binning",
+         "input": "absCot",
+         "edges": [
+          0.0,
+          12.0
+         ],
+         "content": [
+          0.773044
+         ],
+         "flow": "clamp"
+        },
+        {
+         "nodetype": "binning",
+         "input": "absCot",
+         "edges": [
+          0.0,
+          12.0
+         ],
+         "content": [
+          0.793612
+         ],
+         "flow": "clamp"
+        },
+        {
+         "nodetype": "binning",
+         "input": "absCot",
+         "edges": [
+          0.0,
+          12.0
+         ],
+         "content": [
+          0.851581
+         ],
+         "flow": "clamp"
+        }
+       ],
+       "flow": "clamp"
+      }
+     },
+     {
+      "key": 4,
+      "value": {
+       "nodetype": "binning",
+       "input": "sizeY",
+       "edges": [
+        0.5,
+        1.5,
+        2.5,
+        3.5,
+        4.5,
+        5.5,
+        7.5,
+        94.5
+       ],
+       "content": [
+        {
+         "nodetype": "binning",
+         "input": "absCot",
+         "edges": [
+          0.0,
+          0.025,
+          0.05,
+          0.1,
+          0.15,
+          0.2,
+          0.3,
+          0.5,
+          0.75,
+          1.07,
+          1.5,
+          12.0
+         ],
+         "content": [
+          0.251241,
+          0.258803,
+          0.283744,
+          0.341045,
+          0.396366,
+          0.394418,
+          0.329084,
+          0.468397,
+          0.756727,
+          1.079455,
+          1.947598
+         ],
+         "flow": "clamp"
+        },
+        {
+         "nodetype": "binning",
+         "input": "absCot",
+         "edges": [
+          0.0,
+          0.025,
+          0.05,
+          0.1,
+          0.15,
+          0.2,
+          0.3,
+          0.5,
+          0.75,
+          1.07,
+          1.5,
+          12.0
+         ],
+         "content": [
+          0.44161,
+          0.472915,
+          0.492927,
+          0.554538,
+          0.599114,
+          0.593472,
+          0.390954,
+          0.249614,
+          0.272966,
+          0.354997,
+          0.870646
+         ],
+         "flow": "clamp"
+        },
+        {
+         "nodetype": "binning",
+         "input": "absCot",
+         "edges": [
+          0.0,
+          0.1,
+          0.3,
+          0.5,
+          0.75,
+          1.07,
+          1.5,
+          2.0,
+          12.0
+         ],
+         "content": [
+          0.925089,
+          0.964165,
+          0.663758,
+          0.465525,
+          0.296477,
+          0.191293,
+          0.291013,
+          0.750093
+         ],
+         "flow": "clamp"
+        },
+        {
+         "nodetype": "binning",
+         "input": "absCot",
+         "edges": [
+          0.0,
+          0.75,
+          1.5,
+          2.0,
+          12.0
+         ],
+         "content": [
+          0.705973,
+          0.519216,
+          0.209145,
+          0.432523
+         ],
+         "flow": "clamp"
+        },
+        {
+         "nodetype": "binning",
+         "input": "absCot",
+         "edges": [
+          0.0,
+          12.0
+         ],
+         "content": [
+          0.823848
+         ],
+         "flow": "clamp"
+        },
+        {
+         "nodetype": "binning",
+         "input": "absCot",
+         "edges": [
+          0.0,
+          12.0
+         ],
+         "content": [
+          0.772789
+         ],
+         "flow": "clamp"
+        },
+        {
+         "nodetype": "binning",
+         "input": "absCot",
+         "edges": [
+          0.0,
+          12.0
+         ],
+         "content": [
+          0.830861
+         ],
+         "flow": "clamp"
+        }
+       ],
+       "flow": "clamp"
+      }
+     },
+     {
+      "key": 11,
+      "value": {
+       "nodetype": "binning",
+       "input": "sizeY",
+       "edges": [
+        0.5,
+        1.5,
+        2.5,
+        3.5,
+        4.5,
+        5.5,
+        6.5,
+        8.5,
+        128.5
+       ],
+       "content": [
+        {
+         "nodetype": "binning",
+         "input": "absCot",
+         "edges": [
+          0.0,
+          0.025,
+          0.05,
+          0.1,
+          0.15,
+          0.2,
+          0.3,
+          0.5,
+          0.75,
+          1.07,
+          12.0
+         ],
+         "content": [
+          0.252907,
+          0.256401,
+          0.271899,
+          0.306641,
+          0.349453,
+          0.304164,
+          0.243692,
+          0.402656,
+          0.681451,
+          1.032309
+         ],
+         "flow": "clamp"
+        },
+        {
+         "nodetype": "binning",
+         "input": "absCot",
+         "edges": [
+          0.0,
+          0.025,
+          0.05,
+          0.1,
+          0.15,
+          0.2,
+          0.3,
+          0.5,
+          0.75,
+          1.07,
+          1.5,
+          12.0
+         ],
+         "content": [
+          0.324131,
+          0.335036,
+          0.358285,
+          0.416033,
+          0.491033,
+          0.435244,
+          0.205798,
+          0.298234,
+          0.613286,
+          0.849964,
+          1.745868
+         ],
+         "flow": "clamp"
+        },
+        {
+         "nodetype": "binning",
+         "input": "absCot",
+         "edges": [
+          0.0,
+          0.05,
+          0.1,
+          0.15,
+          0.3,
+          0.5,
+          0.75,
+          1.07,
+          1.5,
+          12.0
+         ],
+         "content": [
+          0.335865,
+          0.334183,
+          0.423463,
+          0.520184,
+          0.483366,
+          0.436073,
+          0.620159,
+          0.69098,
+          1.467537
+         ],
+         "flow": "clamp"
+        },
+        {
+         "nodetype": "binning",
+         "input": "absCot",
+         "edges": [
+          0.0,
+          0.15,
+          0.5,
+          12.0
+         ],
+         "content": [
+          0.371892,
+          0.442498,
+          1.044726
+         ],
+         "flow": "clamp"
+        },
+        {
+         "nodetype": "binning",
+         "input": "absCot",
+         "edges": [
+          0.0,
+          0.3,
+          12.0
+         ],
+         "content": [
+          0.400056,
+          1.066248
+         ],
+         "flow": "clamp"
+        },
+        {
+         "nodetype": "binning",
+         "input": "absCot",
+         "edges": [
+          0.0,
+          12.0
+         ],
+         "content": [
+          0.608498
+         ],
+         "flow": "clamp"
+        },
+        {
+         "nodetype": "binning",
+         "input": "absCot",
+         "edges": [
+          0.0,
+          12.0
+         ],
+         "content": [
+          0.658463
+         ],
+         "flow": "clamp"
+        },
+        {
+         "nodetype": "binning",
+         "input": "absCot",
+         "edges": [
+          0.0,
+          12.0
+         ],
+         "content": [
+          2.050662
+         ],
+         "flow": "clamp"
+        }
+       ],
+       "flow": "clamp"
+      }
+     },
+     {
+      "key": 12,
+      "value": {
+       "nodetype": "binning",
+       "input": "sizeY",
+       "edges": [
+        0.5,
+        1.5,
+        2.5,
+        3.5,
+        4.5,
+        5.5,
+        6.5,
+        8.5,
+        114.5
+       ],
+       "content": [
+        {
+         "nodetype": "binning",
+         "input": "absCot",
+         "edges": [
+          0.0,
+          0.025,
+          0.05,
+          0.1,
+          0.15,
+          0.2,
+          0.3,
+          0.5,
+          0.75,
+          1.07,
+          12.0
+         ],
+         "content": [
+          0.220611,
+          0.218163,
+          0.233255,
+          0.270115,
+          0.256023,
+          0.261249,
+          0.292621,
+          0.440517,
+          0.695451,
+          1.075356
+         ],
+         "flow": "clamp"
+        },
+        {
+         "nodetype": "binning",
+         "input": "absCot",
+         "edges": [
+          0.0,
+          0.025,
+          0.05,
+          0.1,
+          0.15,
+          0.2,
+          0.3,
+          0.5,
+          0.75,
+          1.07,
+          12.0
+         ],
+         "content": [
+          0.286828,
+          0.294233,
+          0.303946,
+          0.351185,
+          0.446581,
+          0.35688,
+          0.22161,
+          0.371345,
+          0.664387,
+          1.008002
+         ],
+         "flow": "clamp"
+        },
+        {
+         "nodetype": "binning",
+         "input": "absCot",
+         "edges": [
+          0.0,
+          0.05,
+          0.1,
+          0.15,
+          0.3,
+          0.5,
+          0.75,
+          1.07,
+          1.5,
+          12.0
+         ],
+         "content": [
+          0.263021,
+          0.275845,
+          0.334201,
+          0.347596,
+          0.431517,
+          0.514042,
+          0.688994,
+          0.900115,
+          1.5897
+         ],
+         "flow": "clamp"
+        },
+        {
+         "nodetype": "binning",
+         "input": "absCot",
+         "edges": [
+          0.0,
+          0.1,
+          0.3,
+          0.75,
+          12.0
+         ],
+         "content": [
+          0.260713,
+          0.363375,
+          0.474692,
+          1.352685
+         ],
+         "flow": "clamp"
+        },
+        {
+         "nodetype": "binning",
+         "input": "absCot",
+         "edges": [
+          0.0,
+          0.2,
+          12.0
+         ],
+         "content": [
+          0.299026,
+          0.92437
+         ],
+         "flow": "clamp"
+        },
+        {
+         "nodetype": "binning",
+         "input": "absCot",
+         "edges": [
+          0.0,
+          12.0
+         ],
+         "content": [
+          0.585067
+         ],
+         "flow": "clamp"
+        },
+        {
+         "nodetype": "binning",
+         "input": "absCot",
+         "edges": [
+          0.0,
+          12.0
+         ],
+         "content": [
+          0.644084
+         ],
+         "flow": "clamp"
+        },
+        {
+         "nodetype": "binning",
+         "input": "absCot",
+         "edges": [
+          0.0,
+          12.0
+         ],
+         "content": [
+          2.725515
+         ],
+         "flow": "clamp"
+        }
+       ],
+       "flow": "clamp"
+      }
+     },
+     {
+      "key": 13,
+      "value": {
+       "nodetype": "binning",
+       "input": "sizeY",
+       "edges": [
+        0.5,
+        1.5,
+        2.5,
+        3.5,
+        4.5,
+        5.5,
+        6.5,
+        8.5,
+        115.5
+       ],
+       "content": [
+        {
+         "nodetype": "binning",
+         "input": "absCot",
+         "edges": [
+          0.0,
+          0.025,
+          0.05,
+          0.1,
+          0.15,
+          0.2,
+          0.3,
+          0.5,
+          0.75,
+          1.07,
+          12.0
+         ],
+         "content": [
+          0.192323,
+          0.19054,
+          0.208276,
+          0.224585,
+          0.222858,
+          0.219809,
+          0.31777,
+          0.499076,
+          0.707965,
+          1.083362
+         ],
+         "flow": "clamp"
+        },
+        {
+         "nodetype": "binning",
+         "input": "absCot",
+         "edges": [
+          0.0,
+          0.025,
+          0.05,
+          0.1,
+          0.15,
+          0.2,
+          0.3,
+          0.5,
+          0.75,
+          1.07,
+          12.0
+         ],
+         "content": [
+          0.248374,
+          0.241752,
+          0.251641,
+          0.289574,
+          0.315365,
+          0.285429,
+          0.279795,
+          0.426863,
+          0.687764,
+          1.044551
+         ],
+         "flow": "clamp"
+        },
+        {
+         "nodetype": "binning",
+         "input": "absCot",
+         "edges": [
+          0.0,
+          0.025,
+          0.1,
+          0.15,
+          0.3,
+          0.5,
+          0.75,
+          1.07,
+          1.5,
+          12.0
+         ],
+         "content": [
+          0.220936,
+          0.2321,
+          0.287661,
+          0.285204,
+          0.436309,
+          0.546815,
+          0.723069,
+          1.040062,
+          1.709467
+         ],
+         "flow": "clamp"
+        },
+        {
+         "nodetype": "binning",
+         "input": "absCot",
+         "edges": [
+          0.0,
+          0.1,
+          0.3,
+          0.75,
+          12.0
+         ],
+         "content": [
+          0.235254,
+          0.276232,
+          0.53077,
+          1.405024
+         ],
+         "flow": "clamp"
+        },
+        {
+         "nodetype": "binning",
+         "input": "absCot",
+         "edges": [
+          0.0,
+          0.15,
+          12.0
+         ],
+         "content": [
+          0.235469,
+          1.129678
+         ],
+         "flow": "clamp"
+        },
+        {
+         "nodetype": "binning",
+         "input": "absCot",
+         "edges": [
+          0.0,
+          12.0
+         ],
+         "content": [
+          0.610849
+         ],
+         "flow": "clamp"
+        },
+        {
+         "nodetype": "binning",
+         "input": "absCot",
+         "edges": [
+          0.0,
+          12.0
+         ],
+         "content": [
+          0.604414
+         ],
+         "flow": "clamp"
+        },
+        {
+         "nodetype": "binning",
+         "input": "absCot",
+         "edges": [
+          0.0,
+          12.0
+         ],
+         "content": [
+          1.264765
+         ],
+         "flow": "clamp"
+        }
+       ],
+       "flow": "clamp"
+      }
+     },
+     {
+      "key": 14,
+      "value": {
+       "nodetype": "binning",
+       "input": "sizeY",
+       "edges": [
+        0.5,
+        1.5,
+        2.5,
+        3.5,
+        4.5,
+        5.5,
+        6.5,
+        8.5,
+        154.5
+       ],
+       "content": [
+        {
+         "nodetype": "binning",
+         "input": "absCot",
+         "edges": [
+          0.0,
+          0.025,
+          0.05,
+          0.1,
+          0.15,
+          0.2,
+          0.3,
+          0.5,
+          0.75,
+          1.07,
+          12.0
+         ],
+         "content": [
+          0.152538,
+          0.156878,
+          0.169748,
+          0.178897,
+          0.191842,
+          0.166025,
+          0.319971,
+          0.526756,
+          0.721807,
+          1.082469
+         ],
+         "flow": "clamp"
+        },
+        {
+         "nodetype": "binning",
+         "input": "absCot",
+         "edges": [
+          0.0,
+          0.025,
+          0.05,
+          0.1,
+          0.15,
+          0.2,
+          0.3,
+          0.5,
+          0.75,
+          1.07,
+          12.0
+         ],
+         "content": [
+          0.202836,
+          0.199736,
+          0.215576,
+          0.252749,
+          0.232087,
+          0.237818,
+          0.31526,
+          0.48339,
+          0.70386,
+          1.065824
+         ],
+         "flow": "clamp"
+        },
+        {
+         "nodetype": "binning",
+         "input": "absCot",
+         "edges": [
+          0.0,
+          0.025,
+          0.05,
+          0.1,
+          0.15,
+          0.3,
+          0.5,
+          0.75,
+          1.07,
+          12.0
+         ],
+         "content": [
+          0.179847,
+          0.180048,
+          0.209032,
+          0.260986,
+          0.254632,
+          0.452656,
+          0.549697,
+          0.737012,
+          1.380565
+         ],
+         "flow": "clamp"
+        },
+        {
+         "nodetype": "binning",
+         "input": "absCot",
+         "edges": [
+          0.0,
+          0.1,
+          0.3,
+          12.0
+         ],
+         "content": [
+          0.20031,
+          0.24823,
+          1.198037
+         ],
+         "flow": "clamp"
+        },
+        {
+         "nodetype": "binning",
+         "input": "absCot",
+         "edges": [
+          0.0,
+          0.15,
+          12.0
+         ],
+         "content": [
+          0.214913,
+          1.107228
+         ],
+         "flow": "clamp"
+        },
+        {
+         "nodetype": "binning",
+         "input": "absCot",
+         "edges": [
+          0.0,
+          12.0
+         ],
+         "content": [
+          0.692237
+         ],
+         "flow": "clamp"
+        },
+        {
+         "nodetype": "binning",
+         "input": "absCot",
+         "edges": [
+          0.0,
+          12.0
+         ],
+         "content": [
+          0.59928
+         ],
+         "flow": "clamp"
+        },
+        {
+         "nodetype": "binning",
+         "input": "absCot",
+         "edges": [
+          0.0,
+          12.0
+         ],
+         "content": [
+          1.367156
+         ],
+         "flow": "clamp"
+        }
+       ],
+       "flow": "clamp"
+      }
+     }
+    ]
+   }
+  }
+ ]
+}
