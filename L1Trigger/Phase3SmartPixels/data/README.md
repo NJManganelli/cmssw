@@ -21,6 +21,8 @@ and all made by ngtagger-train `eval_spixel_angles/cluster_cnn` (`emu_*.py`):
   the graph, exported by `emu_export_onnx.py a1`.
 - `spix_emu_library_v2.root` (1.5 MB): the rescaled SmartPixels Conv1D_Full-2bit dump (tree
   `dump`), written by `emu_build_library.py`.
-- `spix_emu_sigma_v2.json`: the static sigAlpha/sigBeta tables, by surface code and |reported
-  cot|, from the emulated class-T and class-C routes of the training events, written by
-  `emu_sigma_table.py`.
+- `spix_emu_sigma_v3.json`: the static sigAlpha/sigBeta tables, by surface code, cluster size
+  along the angle's axis (sizeX for alpha, sizeY for beta; the size is taken as sensor-reported)
+  and |reported cot|, from the emulated class-T and class-C routes of the training events
+  weighted by the class fractions of each (surface, size) bin, written by `emu_sigma_table.py
+  build ... own`. The producer takes the inputs by name (surface, sizeX, sizeY, absCot).
