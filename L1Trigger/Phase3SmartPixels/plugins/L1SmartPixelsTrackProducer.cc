@@ -359,10 +359,10 @@ private:
   double digiRefitJacobianMaxAbs_ = 1.0e4;  // |H[k][j]| above this (or non-finite) zeroes the column
   double digiRefitChi2UpdateGate_ = 2.0e6;  // scalar update with r^2/S above this is skipped entirely
   // Grazing-angle clamps (spec §6b). measAngleMaxAbs is the LOAD-BEARING
-  // clamp: a synthesized measured cotAlpha/cotBeta beyond it invalidates THAT
-  // ANGLE (the hit keeps its position). predAngleMaxAbs is secondary hygiene,
+  // clamp: a measured cotAlpha/cotBeta beyond it is not used by the refit (THAT
+  // ANGLE only; the hit keeps its position). predAngleMaxAbs is secondary hygiene,
   // passed to the projector to reject non-physical predicted crossings.
-  double digiRefitMeasAngleMaxAbs_ = 12.0;  // |synthesized measured cot| above this clears has{Alpha,Beta}
+  double digiRefitMeasAngleMaxAbs_ = 12.0;  // |measured cot| above this: the angle is not used
   double digiRefitPredAngleMaxAbs_ = 12.0;  // |predicted crossing cot| above this invalidates the crossing
   // Order in which IT layers are visited by the Kalman loop. The particle
   // traverses L1->L4 outward, but the seed is an OT-only fit, so the state
@@ -425,7 +425,7 @@ private:
   mutable unsigned long long digiRefitGatedJacCols_ = 0;   // Jacobian columns zeroed by jacobianMaxAbs
   mutable unsigned long long digiRefitGatedUpdates_ = 0;   // scalar updates skipped by chi2UpdateGate
   mutable unsigned long long digiRefitProcessNoiseApplied_ = 0;  // crossings that received MS process noise
-  mutable unsigned long long digiRefitClampedMeasAngles_ = 0;  // synthesized measured angles cleared by measAngleMaxAbs (spec §6b)
+  mutable unsigned long long digiRefitClampedMeasAngles_ = 0;  // candidate angles dropped by measAngleMaxAbs (spec §6b)
   mutable unsigned long long digiRefitClampedPredCross_ = 0;   // predicted crossings rejected by predAngleMaxAbs (spec §6b)
 
   edm::InputTag L1TrackInputTag;       // L1 track collection
@@ -710,8 +710,8 @@ void L1SmartPixelsTrackProducer::endStream() {
     edm::LogVerbatim("SmartPixelsTrackProducer")
         << "digiRefit KF guards: jacobianMaxAbs zeroed " << digiRefitGatedJacCols_
         << " Jacobian column(s); chi2UpdateGate skipped " << digiRefitGatedUpdates_
-        << " scalar update(s); measAngleMaxAbs cleared " << digiRefitClampedMeasAngles_
-        << " synthesized angle(s); predAngleMaxAbs rejected " << digiRefitClampedPredCross_
+        << " scalar update(s); measAngleMaxAbs dropped " << digiRefitClampedMeasAngles_
+        << " candidate angle(s); predAngleMaxAbs rejected " << digiRefitClampedPredCross_
         << " predicted crossing(s) over " << digiRefitTracksSeen_ << " tracks.";
     if (digiRefitTruthMatches_ == 0)
       throw cms::Exception("SmartPixelsTruthMissing")
@@ -1914,15 +1914,17 @@ void L1SmartPixelsTrackProducer::produce(edm::Event& iEvent, const edm::EventSet
             cand.parCotA = tr.trueCotAlpha();
             cand.parCotB = tr.trueCotBeta();
 
-            // Sensor angle estimate. The grazing clamp already ran upstream: a
-            // sensor physically cannot report a grazing angle, so it is a property
-            // of the hit, not a decision of the fit.
+            // Sensor angle estimate. The grazing cap is applied HERE: the emu source
+            // reports every angle (a value-dependent validity flag would tell class C
+            // from class T), and for the payload source, which already clears
+            // hasAlpha/hasBeta beyond the same bound upstream, this is a no-op.
             cand.cotA = rh.cotAlpha();
             cand.cotB = rh.cotBeta();
             cand.sigA = rh.sigAlpha();
             cand.sigB = rh.sigBeta();
-            cand.hasA = rh.hasAlpha();
-            cand.hasB = rh.hasBeta();
+            cand.hasA = rh.hasAlpha() && std::abs(cand.cotA) <= digiRefitMeasAngleMaxAbs_;
+            cand.hasB = rh.hasBeta() && std::abs(cand.cotB) <= digiRefitMeasAngleMaxAbs_;
+            digiRefitClampedMeasAngles_ += (rh.hasAlpha() && !cand.hasA) + (rh.hasBeta() && !cand.hasB);
 
             // TRUTH-ONLY class, by TrackingParticle IDENTITY rather than SimTrack
             // id: a TP owns several g4Tracks. 2 = no TP at all (noise-like).
@@ -2402,10 +2404,11 @@ void L1SmartPixelsTrackProducer::fillDescriptions(edm::ConfigurationDescriptions
                    "2e6 removes only the non-physical tail (up to ~1e10) and does NOT gate genuine wrong hits. "
                    "Backstop to the grazing-angle clamps.");
   desc.add<double>("digiRefitMeasAngleMaxAbs", 12.0)
-      ->setComment("LOAD-BEARING grazing clamp (spec §6b): a synthesized measured |cotAlpha|/|cotBeta| "
-                   "above this bound invalidates THAT ANGLE (hasAlpha/hasBeta cleared; the hit keeps its "
-                   "position). Removes the measurement-driven chi2 pathology at source; default 12 "
-                   "preserves the O(1-6) wrong-hit signal.");
+      ->setComment("LOAD-BEARING grazing clamp (spec §6b): a measured |cotAlpha|/|cotBeta| above this bound "
+                   "is not used by the refit (THAT ANGLE only: no selection term, no update, no chi2; the hit "
+                   "keeps its position; the sidecar hasAlpha/hasBeta record the use). Applied here because the "
+                   "emu source reports every angle; a no-op for the payload source, whose rec hits already clear "
+                   "hasAlpha/hasBeta beyond the same bound. Default 12 preserves the O(1-6) wrong-hit signal.");
   desc.add<double>("digiRefitPredAngleMaxAbs", 12.0)
       ->setComment("secondary hygiene grazing clamp (spec §6b): a predicted crossing |cotAlpha|/|cotBeta| "
                    "above this bound invalidates the crossing at the projector (no window, no sidecar record). "

@@ -118,7 +118,7 @@ DIGIREFIT_DEFAULTS = {
     # removing the measurement-driven chi2 pathology at source); predAngleMaxAbs is
     # secondary hygiene (a predicted crossing angle beyond it invalidates the
     # crossing at the projector). Both default 12.0.
-    "measAngleMaxAbs": 12.0,  # |synthesized measured cot| above this clears hasAlpha/hasBeta
+    "measAngleMaxAbs": 12.0,  # |measured cot| above this: the refit does not use that angle
     "predAngleMaxAbs": 12.0,  # |predicted crossing cot| above this invalidates the crossing
     # --- Kalman layer visit order ---
     # The particle traverses L1->L4 outward, but the seed is an OT-ONLY fit, so

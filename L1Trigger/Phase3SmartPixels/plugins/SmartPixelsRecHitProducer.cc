@@ -77,8 +77,11 @@
 //     flag the clamp; never wrapped), reported as cot = tan(out) in the module frame.
 //  Every draw is a hash of (run, event, detId, idxInDet) with a salt per draw, so the
 //  output is reproducible and split-job invariant. sigAlpha/sigBeta come from a STATIC
-//  table (emuSigmaSet) keyed on the surface code and |reported cot| only. The class is
-//  TRUTH (SmartPixelsRecHitTruth::emuClass), for validation only.
+//  table (emuSigmaSet) keyed on the surface code and |reported cot| only. EVERY emu
+//  cluster reports both angles (hasAlpha = hasBeta = true): a validity flag that
+//  depended on the value would tell class C from class T, so the |cot| cap
+//  (measAngleMaxAbs) is applied by the algorithms that need it, e.g. the refit. The
+//  class is TRUTH (SmartPixelsRecHitTruth::emuClass), for validation only.
 
 #include "FWCore/Framework/interface/Event.h"
 #include "FWCore/Framework/interface/EventSetup.h"
@@ -983,12 +986,10 @@ void SmartPixelsRecHitProducer::setEmuAngles(std::vector<SmartPixelsRecHit>& hit
 
     const double sigA = corrEmuAlphaSigma_->evaluate({static_cast<int>(surface), std::abs(static_cast<double>(cotA))});
     const double sigB = corrEmuBetaSigma_->evaluate({static_cast<int>(surface), std::abs(static_cast<double>(cotB))});
-    hits[i].setAngles(cotA,
-                      cotB,
-                      static_cast<float>(sigA),
-                      static_cast<float>(sigB),
-                      sigA > 0. && std::abs(cotA) <= measAngleMaxAbs_,
-                      sigB > 0. && std::abs(cotB) <= measAngleMaxAbs_);
+    if (!(sigA > 0. && sigB > 0.))
+      throw cms::Exception("SmartPixelsEmu") << "emuSigmaSet gives a non-positive sigma (" << sigA << ", " << sigB
+                                             << ") on surface " << surface << ": every emu angle must be reported";
+    hits[i].setAngles(cotA, cotB, static_cast<float>(sigA), static_cast<float>(sigB), true, true);
     hits[i].setSaturation(satA, satB);
     truths[i].setEmuClass(e.classT ? SmartPixelsRecHitTruth::kEmuClassT : SmartPixelsRecHitTruth::kEmuClassC);
 
@@ -1037,8 +1038,9 @@ void SmartPixelsRecHitProducer::fillDescriptions(edm::ConfigurationDescriptions&
   desc.add<double>("clusterMergeFrac", 0.1)
       ->setComment("runner-up charge share above which the cluster is flagged merged (TRUTH-ONLY)");
   desc.add<double>("measAngleMaxAbs", 12.0)
-      ->setComment("a sensor cannot report |cot| beyond this; clears hasAlpha/hasBeta for that angle "
-                   "only. A HIT property, which is why it lives here and not in the fit.");
+      ->setComment("payload source only: a sensor cannot report |cot| beyond this; clears hasAlpha/hasBeta "
+                   "for that angle only. The emu source reports every angle (hasAlpha = hasBeta = true, so the "
+                   "flag cannot tell class C from class T); the refit applies the same cap itself.");
   desc.add<std::string>("noiseSet", "")
       ->setComment("inverse-CDF payload giving an angle to clusters with NO simlink "
                    "(smarthit_noise_cotAlpha/Beta). Leaving it empty means unlinked clusters "
