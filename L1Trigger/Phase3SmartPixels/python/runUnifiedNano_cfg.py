@@ -37,7 +37,7 @@ options.inputFiles.
 
 Local test (D121 RelVal from the SD mount):
   cmsRun runUnifiedNano_cfg.py maxEvents=2 activeSP=1100 \
-    pixelavAngleSet=L1Trigger/Phase3SmartPixels/data/spix_angle_response_Conv1D_Full-2bit_v5.json \
+    pixelavAngleSet=L1Trigger/Phase3SmartPixels/data/spix_angle_response_Conv1D_Full-2bit_v6.json \
     inputFiles=file:/host_volumes/NJM256GBSD/smartpixels-cmssw-testfiles/RelValTTbar_14TeV_PU_150X_mcRun4_realistic_v1_STD_D121_RegeneratedGS_PU-v1_file1.root \
     outputFile=/work/spix_unifiednano_test.root
 """
