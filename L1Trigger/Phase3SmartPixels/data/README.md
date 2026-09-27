@@ -7,14 +7,18 @@ resolution-correction set copied into this directory:
 xrdcp root://cmseos.fnal.gov//eos/uscms/store/group/lpcsmartpixelscms/toysim/resolution/spixel_smear_all_configs_barrel_CalV1_v2p1_compound.json L1Trigger/Phase3SmartPixels/data/
 ```
 
-## spix_angle_response_Conv1D_Full-2bit_v5.json
+## spix_angle_response_Conv1D_Full-2bit_v6.json, _v5.json
 
 The PixelAV angle-response payload of `angleSource = "payload"` (`digiRefitConfig['pixelavAngleSet']`;
-the default of `test/makeSpixConfig.py`): bias and sigma of the SmartPixels Conv1D_Full-2bit network
-in bins of the true (cotAlpha, cotBeta), CMS frame, written by ngtagger-train
-`eval_spixel_angles/extract_pixelav_angle_payload.py --version v5`. v5 is the first version in
-PHYSICAL units: the eval dump stores normalised labels (physical = 1.8827 x stored for CMS alpha,
-6.5289 x stored for CMS beta), which payloads up to v4 used as they were.
+v6 is the default of `test/makeSpixConfig.py`): bias and sigma of the SmartPixels Conv1D_Full-2bit
+network in bins of the true (cotAlpha, cotBeta), CMS frame, written by ngtagger-train
+`eval_spixel_angles/extract_pixelav_angle_payload.py --version vN --binning vN`. v5 is the first
+version in PHYSICAL units: the eval dump stores normalised labels (physical = 1.8827 x stored for CMS
+alpha, 6.5289 x stored for CMS beta), which payloads up to v4 used as they were. v5 has 6 cotBeta
+bins (|beta| 0-63 deg is one bin). v6 has 24 cotBeta bins, symmetric in the angle (edges at 0, 15,
+25, 35, 45, 50, ..., 80 deg, then the v5 outer edge |cotBeta| = 7.18), grown from the dump so that
+every (cotAlpha, cotBeta) cell holds >= 100 dump rows; its top cotAlpha bin is [0.75, 1.51] (v5
+split it at 1.13, but the dump ends at 1.40).
 
 ## smartpixels_emu/
 
