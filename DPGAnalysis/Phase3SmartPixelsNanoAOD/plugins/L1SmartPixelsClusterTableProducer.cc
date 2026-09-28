@@ -11,10 +11,9 @@
 // than useless: it removes precisely the soft clusters that do the confusing,
 // which would make the measured combinatorics optimistic by ~45x.
 //
-// It is consequently a large table (~26.5k barrel rows/event at PU200, plus ~46k
-// on ID1-ID4) and belongs only to the L1PFTrkNanoSmartPixClusters tier. It is never
-// added to a physics tier. The barrel-only table measured 0.29 MB/event -- see the
-// payload breakdown below.
+// It is consequently a large table (~74k rows/event at PU200 with ID1-ID4, measured
+// 3.1 MB/event) and belongs only to the @SPClustersStubs nano flavour. It is never
+// added to a physics tier. See the payload breakdown below.
 //
 // WHAT A "MODULE" IS (D121 geometry, measured by SmartPixelsClusterCensusAnalyzer).
 // One module == one PixelGeomDetUnit == one DetId == the unit this table's detId

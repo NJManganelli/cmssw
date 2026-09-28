@@ -35,7 +35,8 @@ scram b -j8
 
 Two streamlined workflows are provided by
 `L1Trigger/Phase3SmartPixels/python/customizeSmartPixels_cff.py`
-(see `DPGAnalysis/Phase3SmartPixelsNanoAOD` for the nano flavors and full cmsDriver recipes):
+(the nano tiers, their tables, sizes and cmsDriver lines are summarised in
+`DPGAnalysis/Phase3SmartPixelsNanoAOD/README.md`):
 
 - **Coexist (WF1)**: one L1Nano file containing BOTH the standard L1Tracks tables and
   SUFFIXED SmartPixels L1Tracks tables for one or more variants — in-file track-to-track
@@ -104,30 +105,34 @@ so the Extended producer still reads old-layout stored tracks and every extended
 OT track is unusable for the refit. This is not special-cased at config time; it fails loudly at
 runtime, by design.
 
-## Refit modes (tier model)
+## SmartPixels (re)fit modes
 
-Beyond the passthrough/regression variants, `customizeSmartPixels_cff.py` reserves a
-two-tier refit model that develops the OT-L1Track ⊕ IT-pixel refit before the true
-SmartPixels chain exists:
+The modes are named as their nano mode tags (see `DPGAnalysis/Phase3SmartPixelsNanoAOD`):
 
-- **`seedlessRefit` (Tier 2, interim)** — project OT L1Tracks into the inner barrel (BPIX)
-  pixel layers and refit against the **real** `simSiPixelDigis` digis (classified via
-  `PixelDigiSimLink`), **synthesizing only the angle information** (PixelAV response). It is
-  an *active-layer* mode (reuses the activeSP `AAII` encoding to pick the refit layer set,
-  e.g. `"1100"`) and is *truth-required* (needs pixel digis + `PixelDigiSimLink` +
-  TrackingParticles; `reemulateL1TrackFinding` or file-present IT products). The producer is
-  implemented (Phase 2); the config surface is `SEEDLESSREFIT_DEFAULTS` + the `seedlessRefitConfig=`
-  kwarg on `smartPixelsCoexist`/`smartPixelsCoopt`, and a `seedlessRefit` variant additionally
-  emits the refit sidecar product described below.
-- **`refit` (Tier 3, reserved)** — the true system: the producer will ingest OT L1Tracks
-  plus a real `SmartTracklet` collection from an `L1SmartTracksFinder`. The mode name is
-  accepted by the vocabulary but building a variant with it raises `NotImplementedError`
-  (reserved); use `seedlessRefit` for the interim.
+- **SeedlessRefit** (`@SPSeedlessRefit`, implemented as producer mode `seedlessRefit`): Kalman
+  projection only. The OT track is projected into the IT and refit with IT clusters; no IT
+  track is built beforehand; pre-allocated binning may be used to improve latency. Today it
+  uses the real pixel digis/clusters with synthesized angle information (the SmartPixels-output
+  emulator or the PixelAV payload), with active-layer masks `A`/`I` per ILk+IDk
+  (`@SPActiveLayers<mask>`, `smartPixelsActiveLayers`). Configured by
+  `SEEDLESSREFIT_DEFAULTS` / `seedlessRefitConfig=`; it emits the refit sidecar below.
+- **ParallelSeedRefit** (`@SPParallelSeedRefit`, reserved: raises `NotImplementedError`): IT
+  seeds are built and fitted purely from IT clusters, in parallel to the OT L1TrackFinder's
+  processing, followed by a track-track refit (IT track + OT track).
+- **JointSeedFit** (`@SPJointSeedFit`, reserved: raises `NotImplementedError`): seeding in the
+  IT, the OT, and IT+OT jointly with all clusters and stubs available, then full track fitting.
 
-FPGA-fidelity handles live in `SEEDLESSREFIT_DEFAULTS` from day one (float impl, every
+Architecture: SeedlessRefit and ParallelSeedRefit can keep the OT L1TrackFinder in place and
+add SmartPixels processing boards in series, or partly in parallel with a series join.
+JointSeedFit might repurpose the boards or create a joint architecture, but much of its
+processing is presumed to need a fully joint system that sees all clusters and stubs
+simultaneously.
+
+FPGA-fidelity handles live in `SEEDLESSREFIT_DEFAULTS` (float implementation, every
 truncation switchable to chart resolution-vs-fidelity curves): `useAngles`
-(`none`/`alpha`/`alphaBeta`), `maxHitsPerWindow` (combinatorics truncation), `maxKFUpdates`
-(Kalman-update cap), and `gainMode` (`full`/`lut` table-driven placeholder).
+(`none`/`alpha`/`alphaBeta`, default `alphaBeta`), `maxHitsPerWindow` (combinatorics
+truncation, default 8), `maxKFUpdates` (Kalman-update cap, default 4), and `gainMode`
+(`full` default / `lut` table-driven placeholder).
 
 ### seedlessRefit sidecar product and RNG scheme
 
@@ -136,8 +141,9 @@ collection (same module, same instance label; prompt and extended each emit thei
 It is the single persistent home for every NEW SmartPixels fact absent from the OT-only
 `TTTrack`: one `SmartPixelsRefitHitInfo` per attempted layer crossing (residuals,
 synthesized angles + sigmas, KF pulls, per-crossing chi2 increments, window multiplicity,
-truth-only simlink class + parent angles) plus one `SmartPixelsRefitTrackInfo` per track
-(status bits, hit/update counts, chi2 totals). The authoritative contract is
+truth-only simlink class + parent angles, and the projection of the unmodified OT track,
+`projOT*`) plus one `SmartPixelsRefitTrackInfo` per track (status bits incl. `otCovOK`,
+hit/update counts, chi2 totals, OT-vs-refit diagnostics `chi2ITAtOT`, `shiftChi2`, `logDetRatio`). The authoritative contract is
 `doc/RefitSidecarSpec.md`; the quantizers and the 16-bit "compact" transmitted
 word live header-only in `interface/SmartPixelsTransmittedSubset.h` (the single source of
 truth ngtagger-train mirrors). A **1:1 output-sync invariant** (one output track and one
@@ -145,12 +151,10 @@ sidecar row per input track, in order) is asserted before `put()` and throws
 `cms::Exception("SmartPixelsSyncBroken")` on any size mismatch — so PF/Puppi track refs,
 DispVertex indices, and the truth table stay valid row-wise against the refit collection.
 
-Randomness (angle synthesis) uses a **local** `CLHEP::MixMaxRng` constructed per event and
-seeded from `hash(module label, run, lumi, event)` (FNV-1a). This replaces the old
-per-label `RandomNumberGeneratorService` stream engine: outputs are now
-event-order-independent and split-job invariant (a physics event yields the same refit
-result no matter which job/stream/position processes it), which is what bitwise-reproducible
-training productions require. No `RandomNumberGeneratorService` is wired for `seedlessRefit`.
+The refit itself uses no random numbers. The angle synthesis lives upstream in
+`SmartPixelsRecHitProducer` (`spixSmartPixelsRecHits`), whose stochastic part is a hash-based
+PRNG deterministic in the cluster inputs, so outputs are event-order-independent and split-job
+invariant. No `RandomNumberGeneratorService` is wired for `seedlessRefit`.
 
 Migration of the jet-tagging workflow (STEP1/STEP2 with the NGJet tagger) to
 20_1/master is in progress; until that lands, the 15_1_0_pre1 instructions below
