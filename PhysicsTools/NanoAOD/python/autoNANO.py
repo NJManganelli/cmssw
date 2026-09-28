@@ -93,50 +93,6 @@ autoNANO = {
                                                    'DPGAnalysis/Phase2L1TNanoAOD/l1tPh2Nano_cff.addPh2L1TrackTruth',
                                                    'DPGAnalysis/Phase2L1TNanoAOD/l1tPh2Nano_cff.extendPh2L1DisplacedVertices',
                                                    'DPGAnalysis/Phase2L1TNanoAOD/l1tPh2Nano_cff.addGenObjects']),},
-    #  SmartPixels (Phase-3) flavours: a base L1 DPG tier + the Phase-3 SmartPixels track tables.
-    #  Require the SmartPixels track collections from L1Trigger/Phase3SmartPixels.
-    #  One flavour per base tier (L1TrkNano/L1PFNano/L1PFTrkNano) x {,withGen},
-    #  each composing the base tier's customize chain then adding the SmartPixels
-    #  default-label track tables (mirrors how L1PFTrkNano composes @L1TrkNano).
-    'L1TrkNanoSmartPix' : {'sequence': '@Phase2L1DPG',
-                           'customize': '+'.join(['@L1TrkNano',
-                                                  'DPGAnalysis/Phase3SmartPixelsNanoAOD/l1tPh3SmartPixelsNano_cff.addPh3L1SmartPixelsTracks']),},
-    'L1TrkNanoSmartPixwithGen' : {'sequence': '@Phase2L1DPG',
-                                  'customize': '+'.join(['@L1TrkNanowithGen',
-                                                         'DPGAnalysis/Phase3SmartPixelsNanoAOD/l1tPh3SmartPixelsNano_cff.addPh3L1SmartPixelsTracks']),},
-    'L1PFNanoSmartPix' : {'sequence': '@Phase2L1DPG',
-                          'customize': '+'.join(['@L1PFNano',
-                                                 'DPGAnalysis/Phase3SmartPixelsNanoAOD/l1tPh3SmartPixelsNano_cff.addPh3L1SmartPixelsTracks']),},
-    'L1PFNanoSmartPixwithGen' : {'sequence': '@Phase2L1DPG',
-                                 'customize': '+'.join(['@L1PFNanowithGen',
-                                                        'DPGAnalysis/Phase3SmartPixelsNanoAOD/l1tPh3SmartPixelsNano_cff.addPh3L1SmartPixelsTracks']),},
-    'L1PFTrkNanoSmartPix' : {'sequence': '@Phase2L1DPG',
-                             'customize': '+'.join(['@L1PFTrkNano',
-                                                    'DPGAnalysis/Phase3SmartPixelsNanoAOD/l1tPh3SmartPixelsNano_cff.addPh3L1SmartPixelsTracks']),},
-    'L1PFTrkNanoSmartPixwithGen' : {'sequence': '@Phase2L1DPG',
-                                    'customize': '+'.join(['@L1PFTrkNanowithGen',
-                                                           'DPGAnalysis/Phase3SmartPixelsNanoAOD/l1tPh3SmartPixelsNano_cff.addPh3L1SmartPixelsTracks']),},
-    #  Payload-named SmartPixels study tiers. The suffix names WHAT THE TIER
-    #  CARRIES, not what it is for: purpose drifts, content is checkable.
-    #    ...Clusters : + the UNTRUNCATED IT cluster table (~26.5k rows/event at
-    #                  PU200, measured 0.29 MB/event). The whole point is the
-    #                  clusters the refit window discards, so it is never filtered
-    #                  or truncated.
-    #    ...Reco     : RESERVED. + full offline RECO quantities for physics, plus
-    #                  enough refit information to interpret them, and NO clusters.
-    #                  Raises until its content is specified.
-    'L1PFTrkNanoSmartPixClusters' : {'sequence': '@Phase2L1DPG',
-                                     'customize': '+'.join(['@L1PFTrkNanoSmartPix',
-                                                            'DPGAnalysis/Phase3SmartPixelsNanoAOD/l1tPh3SmartPixelsNano_cff.addPh3L1SmartPixelsClusters']),},
-    'L1PFTrkNanoSmartPixClusterswithGen' : {'sequence': '@Phase2L1DPG',
-                                            'customize': '+'.join(['@L1PFTrkNanoSmartPixwithGen',
-                                                                   'DPGAnalysis/Phase3SmartPixelsNanoAOD/l1tPh3SmartPixelsNano_cff.addPh3L1SmartPixelsClusters']),},
-    'L1PFTrkNanoSmartPixReco' : {'sequence': '@Phase2L1DPG',
-                                 'customize': '+'.join(['@L1PFTrkNanoSmartPix',
-                                                        'DPGAnalysis/Phase3SmartPixelsNanoAOD/l1tPh3SmartPixelsNano_cff.addPh3L1SmartPixelsReco']),},
-    'L1PFTrkNanoSmartPixRecowithGen' : {'sequence': '@Phase2L1DPG',
-                                        'customize': '+'.join(['@L1PFTrkNanoSmartPixwithGen',
-                                                               'DPGAnalysis/Phase3SmartPixelsNanoAOD/l1tPh3SmartPixelsNano_cff.addPh3L1SmartPixelsReco']),},
     # Muon POG flavours : add tables through customize, supposed to be combined with PHYS
     'MUPOG': {'sequence': '@PHYS',
               'customize': '@PHYS+PhysicsTools/NanoAOD/custom_muon_cff.PrepMuonCustomNanoAOD'},
@@ -196,3 +152,33 @@ autoNANO = {
     'TauEmbedding': {'sequence': '@PHYS+PhysicsTools/NanoAOD/nano_cff.nanoSequenceFS+TauAnalysis/MCEmbeddingTools/Nano_cff.embeddingTable_seq',
                      'customize': '@PHYS'},
 }
+
+# SmartPixels (Phase-3) add-on flavours: customize only, composed after a Phase2L1DPG base
+# tier in any order, e.g. NANO:@Phase2L1DPGwithGen+@L1Trk+@SPTrk+@SPSeedlessRefit+@SPActiveLayersAAAA.
+# Links between tables appear when both tables are present; see
+# DPGAnalysis/Phase3SmartPixelsNanoAOD/python/l1tPh3SmartPixelsNanoFlavours_cff.py.
+_spxFlavours = 'DPGAnalysis/Phase3SmartPixelsNanoAOD/l1tPh3SmartPixelsNanoFlavours_cff.'
+autoNANO.update({
+    'L1Trk': {'customize': _spxFlavours + 'addL1TrkTables'},
+    'L1PF': {'customize': _spxFlavours + 'addL1PFTables'},
+    'TrkStubs': {'customize': _spxFlavours + 'addTrkStubTables'},
+    'SPTrk': {'customize': _spxFlavours + 'addSPTrkTables'},
+    'SPClustersStubs': {'customize': _spxFlavours + 'addSPClusterStubTables'},
+    # SmartPixels mode tags (one per job) and mask tags (one per job; IIII = passthrough control)
+    'SPSeedlessRefit': {'customize': _spxFlavours + 'useSPSeedlessRefit'},
+    'SPParallelSeedRefit': {'customize': _spxFlavours + 'useSPParallelSeedRefit'},  # reserved
+    'SPJointSeedFit': {'customize': _spxFlavours + 'useSPJointSeedFit'},  # reserved
+    **{f'SPActiveLayers{m}': {'customize': f'{_spxFlavours}useSPActiveLayers{m}'}
+       for m in (a + b + c + d for a in 'AI' for b in 'AI' for c in 'AI' for d in 'AI')},
+    # TrackingParticle table L1TTP (mutually exclusive)
+    'TPTruth1GeV': {'customize': _spxFlavours + 'useTPTruth1GeV'},
+    'TPTruthLinked': {'customize': _spxFlavours + 'useTPTruthLinked'},
+    'TPTruth1GeVLinked': {'customize': _spxFlavours + 'useTPTruth1GeVLinked'},
+    'TPTruthAll': {'customize': _spxFlavours + 'useTPTruthAll'},
+    # standard compositions (add a mask tag, e.g. +@SPActiveLayersAAAA)
+    'L1TSPStudyNano': {'sequence': '@Phase2L1DPGwithGen',
+                       'customize': '+'.join(['@Phase2L1DPGwithGen', '@L1PF', '@L1Trk', '@SPTrk', '@SPClustersStubs',
+                                              '@TPTruth1GeVLinked', '@SPSeedlessRefit'])},
+    'SPStudyNano': {'sequence': '@L1TSPStudyNano+@PHYS',
+                    'customize': '@L1TSPStudyNano+@PHYS'},
+})

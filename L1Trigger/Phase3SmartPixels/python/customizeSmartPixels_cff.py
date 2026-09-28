@@ -432,15 +432,8 @@ def ensureSmartPixelsRecHits(process, angleSet, noiseSet="", digiTag=SPIX_PIXEL_
     process.spixSmartPixelsRecHits = smartPixelsRecHits.clone(
         pixelRecHits=cms.InputTag("spixPixelRecHits"),
         pixelDigiSimLink=digiTag,
-        pixelDigis=digiTag,
-        angleSet=cms.string(angleSet),
-        noiseSet=cms.string(noiseSet),
-        angleSource=cms.string(angleSource),
-        discScope=cms.string(discScope))
-    if angleSource == "emu":
-      for name, value in SPIX_EMU_ANGLE_SOURCE.items():
-        setattr(process.spixSmartPixelsRecHits, name,
-                cms.vstring(*value) if isinstance(value, list) else cms.string(value))
+        pixelDigis=digiTag)
+    configureSmartPixelsRecHits(process, angleSet, noiseSet, angleSource=angleSource, discScope=discScope)
     process.spixSmartPixelsRecHitTask = cms.Task(process.spixSmartPixelsRecHits)
     if hasattr(process, "spixPixelRecHitTask"):
       process.spixSmartPixelsRecHitTask.add(process.spixPixelRecHitTask)
@@ -449,6 +442,22 @@ def ensureSmartPixelsRecHits(process, angleSet, noiseSet="", digiTag=SPIX_PIXEL_
   # or the table dies with ProductNotFound at the first event.
   if hasattr(process, "l1tPh2NanoTask"):
     process.l1tPh2NanoTask.add(process.spixSmartPixelsRecHitTask)
+  return process
+
+
+def configureSmartPixelsRecHits(process, angleSet, noiseSet="", angleSource="payload", discScope="sp"):
+  """(Re)set the angle source and disc scope of spixSmartPixelsRecHits, and the disc scope of
+  the cluster nano table that must describe the same rec hits."""
+  module = process.spixSmartPixelsRecHits
+  module.angleSet = cms.string(angleSet)
+  module.noiseSet = cms.string(noiseSet)
+  module.angleSource = cms.string(angleSource)
+  module.discScope = cms.string(discScope)
+  # the emu files, or the cfi's empty values for the payload source
+  for name, value in SPIX_EMU_ANGLE_SOURCE.items():
+    emu = angleSource == "emu"
+    setattr(module, name, cms.vstring(*(value if emu else [])) if isinstance(value, list)
+            else cms.string(value if emu else ""))
   if hasattr(process, "l1tPh3SmartPixelsClusterTable"):
     process.l1tPh3SmartPixelsClusterTable.discScope = cms.string(discScope)
   return process
@@ -636,6 +645,12 @@ def attachStubRebuildChain(process, extendedTracks=True, promptHnpar=5):
   # algorithm ES records the setups reference.
   if promptHnpar not in PROMPT_HNPAR_CHOICES:
     raise ValueError(f"promptHnpar must be one of {PROMPT_HNPAR_CHOICES}, got {promptHnpar!r}")
+  if hasattr(process, "l1tSmartPixelsStubRebuildTask"):
+    attached = process.l1tSmartPixelsStubRebuildTask.moduleNames()
+    if (process.l1tTTTracksFromTrackletEmulation.Hnpar.value() != promptHnpar
+        or ("l1tTTTracksFromExtendedTrackletEmulation" in attached) != extendedTracks):
+      raise RuntimeError("attachStubRebuildChain: the chain is already attached with different settings")
+    return process, sorted(attached)
 
   process.load('L1Trigger.TrackTrigger.TrackTrigger_cff')
   process.load('L1Trigger.TrackerDTC.DTC_cff')
@@ -841,6 +856,7 @@ def injectSmartPixelsTrackProducer(process,
                                    l1tSmartPixelsTrackProducerLabel="l1tSmartPixelsTrackProducer",
                                    l1tSmartPixelsTrackProducerExtendedLabel="l1tSmartPixelsTrackProducerExtended",
                                    skipModuleTypes=None,
+                                   skipModuleLabels=(),
                                    printProcessInfo=False):
   """WF2 core: rewrite every InputTag of a non-table producer that reads the standard
   tracklet tracks (l1tTTTracksFromTrackletEmulation[Extended]) to the given
@@ -856,7 +872,7 @@ def injectSmartPixelsTrackProducer(process,
 
   Never rewired: nano table producers (_isNanoTable) and the INJECTOR_PROTECTED_TYPES
   (plus skipModuleTypes, e.g. PFTrackProducerFromL1Tracks to keep the correlator on
-  the tracklet tracks). Every rewired InputTag is logged ("SmartPixels injector: ...").
+  the tracklet tracks, and skipModuleLabels). Every rewired InputTag is logged ("SmartPixels injector: ...").
   """
   protected = set(INJECTOR_PROTECTED_TYPES) | set(skipModuleTypes or ())
 
@@ -878,7 +894,7 @@ def injectSmartPixelsTrackProducer(process,
                       (l1tSmartPixelsTrackProducerLabel, l1tSmartPixelsTrackProducerExtendedLabel)))
   nRewired, modules = 0, set()
   for modname, module in list(process.producers_().items()) + list(process.filters_().items()):
-    if module.type_() in protected or _isNanoTable(modname, module):
+    if module.type_() in protected or modname in skipModuleLabels or _isNanoTable(modname, module):
       continue
     changed = _mapInputTags(module, trackMap)
     if not changed:
@@ -941,7 +957,7 @@ def attachL1EmulationOnDemand(process, gtMenu=P2GT_MENU):
   return process
 
 
-# The canonical single-variant track tables (autoNANO SmartPix flavors, filled by coopt).
+# The canonical single-variant track tables (@SPTrk, filled by coopt).
 CANONICAL_SMARTPIXELS_TRACK_TABLES = ("L1TSmartPixelsTrack", "L1TSmartPixelsExtTrack")
 
 
@@ -960,7 +976,7 @@ def smartPixelsCoexist(process, variants=None, correctionSet=DEFAULT_CORRECTION_
 
   Coexist never writes the unsuffixed L1TSmartPixelsTrack/L1TSmartPixelsExtTrack:
   those are the canonical single-variant tables, which only smartPixelsCoopt fills.
-  The autoNANO SmartPix flavors create them, so coexist refuses to run on one: use
+  The @SPTrk add-on flavour creates them, so coexist refuses to run with it: use
   the base flavor (e.g. NANO:@L1PFTrkNanowithGen), plus addPh3L1SmartPixelsClusters
   for the cluster tables.
 
@@ -1010,7 +1026,7 @@ def smartPixelsCoexist(process, variants=None, correctionSet=DEFAULT_CORRECTION_
   if canonical:
     raise RuntimeError(
         f"smartPixelsCoexist: this job already defines the canonical SmartPixels track tables "
-        f"({', '.join(canonical)}), i.e. it uses an autoNANO SmartPix flavor. Coexist writes "
+        f"({', '.join(canonical)}), i.e. it uses the @SPTrk nano flavour. Coexist writes "
         "only suffixed variant tables; use the base flavor (e.g. NANO:@L1PFTrkNanowithGen, "
         "plus addPh3L1SmartPixelsClusters for the cluster tables), or smartPixelsCoopt for "
         "the canonical L1TSmartPixelsTrack.")
@@ -1069,11 +1085,12 @@ def smartPixelsCoopt(process, variant=("passthrough", None),
   to the variant; on-demand scheduling then runs the variant producer because the
   rewired consumers ask for it. Nano tables are never rewired by the injector.
 
-  addNanoTables (a nano job): the variant is written as the canonical UNSUFFIXED
-  L1TSmartPixelsTrack/L1TSmartPixelsExtTrack (+ L1TSmartPixels[Ext]RefitHit for
-  digiRefit), next to the untouched OT tables L1TTrack/L1TExtTrack, and every table
-  that indexes the tracks the L1 objects were built from is pointed at the
-  SmartPixels tables (retargetTablesToSmartPixelsTracks).
+  addNanoTables (a nano job on a stock flavour): the variant is written as the canonical
+  UNSUFFIXED L1TSmartPixelsTrack/L1TSmartPixelsExtTrack (+ L1TSmartPixels[Ext]RefitHit for
+  digiRefit) next to the untouched OT tables L1TTrack/L1TExtTrack, with L1TOTStub and every
+  link, exactly as the add-on flavours derive them (addCooptNanoTables). The add-on
+  flavours call this with addNanoTables=False: their tags choose the variant and the
+  tables are theirs.
 
   trackInputMode, extendedTracks, promptHnpar, digiRefitConfig: as smartPixelsCoexist.
   skipModuleTypes: extra C++ types the injector must not rewire (e.g.
@@ -1099,14 +1116,8 @@ def smartPixelsCoopt(process, variant=("passthrough", None),
                                            skipModuleTypes=skipModuleTypes)
 
   if addNanoTables:
-    from DPGAnalysis.Phase3SmartPixelsNanoAOD.l1tPh3SmartPixelsNano_cff import (
-        addPh3L1SmartPixelsTracks, addPh3L1SmartPixelsRefitTables,
-        addPh3L1SmartPixelsStubTables, retargetTablesToSmartPixelsTracks)
-    addPh3L1SmartPixelsTracks(process, srcLabel=prompt, srcExtendedLabel=extended)
-    if mode == "digiRefit":
-      addPh3L1SmartPixelsRefitTables(process, srcLabel=prompt, srcExtendedLabel=extended)
-    addPh3L1SmartPixelsStubTables(process, doExtended=extendedTracks)
-    retargetTablesToSmartPixelsTracks(process, srcLabel=prompt, srcExtendedLabel=extended)
+    from DPGAnalysis.Phase3SmartPixelsNanoAOD.l1tPh3SmartPixelsNanoFlavours_cff import addCooptNanoTables
+    addCooptNanoTables(process, (mode, activeSP))
   return process
 
 

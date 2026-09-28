@@ -40,8 +40,9 @@ Two streamlined workflows are provided by
 - **Coexist (WF1)**: one L1Nano file containing BOTH the standard L1Tracks tables and
   SUFFIXED SmartPixels L1Tracks tables for one or more variants — in-file track-to-track
   comparisons. It never writes the canonical unsuffixed `L1TSmartPixelsTrack`, so it runs on a
-  base nano flavor (it refuses the SmartPix flavors, whose content that table is).
-- **Co-opt (WF2, canonical)**: `smartPixelsCoopt(process, variant=...)` makes the standard
+  base nano flavor (it refuses the `@SPTrk` flavour, whose content that table is).
+- **Co-opt (WF2, canonical)**: the SmartPixels nano add-on flavours (mode + mask tags, see
+  `DPGAnalysis/Phase3SmartPixelsNanoAOD`) or `smartPixelsCoopt(process, variant=...)` make the standard
   L1 emulation available on demand and `injectSmartPixelsTrackProducer` rewires every
   downstream consumer of the standard tracklet tracks (GTT input, vertex finder, correlator
   layers, track jets/HT/MET, GMT tk muons, displaced vertices, GT) to ONE SmartPixels variant,

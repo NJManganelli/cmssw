@@ -3,11 +3,9 @@ import FWCore.ParameterSet.Config as cms
 # Phase-3 SmartPixels L1 track nano tables.
 #
 # SmartPixels tracking is a beyond-Phase-2 (Phase-3) study, so it lives in its own
-# package (companion to L1Trigger/Phase3SmartPixels) and is enabled independently
-# via the autoNANO SmartPix flavours (see PhysicsTools/NanoAOD/autoNANO.py), the
-# smartPixelsCoexist/smartPixelsCoopt customisations, or by calling
-# addPh3L1SmartPixelsTracks directly. Requires the SmartPixels track collections
-# from L1Trigger/Phase3SmartPixels.
+# package (companion to L1Trigger/Phase3SmartPixels). These are the table definitions
+# and the coexist helpers; the canonical tiers are the add-on flavours of
+# l1tPh3SmartPixelsNanoFlavours_cff (see PhysicsTools/NanoAOD/autoNANO.py).
 from DPGAnalysis.Phase2L1TNanoAOD.l1tPh2TrkNanotables_cff import l1tTracksTable
 
 l1tPh3SmartPixelsTracksTable = l1tTracksTable.clone(
@@ -42,10 +40,8 @@ def addPh3L1SmartPixelsTracks(process,
     produced by L1Trigger/Phase3SmartPixels, e.g.
     l1tSmartPixelsTrackProducerWdigiRefitAAAA); tableSuffix
     disambiguates the table/branch names when several variants coexist in one
-    job (WF1). The defaults (the autoNANO SmartPix flavors) create the canonical
-    unsuffixed pair, whose input only smartPixelsCoopt provides (it repoints the
-    pair at its variant); without coopt the job stops with ProductNotFound.
-    Each table carries l1TrackIdx -> L1TTrack / L1TExtTrack (the seed track row).
+    job (WF1, smartPixelsCoexist). The canonical unsuffixed pair belongs to the @SPTrk
+    flavour. Each table carries l1TrackIdx -> L1TTrack / L1TExtTrack (the seed track row).
     """
     nameSuffix = tableSuffix[:1].upper() + tableSuffix[1:] if tableSuffix else ""
     # Module labels must END in "Table": the NANOAOD event content only keeps
@@ -99,6 +95,7 @@ l1tPh3SmartPixelsRefitTable = cms.EDProducer(
     tracks = cms.InputTag("l1tSmartPixelsTrackProducer", "Level1TTTracks"),
     sidecar = cms.InputTag("l1tSmartPixelsTrackProducer", "Level1TTTracks"),
     trackTableName = cms.string("L1TSmartPixelsTrack"),
+    clusterTableName = cms.string("L1TSmartPixelsCluster"),
     hitTableName = cms.string("L1TSmartPixelsRefitHit"),
 )
 
@@ -173,6 +170,7 @@ def addPh3L1SmartPixelsStubTables(process,
                                   extendedSrc=("l1tTTTracksFromExtendedTrackletEmulation", "Level1TTTracks"),
                                   promptTrackTable="L1TTrack",
                                   extendedTrackTable="L1TExtTrack",
+                                  doPrompt=True,
                                   doExtended=True):
     """Add the reference-track OT stub-position tables (prompt + extended).
 
@@ -183,7 +181,7 @@ def addPh3L1SmartPixelsStubTables(process,
     also aligns to -- so stubs, kinematics and truth all share one track index.
 
     Idempotent per table name: skips if the label already exists (a job that
-    calls this twice, e.g. once per SmartPix flavor, adds each table once).
+    calls this twice adds each table once).
     """
     # Module labels must END in "Table" (keep-pattern gotcha): NANOAOD event
     # content keeps only nanoaodFlatTable_*Table_*_* and the output module's
@@ -191,7 +189,7 @@ def addPh3L1SmartPixelsStubTables(process,
     promptLabel = "l1tPh3SmartPixelsStubTable"
     extendedLabel = "l1tPh3ExtSmartPixelsStubTable"
     newModules = []
-    if not hasattr(process, promptLabel):
+    if doPrompt and not hasattr(process, promptLabel):
         setattr(process, promptLabel, l1tPh3SmartPixelsStubTable.clone(
             tracks = cms.InputTag(*promptSrc),
             stubTableName = cms.string(f"{promptTrackTable}Stub"),
@@ -206,9 +204,10 @@ def addPh3L1SmartPixelsStubTables(process,
         ))
         newModules.append(extendedLabel)
     if newModules:
-        task = cms.Task(*[getattr(process, m) for m in newModules])
-        process.p3L1SmartPixelsStubTask = task
-        process.l1tPh2NanoTask.add(task)
+        if not hasattr(process, "p3L1SmartPixelsStubTask"):
+            process.p3L1SmartPixelsStubTask = cms.Task()
+            process.l1tPh2NanoTask.add(process.p3L1SmartPixelsStubTask)
+        process.p3L1SmartPixelsStubTask.add(*[getattr(process, m) for m in newModules])
     assertTrackTablesUncut(process)
     return process
 
@@ -248,72 +247,6 @@ def assertTrackTablesUncut(process):
     return process
 
 
-# ---------------------------------------------------------------------------
-# Coopt table wiring: the L1 emulation consumes the SmartPixels tracks
-# ---------------------------------------------------------------------------
-def retargetTablesToSmartPixelsTracks(process, srcLabel, srcExtendedLabel):
-    """Coopt (smartPixelsCoopt): the L1 emulation was built from the SmartPixels
-    tracks, so every table that indexes the tracks an L1 object was built from must
-    index the canonical SmartPixels tables, and say so.
-
-      * candidate links (L1JetCandLinkTableProducer: L1PuppiCand / L1ExtPuppiCand
-        l1TrackIdx) -> L1TSmartPixelsTrack / L1TSmartPixelsExtTrack rows;
-      * candidate track truth (L1PFCandTrackTruthTableProducer) -> the SmartPixels
-        tracks with the TTTrackAssociator OF THAT COLLECTION (never the tracklet
-        associator: its maps are keyed by tracklet-track Ptrs);
-      * L1DispVertex firstIndexTrk/secondIndexTrk: DisplacedVertexProducer ran on the
-        extended SmartPixels tracks, so its indices are L1TSmartPixelsExtTrack rows.
-
-    L1TTrack/L1TExtTrack stay the pure OT tables. Their GTT hardware extension
-    (gttTracksTable/gttExtTracksTable: hwPt/hwEta after GTT input conversion) is fed
-    by a GTT input conversion of the OT tracks themselves, because the L1 GTT input
-    (l1tGTTInputProducer[Extended]) now converts the SmartPixels tracks.
-    Explicit table wiring, not the injector: the injector never touches tables.
-    """
-    from L1Trigger.Phase3SmartPixels.customizeSmartPixels_cff import smartPixelsTrackAssociator
-    sp = {"l1tTTTracksFromTrackletEmulation": (srcLabel, "L1TSmartPixelsTrack", False),
-          "l1tTTTracksFromExtendedTrackletEmulation": (srcExtendedLabel, "L1TSmartPixelsExtTrack", True)}
-    scheduled = process.l1tPh2NanoTask.moduleNames()
-    for label, mod in process.producers_().items():
-        if label not in scheduled or mod.type_() not in ("L1JetCandLinkTableProducer",
-                                                         "L1PFCandTrackTruthTableProducer"):
-            continue
-        target = sp.get(mod.tracks.getModuleLabel())
-        if target is None:
-            raise RuntimeError(f"retargetTablesToSmartPixelsTracks: {label}.tracks = "
-                               f"{mod.tracks.configValue()} is not a tracklet collection")
-        spLabel, spTable, extended = target
-        mod.tracks = cms.InputTag(spLabel, "Level1TTTracks")
-        mod.trackTableName = cms.string(spTable)
-        if mod.type_() == "L1PFCandTrackTruthTableProducer":
-            mod.truthAssociation = cms.InputTag(smartPixelsTrackAssociator(process, spLabel, extended),
-                                                "Level1TTTracks")
-        print(f"SmartPixels coopt tables: {label} tracks -> {spLabel} ({spTable})")
-
-    if hasattr(process, "l1tDisplacedVertexTable"):
-        for col, which in (("firstIndexTrk", "higher"), ("secondIndexTrk", "lower")):
-            getattr(process.l1tDisplacedVertexTable.variables, col).doc = cms.string(
-                f"index of the {which}-pt track in the L1TSmartPixelsExtTrack table")
-
-    from L1Trigger.L1TTrackMatch.l1tGTTInputProducer_cfi import (
-        l1tGTTInputProducer, l1tGTTInputProducerExtended)
-    gtt = []
-    for table, conv, cfi, otLabel, instance in (
-            ("gttTracksTable", "l1tGTTInputProducerOT", l1tGTTInputProducer,
-             "l1tTTTracksFromTrackletEmulation", "Level1TTTracksConverted"),
-            ("gttExtTracksTable", "l1tGTTInputProducerExtendedOT", l1tGTTInputProducerExtended,
-             "l1tTTTracksFromExtendedTrackletEmulation", "Level1TTTracksExtendedConverted")):
-        if not hasattr(process, table):
-            continue
-        setattr(process, conv, cfi.clone(l1TracksInputTag=cms.InputTag(otLabel, "Level1TTTracks")))
-        getattr(process, table).src = cms.InputTag(conv, instance)
-        gtt.append(getattr(process, conv))
-    if gtt:
-        process.smartPixelsOTGTTConversionTask = cms.Task(*gtt)
-        process.l1tPh2NanoTask.add(process.smartPixelsOTGTTConversionTask)
-    return process
-
-
 def produceMiniAODGenInputs(process):
     """withGen tiers on a GEN-SIM(-DIGI-RAW) input: produce the MINIAOD gen products
     the stock gen tables read (prunedGenParticles, packedGenParticles, slimmedGenJets,
@@ -345,7 +278,7 @@ def produceMiniAODGenInputs(process):
 
 
 # ---------------------------------------------------------------------------
-# Untruncated IT cluster table  (tier: L1PFTrkNanoSmartPixClusters)
+# Untruncated IT cluster table  (@SPClustersStubs)
 # ---------------------------------------------------------------------------
 # EVERY IT pixel cluster, with no window, no truncation and no truth-pT filter:
 # all TBPX clusters first, then the disc clusters in discScope (default sp =
@@ -353,7 +286,7 @@ def produceMiniAODGenInputs(process):
 #
 # ~26.5k barrel rows/event at PU200, measured at 88.6 stored bits/cluster = 0.29 MB/event
 # for the barrel; ID1-ID4 add ~46k rows/event.
-# Belongs ONLY to the Clusters tier. The size is the point: at PU200 the crossed module
+# The size is the point: at PU200 the crossed module
 # carries 40.6/32.7/31.6/19.7 clusters on L1-L4 (p95 up to 72), the static window
 # admits about 2 of them, and maxHitsPerWindow truncates at 8. Every question
 # about window sizing or candidate multiplicity is a question about the clusters
@@ -370,11 +303,10 @@ l1tPh3SmartPixelsClusterTable = cms.EDProducer(
 )
 
 
-# The COMPLETE OT stub collection, part of the Clusters tier (not a separate
-# variant). ~15k rows/event at PU200 expected, roughly doubling the tier payload.
+# The COMPLETE OT stub collection (@TrkStubs, @SPClustersStubs).
+# ~15k rows/event at PU200 expected.
 #
-# It belongs here rather than in a tier of its own because the questions this tier
-# exists to answer are comparative: an IT seeding design is only interesting
+# The questions the SmartPixels tiers exist to answer are comparative: an IT seeding design is only interesting
 # relative to what the OT tracklet already does, and that comparison needs the OT
 # INPUT multiplicity. The existing stub tables (L1TTrackStub, L1TExtTrackStub) are
 # on-track only -- 1004 rows/event at PU200 against ~190 tracks -- so they cannot
@@ -390,7 +322,8 @@ l1tPh3SmartPixelsAllStubTable = cms.EDProducer(
 
 
 def addPh3L1SmartPixelsClusters(process, recHitLabel="spixSmartPixelsRecHits", doTruth=True):
-    """Add the untruncated IT cluster table + the complete OT stub table (Clusters tier).
+    """Add the untruncated IT cluster table + the complete OT stub table (coexist jobs;
+    the @SPClustersStubs flavour adds the same tables).
 
     Requires the SmartPixels-owned cluster -> rec-hit chain (spixPixelClusters ->
     spixPixelRecHits). That chain is created by
@@ -431,18 +364,3 @@ def addPh3L1SmartPixelsClusters(process, recHitLabel="spixSmartPixelsRecHits", d
     process.l1tPh2NanoTask.add(task)
     return process
 
-
-def addPh3L1SmartPixelsReco(process):
-    """RESERVED (tier: L1PFTrkNanoSmartPixReco): full offline RECO quantities for
-    physics studies, plus enough refit information to interpret them, and NO
-    cluster table.
-
-    The name is reserved so the tier can be referred to and scheduled for, but the
-    content is not specified yet. It raises rather than silently producing a tier
-    identical to L1PFTrkNanoSmartPix, which would be indistinguishable downstream
-    from the real thing and would quietly invalidate any study that used it.
-    """
-    raise NotImplementedError(
-        "L1PFTrkNanoSmartPixReco is RESERVED: the tier name exists but its content "
-        "(offline RECO quantities + refit-interpretation columns, no clusters) is not "
-        "defined yet. Use L1PFTrkNanoSmartPix or L1PFTrkNanoSmartPixClusters.")

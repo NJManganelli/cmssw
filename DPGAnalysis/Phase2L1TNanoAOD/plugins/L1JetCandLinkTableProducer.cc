@@ -8,7 +8,8 @@
 //     tagger) and whether the slot is within the tagger constituent window
 //   - optionally, an extension table on the candidate table with a backref
 //     to the first jet clustering each candidate and the index of the
-//     underlying TTTrack in the L1 track table
+//     underlying TTTrack in the L1 track table (only when trackTableName is
+//     set, i.e. when that track table is part of the nano)
 //
 // Index validity relies on the referenced tables using the same source
 // collections with an empty cut and native ordering.
@@ -30,13 +31,14 @@ public:
   explicit L1JetCandLinkTableProducer(const edm::ParameterSet& cfg)
       : jetsToken_(consumes<edm::View<l1t::PFJet>>(cfg.getParameter<edm::InputTag>("jets"))),
         candsToken_(consumes<l1t::PFCandidateCollection>(cfg.getParameter<edm::InputTag>("cands"))),
-        tracksToken_(consumes<std::vector<l1t::PFTrack::L1TTTrackType>>(cfg.getParameter<edm::InputTag>("tracks"))),
         linkTableName_(cfg.getParameter<std::string>("linkTableName")),
         candTableName_(cfg.getParameter<std::string>("candTableName")),
         jetTableName_(cfg.getParameter<std::string>("jetTableName")),
         trackTableName_(cfg.getParameter<std::string>("trackTableName")),
         maxConstituentsTagger_(cfg.getParameter<uint32_t>("maxConstituentsTagger")),
         writeCandExtension_(cfg.getParameter<bool>("writeCandExtension")) {
+    if (!trackTableName_.empty())
+      tracksToken_ = consumes<std::vector<l1t::PFTrack::L1TTTrackType>>(cfg.getParameter<edm::InputTag>("tracks"));
     produces<nanoaod::FlatTable>("link");
     if (writeCandExtension_) {
       produces<nanoaod::FlatTable>("cands");
@@ -46,7 +48,6 @@ public:
   void produce(edm::Event& iEvent, const edm::EventSetup&) override {
     const auto& jets = iEvent.get(jetsToken_);
     auto candsHandle = iEvent.getHandle(candsToken_);
-    auto tracksHandle = iEvent.getHandle(tracksToken_);
 
     std::vector<int32_t> linkJetIdx, linkCandIdx;
     std::vector<int16_t> linkSlot;
@@ -95,51 +96,60 @@ public:
     iEvent.put(std::move(linkTable), "link");
 
     if (writeCandExtension_) {
-      // Sentinel convention (see DPGAnalysis/Phase3SmartPixelsNanoAOD/README.md):
-      //   -2 = PRODUCT-level failure: the PFTrack (or the TTTrack) collection needed
-      //        to resolve ANY candidate->track link is unavailable in this event, so
-      //        linking could not run for anyone. isNonnull() only checks that a Ref
-      //        carries a ProductID+key; the referenced PFTrack collection may not be
-      //        persisted (e.g. PU files that keep l1tLayer1:PuppiRegional but drop the
-      //        PFTrack collection it points to). isAvailable() detects that.
-      //   -1 = ELEMENT-level no-match: the products ARE available but this specific
-      //        candidate has no resolvable track ref (e.g. a neutral candidate).
-      // Product-level probe: if any nonnull pfTrack ref is unavailable, the whole
-      // PFTrack product is missing. Also treat an unavailable TTTrack collection as a
-      // product-level failure (nothing can index into it).
-      bool pfTrackProductAvailable = true;
-      if (candsHandle.isValid()) {
-        for (size_t icand = 0; icand < nCands; ++icand) {
-          const auto& trkRef = (*candsHandle)[icand].pfTrack();
-          if (trkRef.isNonnull() && !trkRef.isAvailable()) {
-            pfTrackProductAvailable = false;
-            break;
-          }
-        }
-      }
-      const bool trackLinkResolvable = candsHandle.isValid() && tracksHandle.isValid() && pfTrackProductAvailable;
-
-      std::vector<int32_t> candTrackIdx(nCands, trackLinkResolvable ? -1 : -2);
-      if (trackLinkResolvable) {
-        for (size_t icand = 0; icand < nCands; ++icand) {
-          const auto& trkRef = (*candsHandle)[icand].pfTrack();
-          if (trkRef.isNonnull() && trkRef.isAvailable()) {
-            const auto& ttRef = trkRef->track();
-            if (ttRef.isNonnull() && ttRef.id() == tracksHandle.id()) {
-              candTrackIdx[icand] = ttRef.key();
-            }
-          }
-        }
-      }
       auto candTable = std::make_unique<nanoaod::FlatTable>(nCands, candTableName_, false, true);
       candTable->addColumn<int32_t>(
           "jetIdx", candJetIdx, "index of the first " + jetTableName_ + " jet clustering this candidate (-1 if none)");
-      candTable->addColumn<int32_t>(
-          "l1TrackIdx", candTrackIdx,
-          "index of the underlying track in the " + trackTableName_ +
-              " table (-1 if this candidate has no resolvable track; -2 if the track/PFTrack product is unavailable)");
+      if (!trackTableName_.empty())
+        candTable->addColumn<int32_t>(
+            "l1TrackIdx",
+            candTrackIdx(iEvent, candsHandle),
+            "index of the underlying track in the " + trackTableName_ +
+                " table (-1 if this candidate has no resolvable track; -2 if the track/PFTrack product is unavailable)");
       iEvent.put(std::move(candTable), "cands");
     }
+  }
+
+  std::vector<int32_t> candTrackIdx(const edm::Event& iEvent,
+                                    const edm::Handle<l1t::PFCandidateCollection>& candsHandle) const {
+    const auto tracksHandle = iEvent.getHandle(tracksToken_);
+    const size_t nCands = candsHandle.isValid() ? candsHandle->size() : 0;
+    // Sentinel convention (see DPGAnalysis/Phase3SmartPixelsNanoAOD/README.md):
+    //   -2 = PRODUCT-level failure: the PFTrack (or the TTTrack) collection needed
+    //        to resolve ANY candidate->track link is unavailable in this event, so
+    //        linking could not run for anyone. isNonnull() only checks that a Ref
+    //        carries a ProductID+key; the referenced PFTrack collection may not be
+    //        persisted (e.g. PU files that keep l1tLayer1:PuppiRegional but drop the
+    //        PFTrack collection it points to). isAvailable() detects that.
+    //   -1 = ELEMENT-level no-match: the products ARE available but this specific
+    //        candidate has no resolvable track ref (e.g. a neutral candidate).
+    // Product-level probe: if any nonnull pfTrack ref is unavailable, the whole
+    // PFTrack product is missing. Also treat an unavailable TTTrack collection as a
+    // product-level failure (nothing can index into it).
+    bool pfTrackProductAvailable = true;
+    if (candsHandle.isValid()) {
+      for (size_t icand = 0; icand < nCands; ++icand) {
+        const auto& trkRef = (*candsHandle)[icand].pfTrack();
+        if (trkRef.isNonnull() && !trkRef.isAvailable()) {
+          pfTrackProductAvailable = false;
+          break;
+        }
+      }
+    }
+    const bool trackLinkResolvable = candsHandle.isValid() && tracksHandle.isValid() && pfTrackProductAvailable;
+
+    std::vector<int32_t> trackIdx(nCands, trackLinkResolvable ? -1 : -2);
+    if (trackLinkResolvable) {
+      for (size_t icand = 0; icand < nCands; ++icand) {
+        const auto& trkRef = (*candsHandle)[icand].pfTrack();
+        if (trkRef.isNonnull() && trkRef.isAvailable()) {
+          const auto& ttRef = trkRef->track();
+          if (ttRef.isNonnull() && ttRef.id() == tracksHandle.id()) {
+            trackIdx[icand] = ttRef.key();
+          }
+        }
+      }
+    }
+    return trackIdx;
   }
 
   static void fillDescriptions(edm::ConfigurationDescriptions& descriptions) {
@@ -150,7 +160,8 @@ public:
     desc.add<std::string>("linkTableName", "L1SC4NGJetCands");
     desc.add<std::string>("candTableName", "L1PuppiCand");
     desc.add<std::string>("jetTableName", "L1puppiJetSC4NG");
-    desc.add<std::string>("trackTableName", "L1TTrack");
+    desc.add<std::string>("trackTableName", "L1TTrack")
+        ->setComment("track table l1TrackIdx indexes; empty = no l1TrackIdx column (the track table is not in the nano)");
     desc.add<uint32_t>("maxConstituentsTagger", 16);
     desc.add<bool>("writeCandExtension", true);
     descriptions.addWithDefaultLabel(desc);
@@ -159,7 +170,7 @@ public:
 private:
   const edm::EDGetTokenT<edm::View<l1t::PFJet>> jetsToken_;
   const edm::EDGetTokenT<l1t::PFCandidateCollection> candsToken_;
-  const edm::EDGetTokenT<std::vector<l1t::PFTrack::L1TTTrackType>> tracksToken_;
+  edm::EDGetTokenT<std::vector<l1t::PFTrack::L1TTTrackType>> tracksToken_;
   const std::string linkTableName_;
   const std::string candTableName_;
   const std::string jetTableName_;

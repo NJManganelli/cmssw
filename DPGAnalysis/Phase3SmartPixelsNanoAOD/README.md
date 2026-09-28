@@ -13,11 +13,39 @@ NanoAOD tables and autoNANO flavours for the Phase-3 SmartPixels L1 tracks
   `L1Trigger/Phase3SmartPixels/doc/RefitSidecarSpec.md` §4.4). ONLY for digiRefit
   variants (the sidecar exists only in that mode); wired automatically from
   `smartPixelsCoexist`/`smartPixelsCoopt` when a digiRefit variant is present.
-- autoNANO flavours (in `PhysicsTools/NanoAOD/autoNANO.py`): one per base L1 DPG tier
-  x `{,withGen}` -- `L1TrkNanoSmartPix{,withGen}`, `L1PFNanoSmartPix{,withGen}`,
-  `L1PFTrkNanoSmartPix{,withGen}` = `@L1TrkNano`/`@L1PFNano`/`@L1PFTrkNano`
-  (`{,withGen}`) + the canonical SmartPixels track tables (filled by `smartPixelsCoopt`). The base tiers live in
-  `DPGAnalysis/Phase2L1TNanoAOD` (not edited here).
+- `l1tPh3SmartPixelsNanoFlavours_cff.py`: the autoNANO add-on flavours (below).
+
+## Add-on flavours
+
+Customize-only autoNANO entries, composed after a base tier `@Phase2L1DPG[withGen]` in any
+order: `-s NANO:@Phase2L1DPGwithGen+@A+@B+...`. Each add-on only adds tables. Index columns
+linking two tables exist only when both tables are in the nano; every add-on re-derives
+them (`_reconcile`), so whichever end is added second creates the link.
+
+| flavour | adds | links (when the other end exists) |
+|---|---|---|
+| `@L1Trk` | `L1TTrack`, `L1TExtTrack` (15 `cov_*`), GTT columns; with gen: track truth | `L1DispVertex` track indices |
+| `@L1PF` | `L1PFCand`, `L1PuppiCand`, `L1ExtPuppiCand`, `L1HGCCluster`, SC4/SC8/SC4NG constituent links | candidate `l1TrackIdx` -> `L1TTrack`/`L1TExtTrack`, or the SmartPixels tables when a variant is wired |
+| `@TrkStubs` | `L1TOTStub` (every OT stub, with truth) | OT track -> stub |
+| `@SPTrk` | `L1TSmartPixelsTrack`, `L1TSmartPixelsExtTrack` (15 `cov_*`) of the wired variant | `l1TrackIdx` -> the OT track it was built from |
+| `@SPClustersStubs` | `L1TOTStub`, `L1TSmartPixelsCluster` (every IT cluster) | as above |
+| `@SPSeedlessRefit` | mode tag, digiRefit: `L1TSmartPixels[Ext]RefitHit` + `spix*` columns on the SmartPixels tables | hit -> SmartPixels track, hit -> cluster |
+| `@SPParallelSeedRefit`, `@SPJointSeedFit` | reserved (raise) | |
+| `@SPActiveLayers<mask>` | mask tag (16 masks; character k = ILk and IDk, A/I); `IIII` = passthrough control | |
+| `@TPTruth1GeV` | `L1TTP`: charged TrackingParticles with \|p\| > 1 GeV | target of every `tpIdx` |
+
+- One mode tag and one mask tag select the variant; the second of the two wires it through
+  the L1 emulation (`smartPixelsCoopt`). A mode tag without a mask tag, a mask other than
+  `IIII` without a mode tag, `@SPTrk` without a variant, two mode or mask tags, or two
+  TrackingParticle flavours are errors (the completeness checks run when cmsRun builds the
+  process description). `@SPActiveLayersIIII` wires the passthrough variant (SmartPixels
+  tracks equal to their OT tracks); a mode tag next to it adds no mode tables.
+- Settings not in a tag name: `smartPixelsNanoParams(process, ...)` in
+  `--customise_commands` (`trackInputMode`, `extendedTracks`, `promptHnpar`, any
+  `digiRefitConfig` key; the angle source defaults to `emu`). cmsDriver runs it after the
+  flavours, so it re-applies the settings to what the tags wired; the result equals passing
+  them first.
+- The composition is recorded in `process.smartPixelsNano`.
 
 ## digiRefit sidecar tables (spec §4.4)
 
@@ -116,12 +144,9 @@ cmsDriver.py stepWF1 -s RAW2DIGI,L1TrackTrigger,L1,L1P2GT,NANO:@L1PFTrkNanowithG
 Notes:
 - Coexist runs on a BASE flavour (`@L1TrkNano*`/`@L1PFNano*`/`@L1PFTrkNano*`) and adds one
   SUFFIXED table pair per requested variant; it never writes the unsuffixed
-  `L1TSmartPixelsTrack`/`L1TSmartPixelsExtTrack`. Those are the canonical tables of the
-  `@...SmartPix*` flavours, filled only by `smartPixelsCoopt`, so coexist raises on a
-  SmartPix flavour. For the cluster tables add
+  `L1TSmartPixelsTrack`/`L1TSmartPixelsExtTrack`. Those belong to `@SPTrk`, so coexist
+  raises when it is composed. For the cluster tables add
   `addPh3L1SmartPixelsClusters` in `--customise_commands`.
-- A SmartPix flavour without `smartPixelsCoopt` stops with ProductNotFound
-  (`l1tSmartPixelsTrackProducer`): nothing produces the canonical collection.
 - Downstream objects (vertices, PF/Puppi, jets, MET, GT) reflect the STANDARD tracks; in a
   NANO-only job they are re-emulated on demand from them (standard L1 tasks).
 
@@ -135,22 +160,23 @@ and the variant as the unsuffixed `L1TSmartPixelsTrack`/`L1TSmartPixelsExtTrack`
 (+ `L1TSmartPixels[Ext]RefitHit` for digiRefit):
 
 ```bash
-cmsDriver.py stepWF2 -s NANO:@L1PFTrkNanoSmartPixClusterswithGen \
+cmsDriver.py stepWF2 -s NANO:@Phase2L1DPGwithGen+@L1PF+@L1Trk+@SPTrk+@SPClustersStubs+@TPTruth1GeV+@SPSeedlessRefit+@SPActiveLayersAAAA \
   --conditions auto:phase2_realistic_T35 --geometry ExtendedRun4D121 --era Phase2C22I13M9 \
   --procModifiers nano_l1_hlt --eventcontent NANOAODSIM --datatier NANOAODSIM \
-  --customise_commands 'from L1Trigger.Phase3SmartPixels.customizeSmartPixels_cff import smartPixelsCoopt; from DPGAnalysis.Phase3SmartPixelsNanoAOD.l1tPh3SmartPixelsNano_cff import produceMiniAODGenInputs; process = smartPixelsCoopt(process, variant=("digiRefit", "1111"), trackInputMode="rebuildTracksFromStubs", digiRefitConfig={"angleSource": "emu"}); process = produceMiniAODGenInputs(process)' \
+  --customise_commands 'from DPGAnalysis.Phase3SmartPixelsNanoAOD.l1tPh3SmartPixelsNanoFlavours_cff import smartPixelsNanoParams; from DPGAnalysis.Phase3SmartPixelsNanoAOD.l1tPh3SmartPixelsNano_cff import produceMiniAODGenInputs; smartPixelsNanoParams(process, trackInputMode="rebuildTracksFromStubs"); process = produceMiniAODGenInputs(process)' \
   --filein <GEN-SIM-DIGI-RAW> --mc -n -1
 ```
 
 Notes:
-- `variant` is the single selector (same forms as a coexist `variants` entry).
+- The mode and mask tags are the single selector; `smartPixelsCoopt(process, variant=...)`
+  on a stock flavour (`addNanoTables=True`) writes the same tables (`addCooptNanoTables`).
 - The injector logs every rewired InputTag (`SmartPixels injector: <module> ...`); it
   never touches nano tables. Verify with `--no_exec` + `python3 stepWF2_*.py`.
-- Table wiring in coopt (`retargetTablesToSmartPixelsTracks`): `L1PuppiCand`/`L1ExtPuppiCand`
-  `l1TrackIdx` index `L1TSmartPixelsTrack`/`L1TSmartPixelsExtTrack` (the branch doc names
-  the table); candidate track truth uses the associator of the SmartPixels collection;
-  `L1DispVertex` track indices are `L1TSmartPixelsExtTrack` rows; `L1TTrack` keeps its own
-  GTT hardware columns from a GTT conversion of the OT tracks.
+- Table wiring with a variant wired: `L1PuppiCand`/`L1ExtPuppiCand` `l1TrackIdx` index
+  `L1TSmartPixelsTrack`/`L1TSmartPixelsExtTrack` (the branch doc names the table);
+  candidate track truth uses the associator of the SmartPixels collection; `L1DispVertex`
+  track indices are `L1TSmartPixelsExtTrack` rows; `L1TTrack` keeps its own GTT hardware
+  columns from a GTT conversion of the OT tracks.
 - Every SmartPixels track table has `l1TrackIdx`: the row of the OT track it was seeded from.
 - `produceMiniAODGenInputs` only for inputs without MINIAOD gen products (withGen tiers).
 - Loop `activeSP` over 0000..1111 (or modes) across jobs; comparisons are file-to-file.
