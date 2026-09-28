@@ -147,6 +147,7 @@ Notes:
   the table); candidate track truth uses the associator of the SmartPixels collection;
   `L1DispVertex` track indices are `L1TSmartPixelsExtTrack` rows; `L1TTrack` keeps its own
   GTT hardware columns from a GTT conversion of the OT tracks.
+- Every SmartPixels track table has `l1TrackIdx`: the row of the OT track it was seeded from.
 - `produceMiniAODGenInputs` only for inputs without MINIAOD gen products (withGen tiers).
 - Loop `activeSP` over 0000..1111 (or modes) across jobs; comparisons are file-to-file.
 - For the full L1+HLT+Reco no-filter study, extend the steps per
