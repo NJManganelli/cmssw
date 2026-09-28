@@ -108,7 +108,7 @@ Two sub-variants for the preprocessing product:
   moves the branching that the TMTT KF performs *during* fitting (full state
   branching over stubs per layer, chi2-pruned) into the phase that has time for
   it. The spec's own Q1 comparison already identified greedy per-layer selection
-  as digiRefit's deliberate simplification versus TMTT; A2 recovers branching
+  as seedlessRefit's deliberate simplification versus TMTT; A2 recovers branching
   without spending the 1 us budget on it.
 
 **Architecture B — inclusive SmartPixels + OT seeding and building.**
@@ -196,7 +196,7 @@ should be 1.0):
 | pullAlpha | 2.20 | 5.81 | 2.6 |
 | pullBeta | 1.30 | 46.3 | **35.6** |
 
-29.8% of *correct* x-hits sit beyond 3 sigma. digiRefit has **no multiple
+29.8% of *correct* x-hits sit beyond 3 sigma. seedlessRefit has **no multiple
 scattering term**, which the spec's Q1 table already flagged against TMTT
 (`sigmaScat = KalmanMultiScattTerm/pT`, 0.00075).
 
@@ -357,7 +357,7 @@ downstream chi2 encoding for the BDT.
 
 ### 4c. Layer crossing order — and why it is coupled to the MS term
 
-Knob `digiRefitLayerOrder = outsideIn | insideOut`, **now implemented**, default
+Knob `seedlessRefitLayerOrder = outsideIn | insideOut`, **now implemented**, default
 `outsideIn`. (A `byAmbiguity` arm was considered and dropped: it would make the
 visit order hit-dependent, so the projection sequence would differ track to
 track and the result would not be reproducible from the track state alone.)
@@ -426,7 +426,7 @@ itself and `Q` will not remove it; if it is unchanged, the floor is something el
 this must be answered **before** `Q` is coded, because it decides what an
 acceptable calibration target even is.
 
-`digiRefitMaxKFUpdates_` interacts: order decides WHICH layers are used when the
+`seedlessRefitMaxKFUpdates_` interacts: order decides WHICH layers are used when the
 cap bites — `outsideIn` keeps the outer layers, `insideOut` the inner ones.
 
 ### 4d. Architecture: window matching vs pixel-only candidate building
@@ -448,7 +448,7 @@ exists at all.
 
 ### 4e. Refit fidelity vs truth-matched hits (categorized by wrong-hit count)
 
-Three hit-selection modes, `digiRefitHitSelection` (truth modes marked
+Three hit-selection modes, `seedlessRefitHitSelection` (truth modes marked
 studies-only, per the spec's TRUTH-ONLY discipline):
 
 - `window` — production behaviour;
@@ -496,7 +496,7 @@ Nano precision: raise the per-hit chi2/pull columns off `mantissaBits=12` for
 study productions. At 2^-12 they are too coarse for the fine-structure questions
 in 4a.
 
-Knobs: `digiRefitLayerOrder`, `digiRefitHitSelection`, `digiRefitMeasBits`
+Knobs: `seedlessRefitLayerOrder`, `seedlessRefitHitSelection`, `seedlessRefitMeasBits`
 (nx, ny, nalpha, nbeta + ranges), MS-term parameter, window policy selector.
 
 ---

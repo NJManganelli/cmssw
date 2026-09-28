@@ -6,9 +6,9 @@ Produces, in ONE cmsRun job on a GEN-SIM-DIGI-RAW-MINIAOD input:
       L1TTrack + truth, L1PuppiCand/PFCand crossrefs, SC4/SC8 + NG jet tier,
       HGCCluster, GenJet parton/hadron flavour, ...), re-emulating
       L1TrackTrigger + SimL1Emulator (reemulateL1TrackFinding) from the input, AND
-  (2) the SmartPixels digiRefit track + refit-hit + stub tables for the chosen
+  (2) the SmartPixels seedlessRefit track + refit-hit + stub tables for the chosen
       activeSP, layered via smartPixelsCoexist (trackInputMode='reemulateL1TrackFinding' -- the
-      re-emulated tracklet tracks carry a real helixCovMat, which digiRefit
+      re-emulated tracklet tracks carry a real helixCovMat, which seedlessRefit
       requires as its starting covariance; the covariance is native to this branch
       via the cms-L1TK merge, no covMatrix backport needed).
 
@@ -55,7 +55,7 @@ from Configuration.ProcessModifiers.nano_l1_hlt_cff import nano_l1_hlt
 options = VarParsing('analysis')
 options.register('activeSP', '1100', VarParsing.multiplicity.singleton,
                  VarParsing.varType.string,
-                 "SmartPixels digiRefit active-layer encoding")
+                 "SmartPixels seedlessRefit active-layer encoding")
 options.register('tier', 'L1PFTrkNanowithGen', VarParsing.multiplicity.singleton,
                  VarParsing.varType.string,
                  "autoNANO flavor (fullest); documented, wiring is explicit below")
@@ -144,14 +144,14 @@ process.options = cms.untracked.PSet(
 )
 
 process.configurationMetadata = cms.untracked.PSet(
-    annotation=cms.untracked.string('runUnifiedNano (unified @%s + digiRefit %s)'
+    annotation=cms.untracked.string('runUnifiedNano (unified @%s + seedlessRefit %s)'
                                     % (options.tier, options.activeSP)),
     name=cms.untracked.string('Applications'),
     version=cms.untracked.string('$Revision: 1.0 $'),
 )
 
 # ---------------------------------------------------------------------------
-# NANOAOD output (one Events tree; carries both unified and digiRefit tables)
+# NANOAOD output (one Events tree; carries both unified and seedlessRefit tables)
 # ---------------------------------------------------------------------------
 process.NANOAODoutput = cms.OutputModule("NanoAODOutputModule",
     compressionAlgorithm=cms.untracked.string('LZMA'),
@@ -269,20 +269,20 @@ process = extendPh2L1DisplacedVertices(process)
 process = addGenObjects(process)
 
 # ---------------------------------------------------------------------------
-# Layer the SmartPixels digiRefit tables (WF1 coexist) into the SAME nano output.
+# Layer the SmartPixels seedlessRefit tables (WF1 coexist) into the SAME nano output.
 # trackInputMode='reemulateL1TrackFinding': this job re-runs L1TrackTrigger +
 # SimL1Emulator, so the in-process TT truth associators run and the re-emulated
-# tracklet tracks carry a real helixCovMat, which digiRefit requires as its
+# tracklet tracks carry a real helixCovMat, which seedlessRefit requires as its
 # starting covariance.
 # ---------------------------------------------------------------------------
 from L1Trigger.Phase3SmartPixels.customizeSmartPixels_cff import smartPixelsCoexist
 
 process = smartPixelsCoexist(
     process,
-    variants=[("digiRefit", options.activeSP)],
+    variants=[("seedlessRefit", options.activeSP)],
     trackInputMode="reemulateL1TrackFinding",
     addNanoTables=True,
-    digiRefitConfig={
+    seedlessRefitConfig={
         "pixelavAngleSet": _pixelavAngleSet,
     },
 )

@@ -2,7 +2,7 @@
 
 Reads the per-crossing ntuple written by SmartPixelsPayloadAnalyzer and derives,
 per (TBPX layer, |eta| bin), the v0 "smarthit_true" and
-"smarthit_fake" payloads used by the Tier-2 digiRefit producer
+"smarthit_fake" payloads used by the Tier-2 seedlessRefit producer
 (Phase 2).
 
 "smarthit_true" (per layer, |eta|):
@@ -19,7 +19,7 @@ per (TBPX layer, |eta| bin), the v0 "smarthit_true" and
   - ang_beta_width : robust width of the inclusive class-1/2 cotBeta distribution
   - noise_cotAlpha : per-layer inverse CDF (layer, quantile) of the inclusive
   - noise_cotBeta    wrong-hit cotAlpha/cotBeta population, consumed by the
-                     digiRefit producer to draw angles for no-link (noise)
+                     seedlessRefit producer to draw angles for no-link (noise)
                      digis: cot = F^-1(layer, u), u ~ U(0,1)
 
 True noise digis carry no simlink and hence no measurable parent angle, so the
@@ -279,7 +279,7 @@ def build_payloads(in_file, out_true, out_fake, tree="smartPixelsPayloadAnalyzer
         stackB_corr("smarthit_fake_ang_beta_width", "inclusive fake cotBeta robust width", "ab"),
     ]
 
-    # ---- smarthit_noise_* inverse CDFs (consumed by the digiRefit producer
+    # ---- smarthit_noise_* inverse CDFs (consumed by the seedlessRefit producer
     # for no-link digis: cot = F^-1(layer, u), u ~ U(0,1), independent draws
     # for alpha and beta). Stand-in population: inclusive in-window wrong-hit
     # parent angles (see module docstring). ----

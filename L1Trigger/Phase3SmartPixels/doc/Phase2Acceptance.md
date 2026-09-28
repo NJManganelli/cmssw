@@ -1,4 +1,4 @@
-# digiRefit (Tier-2) Phase 2 acceptance criteria
+# seedlessRefit (Tier-2) Phase 2 acceptance criteria
 
 These criteria are fixed
 BEFORE implementation so the validation is not fit to the result. "OT-only fit"
@@ -6,13 +6,13 @@ means the input TTTrack as produced by the tracklet chain (== `passthrough`).
 
 ## 1. Reproducibility (hard gate)
 
-- Two identical `digiRefit` runs (same input, same config) produce
+- Two identical `seedlessRefit` runs (same input, same config) produce
   **bitwise-identical** refit TTTrack collections **and** sidecar contents.
 - Randomness comes from a **local** CLHEP engine (`CLHEP::MixMaxRng`) constructed
   per `produce()` call and seeded deterministically from
   `hash(module label, run, lumi, event)` (FNV-1a 64-bit over the label chars,
   then run/lumi/event folded in, reduced to a nonzero 31-bit seed; see
-  `digiRefitSeed()` in the producer). All angle-synthesis draws (`RandFlat`,
+  `seedlessRefitSeed()` in the producer). All angle-synthesis draws (`RandFlat`,
   `RandGaussQ`) use this engine.
 - **Deliberate deviation from `RandomNumberGeneratorService`.** The service's
   per-stream engine advances in event-processing order, so its draw sequence
@@ -30,14 +30,14 @@ means the input TTTrack as produced by the tracklet chain (== `passthrough`).
 
 Authoritative contract: `doc/RefitSidecarSpec.md`.
 
-- In `digiRefit` mode the producer emits a `smartpixels::SmartPixelsRefitSidecar`
+- In `seedlessRefit` mode the producer emits a `smartpixels::SmartPixelsRefitSidecar`
   alongside the refit track collection (same module, same instance label; prompt
   and extended producers each emit their own). It carries the NEW SmartPixels
   facts that do not exist in the OT-only TTTrack: per-layer-crossing hit residuals,
   synthesized angles + sigmas, KF pulls, chi2 increments, window occupancy, and
   truth-only class/parent-angle labels; plus a per-track status/counts record.
 - **1:1 output-sync invariant (spec §1).** Before `put()`, the producer asserts
-  `outputTracks->size() == inputTracks->size()` and, in digiRefit,
+  `outputTracks->size() == inputTracks->size()` and, in seedlessRefit,
   `sidecar.trackInfo.size() == sidecar.hitInfo.size() == inputTracks->size()`.
   Violation throws `cms::Exception("SmartPixelsSyncBroken")`. Row `i` of every
   product derives from input track `i`; passthrough-fallback tracks are
@@ -48,9 +48,9 @@ Authoritative contract: `doc/RefitSidecarSpec.md`.
 
 ## 2. Passthrough invariance (hard gate)
 
-- A `("passthrough", None)` variant run next to a `digiRefit` variant emits
+- A `("passthrough", None)` variant run next to a `seedlessRefit` variant emits
   tracks **identical** to the standard tracklet collection (rInv/phi/tanL/z0/d0
-  exactly equal), as already verified in the WF1 smoke. digiRefit must not
+  exactly equal), as already verified in the WF1 smoke. seedlessRefit must not
   perturb the passthrough path.
 
 ## 3. Matched-track resolution (primary physics gate)
@@ -88,7 +88,7 @@ expected direction without crashing:
 
 ## 5. Loud-failure guard (hard gate, folds old task #14)
 
-- A `digiRefit` (or any truth-required mode) job fed a **broken truth config**
+- A `seedlessRefit` (or any truth-required mode) job fed a **broken truth config**
   (e.g. wrong `MCTruthTrackInputTag` label so the association map resolves to an
   empty/mismatched product, or `trackInputMode=useStoredTracks` with maps absent) must
   throw `cms::Exception` after a reasonable window of events with **zero** truth
@@ -98,7 +98,7 @@ expected direction without crashing:
 
 ## 6. Fake separation (BDT-input gate; PU-dependent)
 
-- With a PU200 sample, the digiRefit per-hit / per-track BDT-input distributions
+- With a PU200 sample, the seedlessRefit per-hit / per-track BDT-input distributions
   (n IT hits attached, per-layer position + angle pulls, IT chi2 increment, Δd0,
   ΔpT, window occupancy) for TP-matched vs fake tracks **separate visibly**
   (populations distinguishable by eye in 1-D projections of the strongest

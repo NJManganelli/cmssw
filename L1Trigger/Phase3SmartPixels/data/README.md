@@ -9,7 +9,7 @@ xrdcp root://cmseos.fnal.gov//eos/uscms/store/group/lpcsmartpixelscms/toysim/res
 
 ## spix_angle_response_Conv1D_Full-2bit_v6.json, _v5.json
 
-The PixelAV angle-response payload of `angleSource = "payload"` (`digiRefitConfig['pixelavAngleSet']`;
+The PixelAV angle-response payload of `angleSource = "payload"` (`seedlessRefitConfig['pixelavAngleSet']`;
 v6 is the default of `test/makeSpixConfig.py`): bias and sigma of the SmartPixels Conv1D_Full-2bit
 network in bins of the true (cotAlpha, cotBeta), CMS frame, written by ngtagger-train
 `eval_spixel_angles/extract_pixelav_angle_payload.py --version vN --binning vN`. v5 is the first
@@ -23,7 +23,7 @@ split it at 1.13, but the dump ends at 1.40).
 ## smartpixels_emu/
 
 The `angleSource = "emu"` mode of `SmartPixelsRecHitProducer` (the SmartPixels-output
-emulator; opt-in via `digiRefitConfig={'angleSource': 'emu'}`) reads six files, all tracked
+emulator; opt-in via `seedlessRefitConfig={'angleSource': 'emu'}`) reads six files, all tracked
 and all made by ngtagger-train `eval_spixel_angles/cluster_cnn` (`emu_*.py`):
 - `spix_emu_cnn_barrel_v2.onnx`, `spix_emu_cnn_disc_v2.onnx`: the tiny cluster CNNs (fast-study
   models `barrel_tiny`, `disc_tiny`), exported by `emu_export_onnx.py cnn`. The scalar-input

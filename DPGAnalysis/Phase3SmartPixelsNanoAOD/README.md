@@ -9,10 +9,10 @@ NanoAOD tables and autoNANO flavours for the Phase-3 SmartPixels L1 tracks
   srcExtendedLabel=..., tableSuffix=...)`, which can target ANY SmartPixels variant
   collection and be called once per variant.
 - `addPh3L1SmartPixelsRefitTables(process, ...)` (same module) + the
-  `L1SmartPixelsRefitTableProducer` plugin: the digiRefit sidecar nano adapter (spec
-  `L1Trigger/Phase3SmartPixels/doc/RefitSidecarSpec.md` §4.4). ONLY for digiRefit
+  `L1SmartPixelsRefitTableProducer` plugin: the seedlessRefit sidecar nano adapter (spec
+  `L1Trigger/Phase3SmartPixels/doc/RefitSidecarSpec.md` §4.4). ONLY for seedlessRefit
   variants (the sidecar exists only in that mode); wired automatically from
-  `smartPixelsCoexist`/`smartPixelsCoopt` when a digiRefit variant is present.
+  `smartPixelsCoexist`/`smartPixelsCoopt` when a seedlessRefit variant is present.
 - `l1tPh3SmartPixelsNanoFlavours_cff.py`: the autoNANO add-on flavours (below).
 
 ## Add-on flavours
@@ -28,8 +28,8 @@ them (`_reconcile`), so whichever end is added second creates the link.
 | `@L1PF` | `L1PFCand`, `L1PuppiCand`, `L1ExtPuppiCand`, `L1HGCCluster`, SC4/SC8/SC4NG constituent links | candidate `l1TrackIdx` -> `L1TTrack`/`L1TExtTrack`, or the SmartPixels tables when a variant is wired |
 | `@TrkStubs` | `L1TOTStub` (every OT stub, with truth) | link-only track -> stub tables `<track table>Stub` (`trackIdx`, `otStubIdx`) for `L1TTrack`, `L1TExtTrack` and the SmartPixels tables |
 | `@SPTrk` | `L1TSmartPixelsTrack`, `L1TSmartPixelsExtTrack` (15 `cov_*`) of the wired variant | `l1TrackIdx` -> the OT track it was built from |
-| `@SPClustersStubs` | `L1TOTStub`, `L1TSmartPixelsCluster` (every IT cluster) | as above, and SmartPixels track -> cluster `<track table>Cluster` (`trackIdx`, `clusterIdx`; digiRefit: the accepted IT hits, no rows for passthrough) |
-| `@SPSeedlessRefit` | mode tag, digiRefit: `L1TSmartPixels[Ext]RefitHit` + `spix*` columns on the SmartPixels tables | hit -> SmartPixels track, hit -> cluster |
+| `@SPClustersStubs` | `L1TOTStub`, `L1TSmartPixelsCluster` (every IT cluster) | as above, and SmartPixels track -> cluster `<track table>Cluster` (`trackIdx`, `clusterIdx`; seedlessRefit: the accepted IT hits, no rows for passthrough) |
+| `@SPSeedlessRefit` | mode tag, seedlessRefit: `L1TSmartPixels[Ext]RefitHit` + `spix*` columns on the SmartPixels tables | hit -> SmartPixels track, hit -> cluster |
 | `@SPParallelSeedRefit`, `@SPJointSeedFit` | reserved (raise) | |
 | `@SPActiveLayers<mask>` | mask tag (16 masks; character k = ILk and IDk, A/I); `IIII` = passthrough control | |
 | `@TPTruth1GeV` | `L1TTP`: charged TrackingParticles with \|p\| > 1 GeV | target of every `tpIdx` |
@@ -45,7 +45,7 @@ them (`_reconcile`), so whichever end is added second creates the link.
   tracks equal to their OT tracks); a mode tag next to it adds no mode tables.
 - Settings not in a tag name: `smartPixelsNanoParams(process, ...)` in
   `--customise_commands` (`trackInputMode`, `extendedTracks`, `promptHnpar`, any
-  `digiRefitConfig` key; the angle source defaults to `emu`). cmsDriver runs it after the
+  `seedlessRefitConfig` key; the angle source defaults to `emu`). cmsDriver runs it after the
   flavours, so it re-applies the settings to what the tags wired; the result equals passing
   them first.
 - The composition is recorded in `process.smartPixelsNano`.
@@ -55,9 +55,9 @@ them (`_reconcile`), so whichever end is added second creates the link.
   `-s NANO:...` or `-s RAW2DIGI,RECO,RECOSIM,PAT,NANO:...` with the step-3 options of the
   RelVal workflow (`runTheMatrix --dryRun`, default 34634.0).
 
-## digiRefit sidecar tables (spec §4.4)
+## seedlessRefit sidecar tables (spec §4.4)
 
-The digiRefit producer emits a `smartpixels::SmartPixelsRefitSidecar` 1:1 row-synced
+The seedlessRefit producer emits a `smartpixels::SmartPixelsRefitSidecar` 1:1 row-synced
 with its refit TTTrack collection under the SAME instance label (`Level1TTTracks`).
 `L1SmartPixelsRefitTableProducer` turns `(refit tracks + sidecar)` into two tables per
 producer instance (prompt and extended cloned separately):
@@ -165,7 +165,7 @@ rewired by the generic injector to the chosen SmartPixels collection, so vertice
 PF/Puppi, jets and the NG tagger, GMT tk muons, track jets/HT/MET, displaced vertices
 and the GT all follow it. The nano carries the pure OT tables `L1TTrack`/`L1TExtTrack`
 and the variant as the unsuffixed `L1TSmartPixelsTrack`/`L1TSmartPixelsExtTrack`
-(+ `L1TSmartPixels[Ext]RefitHit` for digiRefit):
+(+ `L1TSmartPixels[Ext]RefitHit` for seedlessRefit):
 
 ```bash
 cmsDriver.py stepWF2 -s NANO:@Phase2L1DPGwithGen+@L1PF+@L1Trk+@SPTrk+@SPClustersStubs+@TPTruth1GeV+@SPSeedlessRefit+@SPActiveLayersAAAA \

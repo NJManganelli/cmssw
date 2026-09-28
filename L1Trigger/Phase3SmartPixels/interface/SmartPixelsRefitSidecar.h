@@ -69,7 +69,7 @@ namespace smartpixels {
     // matter most, so making these conditional would hide the interesting cases.
     //   proj*      : the state as it stands when this layer is visited, i.e. the
     //                OT track updated by whichever layers were visited BEFORE it under
-    //                digiRefitLayerOrder. Order-dependent by construction.
+    //                seedlessRefitLayerOrder. Order-dependent by construction.
     //   projOT*    : the UNMODIFIED OT track helix projected to this layer, with
     //                no Kalman updates at all. Order-independent, and the honest
     //                "cold start" a system matching all layers in parallel faces.

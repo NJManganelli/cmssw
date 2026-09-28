@@ -38,7 +38,7 @@ def addPh3L1SmartPixelsTracks(process,
 
     srcLabel/srcExtendedLabel select the SmartPixels collections (any variant
     produced by L1Trigger/Phase3SmartPixels, e.g.
-    l1tSmartPixelsTrackProducerWdigiRefitAAAA); tableSuffix
+    l1tSmartPixelsTrackProducerWseedlessRefitAAAA); tableSuffix
     disambiguates the table/branch names when several variants coexist in one
     job (WF1, smartPixelsCoexist). The canonical unsuffixed pair belongs to the @SPTrk
     flavour. Each table carries l1TrackIdx -> L1TTrack / L1TExtTrack (the row of the OT track it was built from).
@@ -82,9 +82,9 @@ def addPh3L1SmartPixelsTracks(process,
 
 
 # ---------------------------------------------------------------------------
-# digiRefit sidecar tables (spec RefitSidecarSpec.md §4.4)
+# seedlessRefit sidecar tables (spec RefitSidecarSpec.md §4.4)
 # ---------------------------------------------------------------------------
-# The digiRefit producer emits a smartpixels::SmartPixelsRefitSidecar 1:1 row-
+# The seedlessRefit producer emits a smartpixels::SmartPixelsRefitSidecar 1:1 row-
 # synced with its refit TTTrack collection, under the SAME instance label
 # ("Level1TTTracks"). The L1SmartPixelsRefitTableProducer turns (tracks+sidecar)
 # into a per-crossing LINK table ("hit", one row per crossing, trackIdx links to
@@ -104,9 +104,9 @@ def addPh3L1SmartPixelsRefitTables(process,
                                    srcLabel="l1tSmartPixelsTrackProducer",
                                    srcExtendedLabel="l1tSmartPixelsTrackProducerExtended",
                                    tableSuffix=""):
-    """Add the digiRefit sidecar tables (per-hit link + track extension) for one
-    variant (prompt+extended). ONLY valid for digiRefit variants -- the sidecar
-    product only exists in digiRefit mode. Non-digiRefit variants get tracks-only
+    """Add the seedlessRefit sidecar tables (per-hit link + track extension) for one
+    variant (prompt+extended). ONLY valid for seedlessRefit variants -- the sidecar
+    product only exists in seedlessRefit mode. Non-seedlessRefit variants get tracks-only
     tables via addPh3L1SmartPixelsTracks (no sidecar is produced, so consuming it
     would throw ProductNotFound). The extension table name MUST equal the variant
     track table name (from addPh3L1SmartPixelsTracks) so nano merges the columns.
@@ -155,7 +155,7 @@ l1tPh3TrackStubLinkTable = cms.EDProducer(
 )
 
 # SmartPixels track -> IT cluster link table (trackIdx, clusterIdx -> L1TSmartPixelsCluster):
-# the IT hits the variant used, from the digiRefit sidecar; no rows without a sidecar.
+# the IT hits the variant used, from the seedlessRefit sidecar; no rows without a sidecar.
 l1tPh3SmartPixelsTrackClusterLinkTable = cms.EDProducer(
     "L1SmartPixelsTrackClusterLinkTableProducer",
     tracks = cms.InputTag("l1tSmartPixelsTrackProducer", "Level1TTTracks"),
@@ -317,7 +317,7 @@ def addPh3L1SmartPixelsClusters(process, recHitLabel="spixSmartPixelsRecHits", d
 
     Requires the SmartPixels-owned cluster -> rec-hit chain (spixPixelClusters ->
     spixPixelRecHits). That chain is created by
-    customizeSmartPixels_cff._addPixelRecHitChain whenever a digiRefit variant is
+    customizeSmartPixels_cff._addPixelRecHitChain whenever a seedlessRefit variant is
     requested; this function does NOT create it, because creating a second,
     differently-configured clusterizer here is exactly how the cluster table would
     silently stop describing the clusters the refit actually saw.

@@ -13,7 +13,7 @@ import FWCore.ParameterSet.Config as cms
 # from what the job contains at that point. Whichever end is added second therefore
 # creates a link, and the order of the add-ons does not matter.
 #
-# The SmartPixels variant is chosen by one mode tag (@SPSeedlessRefit = digiRefit) and one
+# The SmartPixels variant is chosen by one mode tag (@SPSeedlessRefit = seedlessRefit) and one
 # mask tag (@SPActiveLayers<mask>, character k = ILk and IDk, A active, I inactive); the
 # second of the two wires it through the L1 emulation (smartPixelsCoopt). IIII is the
 # passthrough control: SmartPixels tables and wiring, tracks equal to their OT tracks, and
@@ -26,10 +26,10 @@ import FWCore.ParameterSet.Config as cms
 
 _STATE = "smartPixelsNano"
 
-# digiRefitConfig overrides the add-on flavours apply over DIGIREFIT_DEFAULTS.
-_TIER_DIGIREFIT_DEFAULTS = {"angleSource": "emu"}
+# seedlessRefitConfig overrides the add-on flavours apply over SEEDLESSREFIT_DEFAULTS.
+_TIER_SEEDLESSREFIT_DEFAULTS = {"angleSource": "emu"}
 
-_MODE_TAGS = {"SPSeedlessRefit": "digiRefit"}
+_MODE_TAGS = {"SPSeedlessRefit": "seedlessRefit"}
 _TP_TRUTH_TAGS = {"TPTruth1GeV": "charged1GeV",
                   "TPTruthLinked": "linked",
                   "TPTruth1GeVLinked": "charged1GeVOrLinked",
@@ -72,7 +72,7 @@ def _state(process):
             trackInputModeApplied=cms.string(""),
             extendedTracks=cms.bool(True),
             promptHnpar=cms.uint32(5),
-            digiRefitConfig=cms.string(json.dumps(_TIER_DIGIREFIT_DEFAULTS, sort_keys=True)),
+            seedlessRefitConfig=cms.string(json.dumps(_TIER_SEEDLESSREFIT_DEFAULTS, sort_keys=True)),
         ))
     return getattr(process, _STATE)
 
@@ -122,9 +122,9 @@ def _withGen(process):
     return hasattr(process, "genNanoTask") and process.genNanoTask in process.l1tPh2NanoTask._collection
 
 
-def _digiRefitConfig(st):
-    from L1Trigger.Phase3SmartPixels.customizeSmartPixels_cff import _resolveDigiRefitConfig
-    return _resolveDigiRefitConfig(json.loads(st.digiRefitConfig.value()))
+def _seedlessRefitConfig(st):
+    from L1Trigger.Phase3SmartPixels.customizeSmartPixels_cff import _resolveSeedlessRefitConfig
+    return _resolveSeedlessRefitConfig(json.loads(st.seedlessRefitConfig.value()))
 
 
 def _variant(st):
@@ -232,7 +232,7 @@ def _useModeTag(process, tag):
 
 
 def useSPSeedlessRefit(process):
-    """@SPSeedlessRefit: the digiRefit variant (OT track + IT hits, Kalman refit); adds its
+    """@SPSeedlessRefit: the seedlessRefit variant (OT track + IT hits, Kalman refit); adds its
     per-crossing refit hit tables and spix* columns on the SmartPixels track tables."""
     return _useModeTag(process, "SPSeedlessRefit")
 
@@ -296,7 +296,7 @@ _POSTURE_KEYS = ("trackInputMode", "extendedTracks", "promptHnpar")
 def smartPixelsNanoParams(process, **params):
     """Settings of the SmartPixels nano that no tag names:
       trackInputMode, extendedTracks, promptHnpar  (see smartPixelsCoopt), and
-      any digiRefitConfig key (DIGIREFIT_DEFAULTS), e.g. angleSource (default "emu"),
+      any seedlessRefitConfig key (SEEDLESSREFIT_DEFAULTS), e.g. angleSource (default "emu"),
       pixelavAngleSet / smarthitFakeSet (the payload names for angleSource="payload").
 
     cmsDriver runs --customise_commands AFTER the autoNANO customisations, so the variant is
@@ -307,9 +307,9 @@ def smartPixelsNanoParams(process, **params):
       --customise_commands "from DPGAnalysis.Phase3SmartPixelsNanoAOD.l1tPh3SmartPixelsNanoFlavours_cff import smartPixelsNanoParams; smartPixelsNanoParams(process, trackInputMode='rebuildTracksFromStubs')"
     """
     from L1Trigger.Phase3SmartPixels.customizeSmartPixels_cff import (
-        DIGIREFIT_DEFAULTS, _resolveDigiRefitConfig, _resolveTrackInputMode)
+        SEEDLESSREFIT_DEFAULTS, _resolveSeedlessRefitConfig, _resolveTrackInputMode)
     st = _state(process)
-    unknown = set(params) - set(_POSTURE_KEYS) - set(DIGIREFIT_DEFAULTS)
+    unknown = set(params) - set(_POSTURE_KEYS) - set(SEEDLESSREFIT_DEFAULTS)
     if unknown:
         raise ValueError(f"smartPixelsNanoParams: unknown setting(s) {sorted(unknown)}")
     if "trackInputMode" in params:
@@ -322,26 +322,26 @@ def smartPixelsNanoParams(process, **params):
         st.extendedTracks = bool(params["extendedTracks"])
     if "promptHnpar" in params:
         st.promptHnpar = int(params["promptHnpar"])
-    overrides = json.loads(st.digiRefitConfig.value())
-    overrides.update({k: v for k, v in params.items() if k in DIGIREFIT_DEFAULTS})
-    _resolveDigiRefitConfig(overrides)
-    st.digiRefitConfig = json.dumps(overrides, sort_keys=True)
-    _applyDigiRefitSettings(process, st)
+    overrides = json.loads(st.seedlessRefitConfig.value())
+    overrides.update({k: v for k, v in params.items() if k in SEEDLESSREFIT_DEFAULTS})
+    _resolveSeedlessRefitConfig(overrides)
+    st.seedlessRefitConfig = json.dumps(overrides, sort_keys=True)
+    _applySeedlessRefitSettings(process, st)
     if list(st.addOns):
         _reconcile(process)
     return process
 
 
-def _applyDigiRefitSettings(process, st):
+def _applySeedlessRefitSettings(process, st):
     from L1Trigger.Phase3SmartPixels.customizeSmartPixels_cff import (
-        _applyDigiRefitConfig, configureSmartPixelsRecHits, smartPixelsVariantLabels)
-    resolved = _digiRefitConfig(st)
+        _applySeedlessRefitConfig, configureSmartPixelsRecHits, smartPixelsVariantLabels)
+    resolved = _seedlessRefitConfig(st)
     variant = st.variant.value()
-    if variant.startswith("digiRefit:"):
+    if variant.startswith("seedlessRefit:"):
         if resolved["angleSource"] == "payload" and not resolved["pixelavAngleSet"]:
             raise ValueError("smartPixelsNanoParams: angleSource='payload' needs pixelavAngleSet")
-        for label in smartPixelsVariantLabels("digiRefit", variant.split(":")[1]):
-            _applyDigiRefitConfig(getattr(process, label), resolved)
+        for label in smartPixelsVariantLabels("seedlessRefit", variant.split(":")[1]):
+            _applySeedlessRefitConfig(getattr(process, label), resolved)
     if hasattr(process, "spixSmartPixelsRecHits"):
         configureSmartPixelsRecHits(process, resolved["pixelavAngleSet"], resolved["smarthitFakeSet"],
                                     angleSource=resolved["angleSource"], discScope=resolved["discScope"])
@@ -375,7 +375,7 @@ def _wireVariant(process, st):
         from L1Trigger.Phase3SmartPixels.customizeSmartPixels_cff import smartPixelsCoopt
         smartPixelsCoopt(process, variant=selected, addNanoTables=False,
                          trackInputMode=st.trackInputMode.value(), extendedTracks=st.extendedTracks.value(),
-                         promptHnpar=st.promptHnpar.value(), digiRefitConfig=_digiRefitConfig(st))
+                         promptHnpar=st.promptHnpar.value(), seedlessRefitConfig=_seedlessRefitConfig(st))
         st.variant = _variantString(selected)
         st.trackInputModeApplied = st.trackInputMode.value()
         return
@@ -415,7 +415,7 @@ def _applyPosture(process, st):
 
 def _ensureRecHits(process, st):
     from L1Trigger.Phase3SmartPixels.customizeSmartPixels_cff import ensureSmartPixelsRecHits
-    resolved = _digiRefitConfig(st)
+    resolved = _seedlessRefitConfig(st)
     ensureSmartPixelsRecHits(process, resolved["pixelavAngleSet"], resolved["smarthitFakeSet"],
                              angleSource=resolved["angleSource"], discScope=resolved["discScope"])
 
@@ -446,10 +446,10 @@ def _configureSmartPixelsTracks(process, st, variant, sched):
 
 
 def _configureModeTables(process, variant, sched):
-    """The digiRefit variant's own tables: per-crossing refit hits (trackIdx -> SmartPixels
+    """The seedlessRefit variant's own tables: per-crossing refit hits (trackIdx -> SmartPixels
     track, selClusterIdx -> L1TSmartPixelsCluster when those tables are present) and the spix*
     columns on the SmartPixels track tables."""
-    if variant is None or variant[0] != "digiRefit":
+    if variant is None or variant[0] != "seedlessRefit":
         return
     from DPGAnalysis.Phase3SmartPixelsNanoAOD.l1tPh3SmartPixelsNano_cff import l1tPh3SmartPixelsRefitTable
     for side, (spLabel, spName) in _SP_TABLES.items():
@@ -469,7 +469,7 @@ def _configureModeTables(process, variant, sched):
 def _configureStubLinks(process, variant, sched):
     """Link-only track -> stub tables (<track table>Stub: trackIdx, otStubIdx -> L1TOTStub)
     for the OT and the SmartPixels track tables, and SmartPixels track -> cluster tables
-    (<track table>Cluster: trackIdx, clusterIdx -> L1TSmartPixelsCluster; for digiRefit the
+    (<track table>Cluster: trackIdx, clusterIdx -> L1TSmartPixelsCluster; for seedlessRefit the
     hits accepted into the refit), each when both of its tables are in the nano."""
     from DPGAnalysis.Phase3SmartPixelsNanoAOD.l1tPh3SmartPixelsNano_cff import (
         addPh3L1SmartPixelsStubTables, l1tPh3TrackStubLinkTable, l1tPh3SmartPixelsTrackClusterLinkTable)
@@ -495,7 +495,7 @@ def _configureStubLinks(process, variant, sched):
             if not hasattr(process, label):
                 setattr(process, label, l1tPh3SmartPixelsTrackClusterLinkTable.clone(
                     tracks=tracks, linkTableName=f"{tableName}Cluster", trackTableName=tableName,
-                    sidecar=tracks if variant[0] == "digiRefit" else cms.InputTag("")))
+                    sidecar=tracks if variant[0] == "seedlessRefit" else cms.InputTag("")))
                 _addToNano(process, "p3L1SmartPixelsLinkTask", [label])
 
 

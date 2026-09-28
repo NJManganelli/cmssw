@@ -26,19 +26,19 @@ import FWCore.ParameterSet.Config as cms
 # Modes that produce one collection per producer instance, no activeSP config
 PASSTHROUGH_MODES = ["passthrough", "passthroughFloat", "passthroughHW", "trackingParticleTruth"]
 # Modes parametrized by the active pixel-layer configuration (need activeSP).
-# digiRefit reuses the activeSP encoding to select the refit layer set (BPIX
+# seedlessRefit reuses the activeSP encoding to select the refit layer set (BPIX
 # layers), e.g. "1100" -> suffix AAII selects the two inner barrel layers.
-ACTIVE_LAYER_MODES = ["correctionlibRegression", "correctionlibTPToySmear", "digiRefit"]
+ACTIVE_LAYER_MODES = ["correctionlibRegression", "correctionlibTPToySmear", "seedlessRefit"]
 # Modes for which the TP/truth association is LOAD-BEARING: without it the
 # producer silently passes tracks through unmodified (per-track fallback),
 # which invalidates any study. Truth availability must be guaranteed.
-# digiRefit additionally needs the pixel digis + PixelDigiSimLinks
+# seedlessRefit additionally needs the pixel digis + PixelDigiSimLinks
 # (reemulateL1TrackFinding, or file-present IT products),
 # not just the TTTrack association maps; the requirement is flagged the same way.
 TRUTH_REQUIRED_MODES = ["trackingParticleTruth", "correctionlibRegression",
-                        "correctionlibTPToySmear", "digiRefit"]
+                        "correctionlibTPToySmear", "seedlessRefit"]
 # Refit "tier model" (see L1Trigger/Phase3SmartPixels/README.md):
-#   digiRefit = Tier 2 interim refit (real pixel digis + synthesized angles).
+#   seedlessRefit = Tier 2 interim refit (real pixel digis + synthesized angles).
 #               Active-layer + truth-required; implementation lands in Phase 2.
 #   refit     = Tier 3 true system (ingests a real SmartTracklet collection from
 #               an L1SmartTracksFinder). RESERVED: accepted by the mode
@@ -61,16 +61,16 @@ DEFAULT_CORRECTION_SET = "L1Trigger/Phase3SmartPixels/data/spixel_smear_all_conf
 
 
 # ---------------------------------------------------------------------------
-# digiRefit (Tier 2) config surface — defined in full now (Phase 0); the
+# seedlessRefit (Tier 2) config surface — defined in full now (Phase 0); the
 # producer that consumes it lands in Phase 2. Every entry is documented with
 # units where relevant. Enum-valued entries are validated against the *_CHOICES
 # sets below; unknown keys or out-of-vocabulary values raise loudly at config
 # time (ValueError), so the surface is exercised even though nothing runs yet.
 # ---------------------------------------------------------------------------
-DIGIREFIT_USEANGLES_CHOICES = ("none", "alpha", "alphaBeta")
-DIGIREFIT_GAINMODE_CHOICES = ("full", "lut")
-DIGIREFIT_LAYERORDER_CHOICES = ("outsideIn", "insideOut")
-DIGIREFIT_ANGLESOURCE_CHOICES = ("payload", "emu")
+SEEDLESSREFIT_USEANGLES_CHOICES = ("none", "alpha", "alphaBeta")
+SEEDLESSREFIT_GAINMODE_CHOICES = ("full", "lut")
+SEEDLESSREFIT_LAYERORDER_CHOICES = ("outsideIn", "insideOut")
+SEEDLESSREFIT_ANGLESOURCE_CHOICES = ("payload", "emu")
 # Disc clusters in the rec hits and the cluster table: none | sp = ID1-ID4 (TFPX
 # disks 1-4, the smart-pixel discs) | tfpx = TFPX 1-8 | all = TFPX + TEPX (studies).
 DISCSCOPE_CHOICES = ("none", "sp", "tfpx", "all")
@@ -94,7 +94,7 @@ SPIX_EMU_ANGLE_SOURCE = dict(
     emuSigmaSet=_SPIX_EMU_DATA + "spix_emu_sigma_v2.json",
 )
 
-DIGIREFIT_DEFAULTS = {
+SEEDLESSREFIT_DEFAULTS = {
     # --- search windows (module-local frame, PER-LAYER TBPX L1-L4) ---
     # rphi spread of the beamline-constrained extrapolation GROWS outward
     # (MS-compensation bulge between origin anchor and OT stubs; PSimHit-
@@ -164,56 +164,56 @@ DIGIREFIT_DEFAULTS = {
 }
 
 
-def _resolveDigiRefitConfig(digiRefitConfig=None):
-  """Merge a user digiRefitConfig dict over DIGIREFIT_DEFAULTS with loud validation.
+def _resolveSeedlessRefitConfig(seedlessRefitConfig=None):
+  """Merge a user seedlessRefitConfig dict over SEEDLESSREFIT_DEFAULTS with loud validation.
 
   Returns a NEW dict (defaults never mutated). Unknown keys and out-of-vocabulary
   enum values raise ValueError at config time (Phase 0 requirement: the surface
   is exercised and mistakes fail loudly, not silently). Passing None yields a
   fresh copy of the defaults.
   """
-  resolved = dict(DIGIREFIT_DEFAULTS)
-  if digiRefitConfig is None:
+  resolved = dict(SEEDLESSREFIT_DEFAULTS)
+  if seedlessRefitConfig is None:
     return resolved
-  if not isinstance(digiRefitConfig, dict):
-    raise ValueError(f"digiRefitConfig must be a dict, got {type(digiRefitConfig).__name__}")
-  unknown = set(digiRefitConfig) - set(DIGIREFIT_DEFAULTS)
+  if not isinstance(seedlessRefitConfig, dict):
+    raise ValueError(f"seedlessRefitConfig must be a dict, got {type(seedlessRefitConfig).__name__}")
+  unknown = set(seedlessRefitConfig) - set(SEEDLESSREFIT_DEFAULTS)
   if unknown:
     raise ValueError(
-        f"digiRefitConfig has unknown key(s) {sorted(unknown)}; "
-        f"valid keys are {sorted(DIGIREFIT_DEFAULTS)}")
-  resolved.update(digiRefitConfig)
-  if resolved["useAngles"] not in DIGIREFIT_USEANGLES_CHOICES:
+        f"seedlessRefitConfig has unknown key(s) {sorted(unknown)}; "
+        f"valid keys are {sorted(SEEDLESSREFIT_DEFAULTS)}")
+  resolved.update(seedlessRefitConfig)
+  if resolved["useAngles"] not in SEEDLESSREFIT_USEANGLES_CHOICES:
     raise ValueError(
-        f"digiRefitConfig['useAngles']={resolved['useAngles']!r} invalid; "
-        f"must be one of {DIGIREFIT_USEANGLES_CHOICES}")
-  if resolved["gainMode"] not in DIGIREFIT_GAINMODE_CHOICES:
+        f"seedlessRefitConfig['useAngles']={resolved['useAngles']!r} invalid; "
+        f"must be one of {SEEDLESSREFIT_USEANGLES_CHOICES}")
+  if resolved["gainMode"] not in SEEDLESSREFIT_GAINMODE_CHOICES:
     raise ValueError(
-        f"digiRefitConfig['gainMode']={resolved['gainMode']!r} invalid; "
-        f"must be one of {DIGIREFIT_GAINMODE_CHOICES}")
-  if resolved["layerOrder"] not in DIGIREFIT_LAYERORDER_CHOICES:
+        f"seedlessRefitConfig['gainMode']={resolved['gainMode']!r} invalid; "
+        f"must be one of {SEEDLESSREFIT_GAINMODE_CHOICES}")
+  if resolved["layerOrder"] not in SEEDLESSREFIT_LAYERORDER_CHOICES:
     raise ValueError(
-        f"digiRefitConfig['layerOrder']={resolved['layerOrder']!r} invalid; "
-        f"must be one of {DIGIREFIT_LAYERORDER_CHOICES}")
-  if resolved["angleSource"] not in DIGIREFIT_ANGLESOURCE_CHOICES:
+        f"seedlessRefitConfig['layerOrder']={resolved['layerOrder']!r} invalid; "
+        f"must be one of {SEEDLESSREFIT_LAYERORDER_CHOICES}")
+  if resolved["angleSource"] not in SEEDLESSREFIT_ANGLESOURCE_CHOICES:
     raise ValueError(
-        f"digiRefitConfig['angleSource']={resolved['angleSource']!r} invalid; "
-        f"must be one of {DIGIREFIT_ANGLESOURCE_CHOICES}")
+        f"seedlessRefitConfig['angleSource']={resolved['angleSource']!r} invalid; "
+        f"must be one of {SEEDLESSREFIT_ANGLESOURCE_CHOICES}")
   if resolved["discScope"] not in DISCSCOPE_CHOICES:
     raise ValueError(
-        f"digiRefitConfig['discScope']={resolved['discScope']!r} invalid; "
+        f"seedlessRefitConfig['discScope']={resolved['discScope']!r} invalid; "
         f"must be one of {DISCSCOPE_CHOICES}")
   if resolved["angleSource"] == "emu" and resolved["discScope"] not in ("none", "sp"):
     raise ValueError(
-        f"digiRefitConfig['angleSource']='emu' supports discScope none|sp (its library covers ID1-ID4), "
+        f"seedlessRefitConfig['angleSource']='emu' supports discScope none|sp (its library covers ID1-ID4), "
         f"got {resolved['discScope']!r}")
   if resolved["angleSource"] == "emu" and (resolved["pixelavAngleSet"] or resolved["smarthitFakeSet"]):
     raise ValueError(
-        "digiRefitConfig['angleSource']='emu' takes no pixelavAngleSet/smarthitFakeSet: "
+        "seedlessRefitConfig['angleSource']='emu' takes no pixelavAngleSet/smarthitFakeSet: "
         "every cluster gets the emulated angle, so a payload would silently go unused")
   if resolved["otNPar"] not in (4, 5):
     raise ValueError(
-        f"digiRefitConfig['otNPar']={resolved['otNPar']!r} invalid; must be 4 or 5")
+        f"seedlessRefitConfig['otNPar']={resolved['otNPar']!r} invalid; must be 4 or 5")
   for wk in ("windowRPhi", "windowZ"):
     wv = resolved[wk]
     if isinstance(wv, (int, float)):
@@ -221,7 +221,7 @@ def _resolveDigiRefitConfig(digiRefitConfig=None):
     wv = tuple(float(x) for x in wv)
     if len(wv) != 4 or any(x <= 0 for x in wv):
       raise ValueError(
-          f"digiRefitConfig['{wk}'] must be a positive scalar or 4 per-layer "
+          f"seedlessRefitConfig['{wk}'] must be a positive scalar or 4 per-layer "
           f"positive values (TBPX L1-L4), got {resolved[wk]!r}")
     resolved[wk] = wv
   # KF numerical guards + grazing-angle clamps must be positive doubles (spec §6b).
@@ -229,13 +229,13 @@ def _resolveDigiRefitConfig(digiRefitConfig=None):
     gv = resolved[gk]
     if not isinstance(gv, (int, float)) or isinstance(gv, bool) or gv <= 0:
       raise ValueError(
-          f"digiRefitConfig['{gk}'] must be a positive number, got {resolved[gk]!r}")
+          f"seedlessRefitConfig['{gk}'] must be a positive number, got {resolved[gk]!r}")
     resolved[gk] = float(gv)
   # Refit-quality BDT model path (spec §6a): a string; "" disables scoring.
   # Feature-count validation (n_features == 17) happens producer-side at load.
   if not isinstance(resolved["bdtModel"], str):
     raise ValueError(
-        f"digiRefitConfig['bdtModel'] must be a string path (\"\" = none), "
+        f"seedlessRefitConfig['bdtModel'] must be a string path (\"\" = none), "
         f"got {resolved['bdtModel']!r}")
   return resolved
 
@@ -247,15 +247,15 @@ def _checkReservedMode(mode):
     raise NotImplementedError(
         f"SmartPixels mode '{mode}' is RESERVED for the true SmartTracklet-input "
         f"system (Tier 3): it will ingest a real SmartTracklet collection from an "
-        f"L1SmartTracksFinder. Not implemented. Use mode 'digiRefit' for the "
+        f"L1SmartTracksFinder. Not implemented. Use mode 'seedlessRefit' for the "
         f"interim Tier 2 refit (real pixel digis + synthesized angles).")
 
 
 def smartPixelsVariantSuffix(mode, activeSP=None):
   """Unique label/table suffix for a variant, e.g. 'passthrough' or 'correctionlibRegressionAAII'.
 
-  digiRefit reuses the activeSP encoding (e.g. '1100' -> 'AAII'), so
-  smartPixelsVariantSuffix('digiRefit', '1100') -> 'digiRefitAAII' and the
+  seedlessRefit reuses the activeSP encoding (e.g. '1100' -> 'AAII'), so
+  smartPixelsVariantSuffix('seedlessRefit', '1100') -> 'seedlessRefitAAII' and the
   derived table labels still end in 'Table' downstream (nano keep-pattern gotcha).
   """
   if mode not in ALL_MODES:
@@ -294,42 +294,42 @@ def _allVariants():
           + [("correctionlibRegression", rconf) for rconf in REGRESSION_CONFIGS])
 
 
-def _applyDigiRefitConfig(module, resolved):
-  """Push a resolved (validated) digiRefit config dict onto a producer module."""
-  module.digiRefitWindowRPhi = cms.vdouble(*resolved["windowRPhi"])
-  module.digiRefitWindowZ = cms.vdouble(*resolved["windowZ"])
-  module.digiRefitMinHits = cms.int32(resolved["minHits"])
-  module.digiRefitUseAngles = cms.string(resolved["useAngles"])
-  module.digiRefitMaxHitsPerWindow = cms.int32(resolved["maxHitsPerWindow"])
-  module.digiRefitMaxKFUpdates = cms.int32(resolved["maxKFUpdates"])
-  module.digiRefitGainMode = cms.string(resolved["gainMode"])
-  module.digiRefitJacobianMaxAbs = cms.double(resolved["jacobianMaxAbs"])
-  module.digiRefitChi2UpdateGate = cms.double(resolved["chi2UpdateGate"])
-  module.digiRefitMeasAngleMaxAbs = cms.double(resolved["measAngleMaxAbs"])
-  module.digiRefitPredAngleMaxAbs = cms.double(resolved["predAngleMaxAbs"])
-  module.digiRefitLayerOrder = cms.string(resolved["layerOrder"])
-  module.digiRefitApplyProcessNoise = cms.bool(bool(resolved["applyProcessNoise"]))
-  module.digiRefitMultScattTerm = cms.double(float(resolved["multScattTerm"]))
-  module.digiRefitOTNPar = cms.int32(resolved["otNPar"])
+def _applySeedlessRefitConfig(module, resolved):
+  """Push a resolved (validated) seedlessRefit config dict onto a producer module."""
+  module.seedlessRefitWindowRPhi = cms.vdouble(*resolved["windowRPhi"])
+  module.seedlessRefitWindowZ = cms.vdouble(*resolved["windowZ"])
+  module.seedlessRefitMinHits = cms.int32(resolved["minHits"])
+  module.seedlessRefitUseAngles = cms.string(resolved["useAngles"])
+  module.seedlessRefitMaxHitsPerWindow = cms.int32(resolved["maxHitsPerWindow"])
+  module.seedlessRefitMaxKFUpdates = cms.int32(resolved["maxKFUpdates"])
+  module.seedlessRefitGainMode = cms.string(resolved["gainMode"])
+  module.seedlessRefitJacobianMaxAbs = cms.double(resolved["jacobianMaxAbs"])
+  module.seedlessRefitChi2UpdateGate = cms.double(resolved["chi2UpdateGate"])
+  module.seedlessRefitMeasAngleMaxAbs = cms.double(resolved["measAngleMaxAbs"])
+  module.seedlessRefitPredAngleMaxAbs = cms.double(resolved["predAngleMaxAbs"])
+  module.seedlessRefitLayerOrder = cms.string(resolved["layerOrder"])
+  module.seedlessRefitApplyProcessNoise = cms.bool(bool(resolved["applyProcessNoise"]))
+  module.seedlessRefitMultScattTerm = cms.double(float(resolved["multScattTerm"]))
+  module.seedlessRefitOTNPar = cms.int32(resolved["otNPar"])
   # pixelavAngleSet now configures the UPSTREAM SmartPixelsRecHitProducer (the
   # single source of the angle); the refit just reads its output.
   module.smartPixelsRecHitInputTag = cms.InputTag("spixSmartPixelsRecHits")
   # RESERVED, not consumed by Tier-2: passed through so future ASIC-efficiency
   # wiring is drop-in. Non-empty triggers a LogWarning in the producer ctor.
-  module.digiRefitBdtModel = cms.string(resolved["bdtModel"])
+  module.seedlessRefitBdtModel = cms.string(resolved["bdtModel"])
 
 
 def addSmartPixelsTrackProducerVariants(process, variants=None, correctionSet=DEFAULT_CORRECTION_SET,
-                                        digiRefitConfig=None):
+                                        seedlessRefitConfig=None):
   """STEP1: instantiate the SmartPixels track producer (prompt+extended) for each variant.
 
   variants=None reproduces the legacy behavior: all passthrough-family modes plus
   all 16 regression configs, produced concurrently (they are cheap smears/copies
   of the same base tracklet tracks).
 
-  digiRefitConfig: a dict merged over DIGIREFIT_DEFAULTS (validated loudly; see
-  _resolveDigiRefitConfig). Only relevant when a digiRefit variant is present.
-  Phase 2: digiRefit variants are fully wired (params only); the producer seeds a
+  seedlessRefitConfig: a dict merged over SEEDLESSREFIT_DEFAULTS (validated loudly; see
+  _resolveSeedlessRefitConfig). Only relevant when a seedlessRefit variant is present.
+  Phase 2: seedlessRefit variants are fully wired (params only); the producer seeds a
   local RNG per-event from hash(module label, run, lumi, event), so no
   RandomNumberGeneratorService is needed. pixelavAngleSet is REQUIRED (ValueError).
 
@@ -340,9 +340,9 @@ def addSmartPixelsTrackProducerVariants(process, variants=None, correctionSet=DE
     variants = _allVariants()
   variants = _normalizeVariants(variants)
 
-  # Resolve+validate the digiRefit surface up front so a malformed dict fails
-  # loudly at config time regardless of where the digiRefit variant sits.
-  digiRefitResolved = _resolveDigiRefitConfig(digiRefitConfig)
+  # Resolve+validate the seedlessRefit surface up front so a malformed dict fails
+  # loudly at config time regardless of where the seedlessRefit variant sits.
+  seedlessRefitResolved = _resolveSeedlessRefitConfig(seedlessRefitConfig)
 
   process.load('L1Trigger.Phase3SmartPixels.l1tSmartPixelsTrackProducer_cfi')
   modules = []
@@ -351,9 +351,9 @@ def addSmartPixelsTrackProducerVariants(process, variants=None, correctionSet=DE
     # and raises the RESERVED (Tier 3 'refit') NotImplementedError here.
     prompt, extended = smartPixelsVariantLabels(mode, activeSP)
 
-    if mode == "digiRefit" and digiRefitResolved["angleSource"] == "payload" and not digiRefitResolved["pixelavAngleSet"]:
+    if mode == "seedlessRefit" and seedlessRefitResolved["angleSource"] == "payload" and not seedlessRefitResolved["pixelavAngleSet"]:
       raise ValueError(
-          "digiRefit variant requested but digiRefitConfig['pixelavAngleSet'] is empty; "
+          "seedlessRefit variant requested but seedlessRefitConfig['pixelavAngleSet'] is empty; "
           "the PixelAV angle-response payload is REQUIRED (see doc/PixelAVAngleResponseSpec.md; "
           "validatePixelAVAngleSet.py --write-example emits a structural stand-in for testing)")
 
@@ -368,15 +368,15 @@ def addSmartPixelsTrackProducerVariants(process, variants=None, correctionSet=DE
       if mode in ACTIVE_LAYER_MODES:
         module.smartPixelsActiveLayers = activeSP
         module.smartPixelsCorrectionSet = cms.FileInPath(correctionSet)
-      if mode == "digiRefit":
-        _applyDigiRefitConfig(module, digiRefitResolved)
+      if mode == "seedlessRefit":
+        _applySeedlessRefitConfig(module, seedlessRefitResolved)
         # The angle now comes from SmartPixelsRecHitProducer upstream, so the
         # payload configures THAT and the refit is engine-free (its old local RNG
         # existed only for the noise-angle draw, which moved with the synthesis).
-        ensureSmartPixelsRecHits(process, digiRefitResolved["pixelavAngleSet"],
-                                 digiRefitResolved["smarthitFakeSet"],
-                                 angleSource=digiRefitResolved["angleSource"],
-                                 discScope=digiRefitResolved["discScope"])
+        ensureSmartPixelsRecHits(process, seedlessRefitResolved["pixelavAngleSet"],
+                                 seedlessRefitResolved["smarthitFakeSet"],
+                                 angleSource=seedlessRefitResolved["angleSource"],
+                                 discScope=seedlessRefitResolved["discScope"])
 
   return process, modules
 
@@ -386,7 +386,7 @@ def addSmartPixelsTrackProducerVariants(process, variants=None, correctionSet=DE
 #    with a standard siPixelClusters/siPixelRecHits that some other sequence may
 #    schedule, and provenance says plainly that these are ours.
 #  * A cms.Task, never a Path or Sequence: unscheduled, so these run ONLY because
-#    the refit producer consumes them. No digiRefit variant => not even added.
+#    the refit producer consumes them. No seedlessRefit variant => not even added.
 #  * Never added to outputCommands. Nano event content is table-driven, so nothing
 #    leaks into nano; for any other output the products are simply not listed.
 #  * Clustered from the SAME digi collection the refit producer reads, so the
@@ -416,8 +416,8 @@ def ensureSmartPixelsRecHits(process, angleSet, noiseSet="", digiTag=SPIX_PIXEL_
   angleSet and noiseSet must be empty). discScope (DISCSCOPE_CHOICES) selects the disc clusters, and an
   existing cluster nano table is set to the same scope (the table also checks it at run time).
   """
-  if angleSource not in DIGIREFIT_ANGLESOURCE_CHOICES:
-    raise ValueError(f"angleSource={angleSource!r} invalid; must be one of {DIGIREFIT_ANGLESOURCE_CHOICES}")
+  if angleSource not in SEEDLESSREFIT_ANGLESOURCE_CHOICES:
+    raise ValueError(f"angleSource={angleSource!r} invalid; must be one of {SEEDLESSREFIT_ANGLESOURCE_CHOICES}")
   if discScope not in DISCSCOPE_CHOICES:
     raise ValueError(f"discScope={discScope!r} invalid; must be one of {DISCSCOPE_CHOICES}")
   ensurePixelRecHitChain(process, digiTag)
@@ -467,7 +467,7 @@ def ensurePixelRecHitChain(process, digiTag=SPIX_PIXEL_DIGI_TAG):
   """Create spixPixelClusters -> spixPixelRecHits if absent; idempotent.
 
   Public because two independent callers need it and MUST get the same chain: the
-  digiRefit producer wiring, and the untruncated cluster nano table
+  seedlessRefit producer wiring, and the untruncated cluster nano table
   (addPh3L1SmartPixelsClusters). They run in either order -- autoNANO --customise
   functions execute BEFORE --customise_commands, so the table's customize can fire
   first -- and whichever runs first must build a chain the other simply reuses. A
@@ -539,7 +539,7 @@ def useTruthAssociationFromFile(process, associatorLabels=TRUTH_ASSOCIATOR_LABEL
 #  - useStoredTracks: use the input file's tracks and stored association
 #    maps (all in-process associators removed). Pileup kept, but the stored
 #    tracks may predate the current layout (helixCovMat can be all-zero, in
-#    which case digiRefit cannot run at all -- there is no parametrized
+#    which case seedlessRefit cannot run at all -- there is no parametrized
 #    fallback, by design; the starting covariance must be the OT fit's own).
 #  - rebuildTracksFromStubs: rebuild new-layout tracks from the file's
 #    persisted stubs (DTC -> tracklet chain), read the cluster/stub maps
@@ -579,7 +579,7 @@ def _resolveTrackInputMode(trackInputMode):
 
 # promptHnpar=5 is the default so the PROMPT reference (OT-only L1TTrack)
 # carries a real fitted d0 + 5x5 covariance -- the right OT track for b-tagging
-# impact-parameter / vertexing resolution studies and for the prompt digiRefit
+# impact-parameter / vertexing resolution studies and for the prompt seedlessRefit
 # (which always starts from helixCovMat). 4-par (d0 pinned to 0) remains selectable for
 # ablation. The prompt tracklet producer's shipped default is Extended=False,
 # Hnpar=4; no guard couples Hnpar to Extended (the prompt USEHYBRID path runs
@@ -594,10 +594,10 @@ def attachStubRebuildChain(process, extendedTracks=True, promptHnpar=5):
 
   promptHnpar (4 | 5): helix-parameter count of the PROMPT tracklet fit. 5 (DEFAULT,
   the 5-par-only framing) makes the prompt collection carry a REAL fitted d0 + 5x5
-  covariance, so the prompt digiRefit starts from a genuine 5-par covariance
+  covariance, so the prompt seedlessRefit starts from a genuine 5-par covariance
   and the OT-only prompt reference has real d0 for b-tagging /
   resolution-vs-truth. 4 (ablation only) keeps d0 pinned to 0 with a 4x4 covariance --
-  the prompt digiRefit then starts with the weak-d0-prior fallback (the producer's
+  the prompt seedlessRefit then starts with the weak-d0-prior fallback (the producer's
   nFitPars()==5 guard auto-selects it). The extended chain is always Hnpar=5 regardless.
   Only affects the OT track helix/covariance; the stub geometry (and hence the Part-B stub
   tables) is identical either way.
@@ -613,10 +613,10 @@ def attachStubRebuildChain(process, extendedTracks=True, promptHnpar=5):
 
   giving NEW TTTracks (post-PR#51503 layout, real helix covariance, PU tracks
   included) + a FRESH track-truth map keyed to the new collection. No DIGI, no
-  mixing, no cluster/stub remaking -> so digiRefit becomes VALID on PU files
+  mixing, no cluster/stub remaking -> so seedlessRefit becomes VALID on PU files
   (it always starts from helixCovMat, and these tracks have a real one). Same-label in-process production shadows the file's HLT branches for
   every downstream consumer configured without a process name (identical to the
-  reemulateL1TrackFinding labeling model), so the digiRefit producer defaults need no changes.
+  reemulateL1TrackFinding labeling model), so the seedlessRefit producer defaults need no changes.
 
   Process-name handling of the file maps: the re-run associators consume
   TTClusterAssociatorFromPixelDigis:ClusterAccepted and
@@ -629,8 +629,8 @@ def attachStubRebuildChain(process, extendedTracks=True, promptHnpar=5):
 
   extendedTracks: also rebuild the extended (displaced) chain
   (l1tTTTracksFromExtendedTrackletEmulation + TTTrackAssociatorFromPixelDigisExtended,
-  Hnpar=5) so the extended digiRefit variant's inputs are fresh new-layout tracks
-  and digiRefit is valid for them too. The prompt-only PoC left it off because its
+  Hnpar=5) so the extended seedlessRefit variant's inputs are fresh new-layout tracks
+  and seedlessRefit is valid for them too. The prompt-only PoC left it off because its
   extended inputs would have resolved to old-layout file tracks (tripping the
   OT-covariance guard) -- with the chain rebuilt that no longer applies.
 
@@ -641,7 +641,7 @@ def attachStubRebuildChain(process, extendedTracks=True, promptHnpar=5):
   """
   # ES chain (mirrors the PoC's imports). DTC_cff pulls trackerDTC::ProducerSetup;
   # the tracklet cfi pulls trklet::ProducerSetup; ProducerHPH_cff pulls hph::Setup
-  # (consumed by the digiRefit producer). TrackTrigger_cff provides the TTStub
+  # (consumed by the seedlessRefit producer). TrackTrigger_cff provides the TTStub
   # algorithm ES records the setups reference.
   if promptHnpar not in PROMPT_HNPAR_CHOICES:
     raise ValueError(f"promptHnpar must be one of {PROMPT_HNPAR_CHOICES}, got {promptHnpar!r}")
@@ -691,9 +691,9 @@ def attachStubRebuildChain(process, extendedTracks=True, promptHnpar=5):
   for _, epath in process.endpaths_().items():
     epath.associate(process.l1tSmartPixelsStubRebuildTask)
   print(f"SmartPixels rebuildTracksFromStubs: prompt tracklet Hnpar={promptHnpar} "
-        + ("(5-par PRIME target: real d0 + 5x5 cov -> usable prompt digiRefit start)"
+        + ("(5-par PRIME target: real d0 + 5x5 cov -> usable prompt seedlessRefit start)"
            if promptHnpar == 5
-           else "(4-par: d0 pinned 0 -> prompt digiRefit weak-d0-prior fallback)"))
+           else "(4-par: d0 pinned 0 -> prompt seedlessRefit weak-d0-prior fallback)"))
   return process, chainModules
 
 
@@ -754,7 +754,7 @@ def _scheduleVariantModules(process, modules, taskName):
   setattr(process, taskName, task)
   for _, path in process.paths_().items():
     path.associate(task)
-    # The SmartPixels-owned IT cluster/rec hit chain, when a digiRefit variant
+    # The SmartPixels-owned IT cluster/rec hit chain, when a seedlessRefit variant
     # created it. Associated (not scheduled) so it runs on demand only, i.e.
     # exactly when a refit producer asks for its rec hits.
     # spixSmartPixelsRecHitTask already CONTAINS spixPixelRecHitTask, so
@@ -965,7 +965,7 @@ CANONICAL_SMARTPIXELS_TRACK_TABLES = ("L1TSmartPixelsTrack", "L1TSmartPixelsExtT
 # WF1: coexist — standard tracks AND SmartPixels variant tables in one L1Nano
 # ---------------------------------------------------------------------------
 def smartPixelsCoexist(process, variants=None, correctionSet=DEFAULT_CORRECTION_SET, addNanoTables=True,
-                       trackInputMode="reemulateL1TrackFinding", digiRefitConfig=None,
+                       trackInputMode="reemulateL1TrackFinding", seedlessRefitConfig=None,
                        extendedTracks=True, promptHnpar=5,
                        allowSignalOnlyRedigitization=False):
   """Add SmartPixels track collections (default: one passthrough variant)
@@ -987,31 +987,31 @@ def smartPixelsCoexist(process, variants=None, correctionSet=DEFAULT_CORRECTION_
      scheduled DIGI step is refused (signal-only re-digitization would
      destroy pileup) unless allowSignalOnlyRedigitization=True.
    - 'useStoredTracks': stored tracks may carry an all-zero helixCovMat, in
-     which case digiRefit throws (SmartPixelsOTCovMissing). There is no
+     which case seedlessRefit throws (SmartPixelsOTCovMissing). There is no
      parametrized fallback -- use one of the rebuilding modes.
    - 'rebuildTracksFromStubs': rebuilt tracks carry a real covariance, so
-     digiRefit works on PU files without a usable digi tier. NOTE this holds
+     seedlessRefit works on PU files without a usable digi tier. NOTE this holds
      only for the collections the mode actually rebuilds: with
      extendedTracks=False the extended chain still reads stored tracks.
-  Truth is REQUIRED for the regression/TP/digiRefit modes (silent per-track
+  Truth is REQUIRED for the regression/TP/seedlessRefit modes (silent per-track
   passthrough otherwise). The truthSource= keyword is RETIRED, not deprecated:
   passing it is a TypeError.
 
   extendedTracks (rebuildTracksFromStubs only): also rebuild the extended
-  (displaced) chain so the extended digiRefit variant's inputs are fresh
+  (displaced) chain so the extended seedlessRefit variant's inputs are fresh
   new-layout tracks (a real helixCovMat for them too). Default True.
 
   promptHnpar (rebuildTracksFromStubs only; 4 | 5): helix-parameter count of
   the PROMPT tracklet fit. Default 5: the prompt collection then carries a
   real fitted d0 + 5x5 covariance, giving the OT-only reference a real d0
-  and the prompt digiRefit variant a genuine 5-par starting covariance.
-  promptHnpar=4 (ablation only) pins d0 to 0; the prompt digiRefit then uses
+  and the prompt seedlessRefit variant a genuine 5-par starting covariance.
+  promptHnpar=4 (ablation only) pins d0 to 0; the prompt seedlessRefit then uses
   the weak-d0-prior fallback (auto-selected per-collection via nFitPars()).
   The extended chain is always Hnpar=5. The other two modes use the shipped
   prompt cfi default of 4.
 
-  digiRefitConfig: dict merged over DIGIREFIT_DEFAULTS (validated loudly),
-  relevant only for a digiRefit variant. trackInputMode='useStoredTracks' on
+  seedlessRefitConfig: dict merged over SEEDLESSREFIT_DEFAULTS (validated loudly),
+  relevant only for a seedlessRefit variant. trackInputMode='useStoredTracks' on
   an old-layout file is not special-cased at config time -- it fails loudly at
   runtime via the SmartPixelsOTCovMissing guard, by design; use
   'rebuildTracksFromStubs' instead.
@@ -1035,7 +1035,7 @@ def smartPixelsCoexist(process, variants=None, correctionSet=DEFAULT_CORRECTION_
   variants = _normalizeVariants(variants)
 
   process, modules = addSmartPixelsTrackProducerVariants(process, variants, correctionSet,
-                                                         digiRefitConfig=digiRefitConfig)
+                                                         seedlessRefitConfig=seedlessRefitConfig)
   process = _scheduleVariantModules(process, modules, "l1tSmartPixelsCoexistTask")
   process = _applyTrackInputMode(process, trackInputMode, variants, extendedTracks=extendedTracks,
                                  promptHnpar=promptHnpar,
@@ -1050,9 +1050,9 @@ def smartPixelsCoexist(process, variants=None, correctionSet=DEFAULT_CORRECTION_
       prompt, extended = smartPixelsVariantLabels(mode, activeSP)
       suffix = smartPixelsVariantSuffix(mode, activeSP)
       addPh3L1SmartPixelsTracks(process, srcLabel=prompt, srcExtendedLabel=extended, tableSuffix=suffix)
-      # digiRefit variants ALSO emit a SmartPixelsRefitSidecar -> add the per-hit
+      # seedlessRefit variants ALSO emit a SmartPixelsRefitSidecar -> add the per-hit
       # link table + track extension table. Other modes produce no sidecar.
-      if mode == "digiRefit":
+      if mode == "seedlessRefit":
         addPh3L1SmartPixelsRefitTables(process, srcLabel=prompt, srcExtendedLabel=extended, tableSuffix=suffix)
     # L1TOTStub and the link-only track -> stub tables of the reference L1TTrack /
     # L1TExtTrack collections (the refit reuses the same stub refs). Idempotent.
@@ -1066,14 +1066,14 @@ def smartPixelsCoexist(process, variants=None, correctionSet=DEFAULT_CORRECTION_
 def smartPixelsCoopt(process, variant=("passthrough", None),
                      correctionSet=DEFAULT_CORRECTION_SET, addNanoTables=True,
                      skipModuleTypes=None,
-                     trackInputMode="reemulateL1TrackFinding", digiRefitConfig=None,
+                     trackInputMode="reemulateL1TrackFinding", seedlessRefitConfig=None,
                      extendedTracks=True, promptHnpar=5,
                      allowSignalOnlyRedigitization=False):
   """The canonical (single coherent view) SmartPixels job: ONE track variant replaces
   the tracklet tracks for the whole standard L1 emulation.
 
   variant is THE selector: 'mode', (mode, activeSP) or {'mode':..., 'activeSP':...},
-  the same forms as a smartPixelsCoexist variants entry, e.g. ("digiRefit", "1111").
+  the same forms as a smartPixelsCoexist variants entry, e.g. ("seedlessRefit", "1111").
   A future producer (e.g. joint IT+OT seeding/finding/fitting, the RESERVED 'refit'
   mode) is selected the same way once its mode exists.
 
@@ -1084,21 +1084,21 @@ def smartPixelsCoopt(process, variant=("passthrough", None),
 
   addNanoTables (a nano job on a stock flavour): the variant is written as the canonical
   UNSUFFIXED L1TSmartPixelsTrack/L1TSmartPixelsExtTrack (+ L1TSmartPixels[Ext]RefitHit for
-  digiRefit) next to the untouched OT tables L1TTrack/L1TExtTrack, with L1TOTStub and every
+  seedlessRefit) next to the untouched OT tables L1TTrack/L1TExtTrack, with L1TOTStub and every
   link, exactly as the add-on flavours derive them (addCooptNanoTables). The add-on
   flavours call this with addNanoTables=False: their tags choose the variant and the
   tables are theirs.
 
-  trackInputMode, extendedTracks, promptHnpar, digiRefitConfig: as smartPixelsCoexist.
+  trackInputMode, extendedTracks, promptHnpar, seedlessRefitConfig: as smartPixelsCoexist.
   skipModuleTypes: extra C++ types the injector must not rewire (e.g.
   "PFTrackProducerFromL1Tracks" keeps the correlator on the tracklet tracks).
 
-  cmsDriver:  --customise_commands 'from L1Trigger.Phase3SmartPixels.customizeSmartPixels_cff import smartPixelsCoopt; process = smartPixelsCoopt(process, variant=("digiRefit", "1111"), trackInputMode="rebuildTracksFromStubs")'
+  cmsDriver:  --customise_commands 'from L1Trigger.Phase3SmartPixels.customizeSmartPixels_cff import smartPixelsCoopt; process = smartPixelsCoopt(process, variant=("seedlessRefit", "1111"), trackInputMode="rebuildTracksFromStubs")'
   """
   trackInputMode = _resolveTrackInputMode(trackInputMode)
   (mode, activeSP), = _normalizeVariants([variant])
   process, modules = addSmartPixelsTrackProducerVariants(process, [(mode, activeSP)], correctionSet,
-                                                         digiRefitConfig=digiRefitConfig)
+                                                         seedlessRefitConfig=seedlessRefitConfig)
   process = _scheduleVariantModules(process, modules, "l1tSmartPixelsCooptTask")
   process = _applyTrackInputMode(process, trackInputMode, [(mode, activeSP)], extendedTracks=extendedTracks,
                                  promptHnpar=promptHnpar,

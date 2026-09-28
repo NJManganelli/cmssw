@@ -14,25 +14,25 @@ staged on a config that silently dropped the TrackingParticle truth columns.
 So configs are GENERATED here, from named axes, and are not kept.
 
     # the standard PU200 refit-development config
-    ./makeSpixConfig.py --pu 200 --tier trk-truth --variant digiRefit:1111 \
+    ./makeSpixConfig.py --pu 200 --tier trk-truth --variant seedlessRefit:1111 \
         --events 100 -o /work/spix_pu200.py
 
     # noPU smoke, two inner layers only, alpha-only angles
-    ./makeSpixConfig.py --pu 0 --tier trk --variant digiRefit:1100 \
+    ./makeSpixConfig.py --pu 0 --tier trk --variant seedlessRefit:1100 \
         --use-angles alpha --events 3 -o /work/spix_smoke.py
 
     # A/B on one axis: emit both arms, identical in every other respect
-    ./makeSpixConfig.py --pu 200 --tier trk-truth --variant digiRefit:1111 \
+    ./makeSpixConfig.py --pu 200 --tier trk-truth --variant seedlessRefit:1111 \
         --scan layerOrder=outsideIn,insideOut -o /work/spix_order
 
     # the canonical single-view nano (add-on flavours): ONE variant drives the L1 emulation
-    ./makeSpixConfig.py --pu 200 --tier study --coopt --variant digiRefit:1111 \
+    ./makeSpixConfig.py --pu 200 --tier study --coopt --variant seedlessRefit:1111 \
         --events 100 -o /work/spix_coopt.py
 
     # SPStudyNano: the study tier plus the regular nano (@PHYS). The input is inspected:
     # with MINIAOD products the job is NANO only, else it also runs RAW2DIGI,RECO,RECOSIM,PAT
     # with the step-3 options of the RelVal workflow (runTheMatrix --dryRun)
-    ./makeSpixConfig.py --pu 200 --reco --variant digiRefit:1111 --events 2 -o /work/spix_reco.py
+    ./makeSpixConfig.py --pu 200 --reco --variant seedlessRefit:1111 --events 2 -o /work/spix_reco.py
 
 No nano table is ever dropped: every table of the tier is produced (the L1
 emulation runs on demand, the MINIAOD gen inputs of a truth tier are made in-job).
@@ -40,7 +40,7 @@ emulation runs on demand, the MINIAOD gen inputs of a truth tier are made in-job
 `--dry-run` prints the cmsDriver command instead of running it, which is what
 doc/ConfigProvenance.md records.
 
-DELIBERATELY NOT AN AXIS: otCovMode. digiRefit always starts from the OT track's
+DELIBERATELY NOT AN AXIS: otCovMode. seedlessRefit always starts from the OT track's
 own helixCovMat. The removed `parametrized` mode substituted a fixed diagonal
 for a missing covariance and made every OT-covariance-dependent measurement
 meaningless while still producing plausible numbers.
@@ -96,9 +96,9 @@ def variant_tags(spec):
     mode, _, activeSP = spec.partition(":")
     if mode == "passthrough":
         return ["@SPActiveLayersIIII"]
-    if mode == "digiRefit":
+    if mode == "seedlessRefit":
         return ["@SPSeedlessRefit", "@SPActiveLayers" + activeSP.replace("1", "A").replace("0", "I")]
-    raise SystemExit(f"--coopt composes the nano flavours, whose tags select digiRefit:<mask> or "
+    raise SystemExit(f"--coopt composes the nano flavours, whose tags select seedlessRefit:<mask> or "
                      f"passthrough; {spec!r} runs only with coexist")
 
 
@@ -121,7 +121,7 @@ def nano_step(args):
 
 GEOMETRY, ERA, CONDITIONS = "ExtendedRun4D121", "Phase2C22I13M9", "auto:phase2_realistic_T35"
 
-# digiRefitConfig keys this CLI exposes. Everything else takes DIGIREFIT_DEFAULTS.
+# seedlessRefitConfig keys this CLI exposes. Everything else takes SEEDLESSREFIT_DEFAULTS.
 REFIT_AXES = {
     "applyProcessNoise": bool,   # MS state-covariance inflation
     "multScattTerm": float,      # projected scattering angle per layer = term/pT [rad*GeV]
@@ -157,8 +157,8 @@ def build_customise(args, overrides):
     seen = set()
     for spec in specs:
         mode, _, activeSP = spec.partition(":")
-        if mode == "digiRefit" and not activeSP:
-            raise SystemExit(f"--variant digiRefit requires an activeSP, e.g. digiRefit:1111 (got '{spec}')")
+        if mode == "seedlessRefit" and not activeSP:
+            raise SystemExit(f"--variant seedlessRefit requires an activeSP, e.g. seedlessRefit:1111 (got '{spec}')")
         key = (mode, activeSP)
         if key in seen:
             raise SystemExit(f"--variant {spec} given more than once; each variant makes an "
@@ -186,7 +186,7 @@ def build_customise(args, overrides):
         if payload:
             parts.append(f"process = p3nano.addPh3L1SmartPixels{payload}(process)")
         parts.append(f"process = smartPixelsCoexist(process, variants=[{', '.join(variants)}], "
-                     f"addNanoTables=True, {posture}, digiRefitConfig={refit!r})")
+                     f"addNanoTables=True, {posture}, seedlessRefitConfig={refit!r})")
     # withGen tiers read MINIAOD gen products (prunedGenParticles, slimmedGenJets, ...);
     # the GEN-SIM-DIGI-RAW RelVals carry only genParticles/ak4GenJetsNoNu, so make them.
     # SPStudyNano gets them from its MINIAOD input or from the PAT step it runs.
@@ -298,7 +298,7 @@ def main():
                          "(see mem:smartpixels-testfile-release-compat)")
     ap.add_argument("--tier", choices=sorted(TIERS), default="trk-truth")
     ap.add_argument("--variant", action="append", default=None,
-                    help="mode[:activeSP], e.g. digiRefit:1111, passthrough. REPEATABLE: give it "
+                    help="mode[:activeSP], e.g. seedlessRefit:1111, passthrough. REPEATABLE: give it "
                          "several times to emit one table set per variant from a single pass over "
                          "the input, which is how the activeSP sweep avoids 15 reconstructions")
     ap.add_argument("--events", type=int, default=100)
@@ -332,7 +332,7 @@ def main():
     ap.add_argument("--needs-truth", action="store_true",
                     help="fail unless the tier keeps L1TTrack_genuine / tp_*")
     ap.add_argument("--set", action="append", default=[], metavar="KEY=VALUE",
-                    help=f"digiRefitConfig override; one of {sorted(REFIT_AXES)}")
+                    help=f"seedlessRefitConfig override; one of {sorted(REFIT_AXES)}")
     ap.add_argument("--scan", default=None, metavar="KEY=V1,V2[,...]",
                     help="emit one config per value, identical otherwise (for A/B)")
     ap.add_argument("-o", "--output", required=True,
@@ -341,7 +341,7 @@ def main():
                     help="print the cmsDriver command instead of running it")
     args = ap.parse_args()
     if not args.variant:
-        args.variant = ["digiRefit:1111"]
+        args.variant = ["seedlessRefit:1111"]
     if args.reco:
         args.tier, args.coopt = "reco", True
 
@@ -357,7 +357,7 @@ def main():
     def parse_kv(s):
         k, _, v = s.partition("=")
         if k not in REFIT_AXES:
-            raise SystemExit(f"unknown digiRefit axis {k!r}; known: {sorted(REFIT_AXES)}")
+            raise SystemExit(f"unknown seedlessRefit axis {k!r}; known: {sorted(REFIT_AXES)}")
         conv = REFIT_AXES[k]
         return k, (_tobool(v) if conv is bool else conv(v))
 

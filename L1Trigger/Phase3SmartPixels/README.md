@@ -74,7 +74,7 @@ migrated, so they had become a second vocabulary rather than a migration path.
   straight from the file. Real PU everywhere, but the file's tracks are the old
   (pre-PR#51503) layout so `helixCovMat` is all-zero. Use for: PU studies against
   the file's *own* downstream objects (file L1 jets, etc.), and old-release track
-  studies. `digiRefit` **cannot** run on such a file: it always starts from the OT
+  studies. `seedlessRefit` **cannot** run on such a file: it always starts from the OT
   track's `helixCovMat` and an all-zero one throws `SmartPixelsOTCovMissing`.
 - **`rebuildTracksFromStubs`** — rebuild NEW-layout tracks from the file's
   persisted stub tier (`ProducerDTC` → tracklet emulator(s) → re-run track
@@ -84,14 +84,14 @@ migrated, so they had become a second vocabulary rather than a migration path.
   rebuilds the displaced chain. Use for: the primary PU development mode and
   any refit production.
 
-digiRefit starts from the OT track's own `helixCovMat`, always. There is no
+seedlessRefit starts from the OT track's own `helixCovMat`, always. There is no
 parametrized alternative: a fixed diagonal is not the OT fit's uncertainty, it
 substitutes silently for a missing one, and every measurement that depends on
 the OT covariance (window sizing, pull widths, layer ordering, the MS term) is
-meaningless under it. So digiRefit requires a track collection whose covariance
+meaningless under it. So seedlessRefit requires a track collection whose covariance
 is real:
 
-| trackInputMode | tracks | digiRefit usable? |
+| trackInputMode | tracks | seedlessRefit usable? |
 |---|---|---|
 | `reemulateL1TrackFinding` | fresh, new layout | **yes** (PU retained) |
 | `useStoredTracks` | file, old layout | **no** — zero cov; `SmartPixelsOTCovMissing` fires at `endStream` |
@@ -110,28 +110,28 @@ Beyond the passthrough/regression variants, `customizeSmartPixels_cff.py` reserv
 two-tier refit model that develops the OT-L1Track ⊕ IT-pixel refit before the true
 SmartPixels chain exists:
 
-- **`digiRefit` (Tier 2, interim)** — project OT L1Tracks into the inner barrel (BPIX)
+- **`seedlessRefit` (Tier 2, interim)** — project OT L1Tracks into the inner barrel (BPIX)
   pixel layers and refit against the **real** `simSiPixelDigis` digis (classified via
   `PixelDigiSimLink`), **synthesizing only the angle information** (PixelAV response). It is
   an *active-layer* mode (reuses the activeSP `AAII` encoding to pick the refit layer set,
   e.g. `"1100"`) and is *truth-required* (needs pixel digis + `PixelDigiSimLink` +
   TrackingParticles; `reemulateL1TrackFinding` or file-present IT products). The producer is
-  implemented (Phase 2); the config surface is `DIGIREFIT_DEFAULTS` + the `digiRefitConfig=`
-  kwarg on `smartPixelsCoexist`/`smartPixelsCoopt`, and a `digiRefit` variant additionally
+  implemented (Phase 2); the config surface is `SEEDLESSREFIT_DEFAULTS` + the `seedlessRefitConfig=`
+  kwarg on `smartPixelsCoexist`/`smartPixelsCoopt`, and a `seedlessRefit` variant additionally
   emits the refit sidecar product described below.
 - **`refit` (Tier 3, reserved)** — the true system: the producer will ingest OT L1Tracks
   plus a real `SmartTracklet` collection from an `L1SmartTracksFinder`. The mode name is
   accepted by the vocabulary but building a variant with it raises `NotImplementedError`
-  (reserved); use `digiRefit` for the interim.
+  (reserved); use `seedlessRefit` for the interim.
 
-FPGA-fidelity handles live in `DIGIREFIT_DEFAULTS` from day one (float impl, every
+FPGA-fidelity handles live in `SEEDLESSREFIT_DEFAULTS` from day one (float impl, every
 truncation switchable to chart resolution-vs-fidelity curves): `useAngles`
 (`none`/`alpha`/`alphaBeta`), `maxHitsPerWindow` (combinatorics truncation), `maxKFUpdates`
 (Kalman-update cap), and `gainMode` (`full`/`lut` table-driven placeholder).
 
-### digiRefit sidecar product and RNG scheme
+### seedlessRefit sidecar product and RNG scheme
 
-`digiRefit` emits a `smartpixels::SmartPixelsRefitSidecar` next to the refit track
+`seedlessRefit` emits a `smartpixels::SmartPixelsRefitSidecar` next to the refit track
 collection (same module, same instance label; prompt and extended each emit their own).
 It is the single persistent home for every NEW SmartPixels fact absent from the OT-only
 `TTTrack`: one `SmartPixelsRefitHitInfo` per attempted layer crossing (residuals,
@@ -150,7 +150,7 @@ seeded from `hash(module label, run, lumi, event)` (FNV-1a). This replaces the o
 per-label `RandomNumberGeneratorService` stream engine: outputs are now
 event-order-independent and split-job invariant (a physics event yields the same refit
 result no matter which job/stream/position processes it), which is what bitwise-reproducible
-training productions require. No `RandomNumberGeneratorService` is wired for `digiRefit`.
+training productions require. No `RandomNumberGeneratorService` is wired for `seedlessRefit`.
 
 Migration of the jet-tagging workflow (STEP1/STEP2 with the NGJet tagger) to
 20_1/master is in progress; until that lands, the 15_1_0_pre1 instructions below

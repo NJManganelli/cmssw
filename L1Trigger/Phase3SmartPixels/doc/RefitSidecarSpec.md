@@ -2,7 +2,7 @@
 
 Versioning — READ THIS BEFORE ADDING A VERSION LABEL ANYWHERE. The only
 canonical version axis for this document is the SmartPixels **simulation**
-version: v2.1 and v2.2 predate digiRefit entirely, and the refit sidecar first
+version: v2.1 and v2.2 predate seedlessRefit entirely, and the refit sidecar first
 shipped in v2.5. The `spec v0.x` labels on the 2026-07 entries below were a
 parallel numbering scheme that should never have been invented — it duplicated
 a version axis that already existed, and it made every code comment cite a
@@ -71,11 +71,11 @@ freeze and the next schema change become v2.7. Program of work:
   the synthesized measured angle explodes (to |cot| ~2274) when a wrong/noise
   hit's parent momentum is near-grazing (local p_z -> the 1e-9 floor). The
   load-bearing clamp is therefore on the SYNTHESIZED MEASURED angle
-  (digiRefitMeasAngleMaxAbs, default 12.0: catches 77/77 pathologies at any
+  (seedlessRefitMeasAngleMaxAbs, default 12.0: catches 77/77 pathologies at any
   bound in 8-20; 12 preserves most of the ambiguous [6,12) wrong-hit tail while
   the payload domain ends at |cotBeta|=6 and >~15 is unambiguous synthesis
   breakdown). The projector predicted-angle clamp is RETAINED as secondary
-  hygiene (digiRefitPredAngleMaxAbs, default 12.0) for the 18 genuinely
+  hygiene (seedlessRefitPredAngleMaxAbs, default 12.0) for the 18 genuinely
   non-physical predicted crossings observed (windowMult ~0; not gate drivers).
   chi2UpdateGate remains the numerical backstop; its activation count dropping
   77 -> ~0 under the measured-angle clamp is the acceptance check.
@@ -124,7 +124,7 @@ goals, in priority order:
 
 ## 1. The 1:1 output-sync invariant (load-bearing contract)
 
-The digiRefit/refit producer emits EXACTLY one output track per input track, in input
+The seedlessRefit/refit producer emits EXACTLY one output track per input track, in input
 order; entry `i` of every output product is derived from input track `i`. Passthrough
 fallback entries are byte-identical copies of the input track.
 
@@ -216,7 +216,7 @@ Rules:
 - Sentinel for any unavailable float is `-999.f`; consumers MUST test `> -900.f`.
 - Passthrough tracks have `status` bit0 unset, empty `hitInfo[i]`, zeros elsewhere.
 - `hitInfo[i]` holds one entry per valid crossing, **in the order the Kalman loop
-  visited the layers** — which is a config choice (`digiRefitLayerOrder`, default
+  visited the layers** — which is a config choice (`seedlessRefitLayerOrder`, default
   `outsideIn` = L4->L1), not ascending layer. The order is meaningful: it is the
   sequence in which the state was actually updated. Consumers MUST therefore key
   on `hitInfo[i][j].layer` and MUST NOT assume position `j` corresponds to layer
@@ -388,7 +388,7 @@ term <= 0.05 in every gated case).
 
 The clamps, all config knobs (FPGA-fidelity handles):
 
-- `digiRefitMeasAngleMaxAbs` (double, default 12.0) — THE LOAD-BEARING CLAMP:
+- `seedlessRefitMeasAngleMaxAbs` (double, default 12.0) — THE LOAD-BEARING CLAMP:
   a synthesized measured cotAlpha/cotBeta beyond the bound invalidates that
   ANGLE (hasAlpha/hasBeta cleared; the hit keeps its position measurement).
   Bound rationale: catches 77/77 pathologies at any bound in 8-20; the
@@ -398,7 +398,7 @@ The clamps, all config knobs (FPGA-fidelity handles):
   (track parallel to sensor cannot make a localizable hit). 12 removes the
   pathology while cutting only the far ambiguous tail (~87 of the 185+ updates
   in [6,12) survive vs a bound of 8).
-- `digiRefitPredAngleMaxAbs` (double, default 12.0) — secondary hygiene: a
+- `seedlessRefitPredAngleMaxAbs` (double, default 12.0) — secondary hygiene: a
   PREDICTED crossing angle beyond the bound invalidates the crossing at the
   projector (no window, no sidecar record). Catches the 18 observed
   non-physical predicted crossings (up to |cotAlpha| 51.8); these have
