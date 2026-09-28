@@ -102,7 +102,8 @@ namespace smartpixels {
 
     // --- TRUTH-ONLY (never hardware-available; excluded from every transmitted subset) ---
     int8_t selHitClass = -1;                           // selected-cluster class by DOMINANT charge contributor:
-                                                       // 0 sameTP, 1 otherTP, 2 noise (no simlink), -1 none
+                                                       // 0 same TP as the OT track's TTTrackAssociator TP,
+                                                       // 1 other TP, 2 noise (no simlink), -1 none
     // TRUE incidence angles of the selected cluster's dominant TrackingParticle,
     // in the MODULE frame, unsmeared (-999.f if no parent). The tp prefix matches
     // the convention used everywhere else in this nano (L1TTrack_tpPt, the cluster
@@ -151,8 +152,11 @@ namespace smartpixels {
     // logDetRatio = ln(det C_OT / det C_refit) >= 0: total information gained,
     // parametrisation-independent and insensitive to WHICH direction shrank.
     float logDetRatio = -999.f;
-    // TrackingParticle collection KEY this track is truth-matched to, or -1. The nano
-    // publishes it as spixMatchedTpIdx, the L1TTP row (L1TPRowLink.h encoding). TRUTH-ONLY.
+    // TrackingParticle collection KEY this track is truth-matched to, or -1: the unique TP
+    // owning all but at most one of the OUTPUT track's hits, i.e. its OT stubs plus, for a
+    // refit track, its accepted IT clusters (TTTrackAssociator's loosely-genuine rule; a
+    // passthrough track gets exactly its OT track's match). The nano publishes it as
+    // spixMatchedTpIdx, the L1TTP row (L1TPRowLink.h encoding). TRUTH-ONLY.
     int32_t matchedTpIdx = -1;
   };
 
