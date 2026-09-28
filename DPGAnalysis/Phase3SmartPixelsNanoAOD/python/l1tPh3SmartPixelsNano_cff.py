@@ -314,43 +314,6 @@ def retargetTablesToSmartPixelsTracks(process, srcLabel, srcExtendedLabel):
     return process
 
 
-def dropAbsentMenuTables(process, moduleLabels):
-    """Remove nano table modules (by label). NOT for canonical tiers (a tier defines
-    its content; produce a missing input instead): kept for runUnifiedNano_cfg's
-    MINIAOD-only reco tables on DIGI-RAW inputs. Silent no-op for absent labels."""
-    for label in moduleLabels:
-        if not hasattr(process, label):
-            continue
-        module = getattr(process, label)
-        for container in (list(process.tasks.values()) + list(process.sequences.values())
-                          + list(process.paths.values()) + list(process.endpaths.values())):
-            try:
-                container.remove(module)
-            except Exception:
-                pass
-        delattr(process, label)
-        print(f"SmartPixels: removed nano table '{label}'")
-    return process
-
-
-def useGenParticlesFromFile(process, genSrc="genParticles"):
-    """Adapt the withGen gen chain to a GEN-SIM(-DIGI-RAW) input that has
-    `genParticles` but NOT the MINIAOD `prunedGenParticles` by repointing
-    finalGenParticles and DROPPING the gen tables that need packedGenParticles or
-    slimmed gen jets. Not for canonical tiers (it drops tables): use
-    produceMiniAODGenInputs. Kept for runUnifiedNano_cfg.
-    """
-    if hasattr(process, "finalGenParticles"):
-        process.finalGenParticles.src = cms.InputTag(genSrc)
-    if hasattr(process, "genParticleTable") and hasattr(process.genParticleTable, "externalVariables"):
-        if hasattr(process.genParticleTable.externalVariables, "iso"):
-            del process.genParticleTable.externalVariables.iso
-    process = dropAbsentMenuTables(process, ("genIso",))
-    return dropAbsentMenuTables(process, ("genJetTable", "genJetFlavourTable", "patJetPartonsNano",
-                                          "genJetAK8Table", "genJetAK8FlavourAssociation",
-                                          "genJetAK8FlavourTable", "genJetFlavourAssociation"))
-
-
 def produceMiniAODGenInputs(process):
     """withGen tiers on a GEN-SIM(-DIGI-RAW) input: produce the MINIAOD gen products
     the stock gen tables read (prunedGenParticles, packedGenParticles, slimmedGenJets,
