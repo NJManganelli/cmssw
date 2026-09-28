@@ -298,9 +298,8 @@ for _m in ["TTClusterAssociatorFromPixelDigis"]:
 #   puTable     -> offlineSlimmedPrimaryVertices (MINIAOD-only)
 #   metMCTable  -> slimmedMETs, pat::MET        (MINIAOD-only)
 #   hpsTauTable -> l1t::HPSPFTau                (absent from the RelVal L1 menu)
-# The flavor-driven stage-2 configs handle this with pruneAbsentSimpleTables(),
-# which needs a per-file label list; an explicit list keeps this production pset
-# free of runtime-artifact dependencies. Revisit when omninano lands (TODO above):
+# NOT a canonical recipe (canonical tiers never drop tables; see
+# smartPixelsCoexist/smartPixelsCoopt). Revisit when omninano lands (TODO above):
 # with a MINIAOD-carrying input, pass hasMiniAOD=1 and these tables come back.
 # ---------------------------------------------------------------------------
 #

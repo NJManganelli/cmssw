@@ -39,11 +39,12 @@ Two streamlined workflows are provided by
 
 - **Coexist (WF1)**: one L1Nano file containing BOTH the standard L1Tracks tables and
   SmartPixels L1Tracks tables for one or more variants — in-file track-to-track comparisons.
-- **Co-opt (WF2, "pure view")**: `injectSmartPixelsTrackProducer` rewires every downstream
-  consumer of the standard tracklet tracks (GTT input, vertex finder, correlator layers,
-  track jets/HT/MET, GT, muon matching, ...) to ONE SmartPixels variant; any nano flavor then
-  reflects that single interpretation. Comparisons are file-to-file against a standard-tracks
-  baseline job.
+- **Co-opt (WF2, canonical)**: `smartPixelsCoopt(process, variant=...)` makes the standard
+  L1 emulation available on demand and `injectSmartPixelsTrackProducer` rewires every
+  downstream consumer of the standard tracklet tracks (GTT input, vertex finder, correlator
+  layers, track jets/HT/MET, GMT tk muons, displaced vertices, GT) to ONE SmartPixels variant,
+  written as the unsuffixed `L1TSmartPixelsTrack` table. Nano tables are never rewired.
+  Comparisons are file-to-file.
 
 ## Track-input modes (`trackInputMode`)
 

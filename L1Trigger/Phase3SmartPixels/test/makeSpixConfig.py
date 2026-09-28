@@ -25,6 +25,13 @@ So configs are GENERATED here, from named axes, and are not kept.
     ./makeSpixConfig.py --pu 200 --tier trk-truth --variant digiRefit:1111 \
         --scan layerOrder=outsideIn,insideOut -o /work/spix_order
 
+    # the canonical single-view nano: ONE variant drives the L1 emulation
+    ./makeSpixConfig.py --pu 200 --tier clusters-truth --coopt --variant digiRefit:1111 \
+        --events 100 -o /work/spix_coopt.py
+
+No nano table is ever dropped: every table of the tier is produced (the L1
+emulation runs on demand, the MINIAOD gen inputs of a truth tier are made in-job).
+
 `--dry-run` prints the cmsDriver command instead of running it, which is what
 doc/ConfigProvenance.md records.
 
@@ -40,10 +47,6 @@ import os
 import shlex
 import subprocess
 import sys
-
-from DPGAnalysis.Phase3SmartPixelsNanoAOD.l1tPh3SmartPixelsNano_cff import (
-    _ABSENT_MENU_TABLES_DEFAULT,
-)
 
 # --- input files, by (pileup, release-compat). See mem:smartpixels-testfile-release-compat.
 #     Paths are the WDMac mount; the NJM256GBSD SD card is no longer attached.
@@ -91,37 +94,13 @@ REFIT_AXES = {
     "bdtModel": str,
 }
 
-# Tables keyed to the BASE (non-variant) SmartPixels producers. smartPixelsCoexist
-# schedules only the requested VARIANT producers, so these resolve to a missing
-# product and abort at the output module. This is a different reason from
-# _ABSENT_MENU_TABLES_DEFAULT (which is about the input's reduced L1 menu), hence a
-# separate list rather than a change upstream.
-BASE_PRODUCER_TABLES = ("l1tPh3SmartPixelsTracksTable", "l1tPh3ExtSmartPixelsTracksTable")
-
-# Tables that are absent on the D121 RelVals, whether from the reduced L1 menu or
-# from objects those samples never persisted. This list is EMPIRICAL: it is the
-# union arrived at over months of archived configs (see doc/ConfigProvenance.md),
-# and it is reproduced here rather than rediscovered because each missing entry
-# costs a full multi-minute job to find -- the failure is a ProductNotFound abort
-# at the output module on the first event, one table at a time.
-# For a PF-carrying tier on a PU sample, stitchPFTierForStubRebuild() un-prunes the
-# Puppi/SC4/SC8 family; pass --keep-table to override individual entries here.
-RELVAL_ABSENT_TABLES = (
-    "gttTracksTable", "gttExtTracksTable",
-    "dispVtxTable", "l1tDisplacedVertexTable",
-    "l1tPuppiCandsTable", "l1tExtPuppiCandsTable", "l1tPFCandsTable",
-    "l1tSC4JetCandsTable", "l1tSC4NGJetCandsTable",
-    "l1tHGCClusterTable",
-    "l1tPuppiCandHGCClusterLinkTable", "l1tExtPuppiCandHGCClusterLinkTable",
-    "l1tPuppiCandTrackTruthTable", "l1tExtPuppiCandTrackTruthTable",
-)
-
 # v6 = v5 (physical units; v4 and earlier were x1.88 (alpha) / x6.53 (beta) too narrow) with a fine beta axis
 DEFAULT_ANGLE_SET = "L1Trigger/Phase3SmartPixels/data/spix_angle_response_Conv1D_Full-2bit_v6.json"
 
 
 def build_customise(args, overrides):
-    """The --customise_commands payload: one smartPixelsCoexist call plus pruning."""
+    """The --customise_commands payload: smartPixelsCoexist (or smartPixelsCoopt with
+    --coopt), plus the in-job MINIAOD gen inputs for a truth tier."""
     # --variant is repeatable. smartPixelsCoexist takes a LIST of variants and gives
     # each its own producers and its own nano tables, so N configurations cost one
     # pass over the input instead of N: the expensive upstream work (unpacking,
@@ -129,6 +108,9 @@ def build_customise(args, overrides):
     # activeSP sweep, where 15 non-trivial masks as 15 separate jobs would be
     # 15 full reconstructions to vary one cheap downstream step.
     specs = args.variant if isinstance(args.variant, list) else [args.variant]
+    if args.coopt and len(specs) != 1:
+        raise SystemExit("--coopt takes exactly one --variant: it is the collection the whole "
+                         "L1 emulation is built from")
     variants = []
     seen = set()
     for spec in specs:
@@ -144,71 +126,22 @@ def build_customise(args, overrides):
 
     refit = {"pixelavAngleSet": args.pixelav_angle_set}
     refit.update(overrides)
-    variant = ", ".join(variants)
-
+    common = (f"trackInputMode='{args.track_input_mode}', extendedTracks={args.extended_tracks}, "
+              f"promptHnpar={args.prompt_hnpar}, digiRefitConfig={refit!r}")
+    if args.coopt:
+        call = f"process = smartPixelsCoopt(process, variant={variants[0]}, {common})"
+    else:
+        call = f"process = smartPixelsCoexist(process, variants=[{', '.join(variants)}], addNanoTables=True, {common})"
     parts = [
-        "import FWCore.ParameterSet.Config as cms",
-        "from L1Trigger.Phase3SmartPixels.customizeSmartPixels_cff import smartPixelsCoexist",
-        "from DPGAnalysis.Phase3SmartPixelsNanoAOD.l1tPh3SmartPixelsNano_cff import "
-        "dropAbsentMenuTables, pruneAbsentSimpleTables, useGenParticlesFromFile, dropOrphanExtensionTables",
-        f"process = smartPixelsCoexist(process, variants=[{variant}], addNanoTables=True, "
-        f"trackInputMode='{args.track_input_mode}', extendedTracks={args.extended_tracks}, "
-        f"promptHnpar={args.prompt_hnpar}, digiRefitConfig={refit!r})",
+        "from L1Trigger.Phase3SmartPixels.customizeSmartPixels_cff import smartPixelsCoexist, smartPixelsCoopt",
+        "from DPGAnalysis.Phase3SmartPixelsNanoAOD.l1tPh3SmartPixelsNano_cff import produceMiniAODGenInputs",
+        call,
     ]
-    # RelVals carry a reduced L1 menu, so some menu tables would resolve to a
-    # missing product and abort with ProductNotFound at the output module. The
-    # curated default (_ABSENT_MENU_TABLES_DEFAULT) covers the ones seen so far;
-    # --drop-tables extends it. Not optional: every archived config that ran on a
-    # RelVal needed this, and omitting it is a run-time abort, not a warning.
-    # withGen tiers build a MINIAOD-shaped gen chain (finalGenParticles <-
-    # prunedGenParticles). A GEN-SIM-DIGI-RAW RelVal has `genParticles` instead, so
-    # the pruner must be repointed or genParticleTable aborts with ProductNotFound.
+    # withGen tiers read MINIAOD gen products (prunedGenParticles, slimmedGenJets, ...);
+    # the GEN-SIM-DIGI-RAW RelVals carry only genParticles/ak4GenJetsNoNu, so make them.
     if TIERS[args.tier][1]:
-        parts.append("process = useGenParticlesFromFile(process)")
-    drop = [t for t in (list(_ABSENT_MENU_TABLES_DEFAULT) + list(BASE_PRODUCER_TABLES)
-                        + list(RELVAL_ABSENT_TABLES) + args.drop_tables)
-            if t not in args.keep_table]
-    parts.append(f"process = dropAbsentMenuTables(process, {tuple(drop)!r})")
-    # AUTO-PRUNE is not optional. A RelVal lacks a long and sample-dependent tail
-    # of menu objects, and each missing one is a ProductNotFound abort at the
-    # output module on the first event -- discovered one table per multi-minute
-    # job. The explicit drop lists above cannot keep up (OMTFpromptMuTable,
-    # gttTracksTable, ... were each found that way), so the branch list is taken
-    # from the INPUT ITSELF via edmDumpEventContent and everything absent is
-    # pruned in one shot.
-    if args.labels_file:
-        parts.append(
-            f"_avail = set(l.strip() for l in open({args.labels_file!r}) if l.strip())")
-        parts.append("process = pruneAbsentSimpleTables(process, _avail)")
-    # LAST: whatever the two prunes above removed may have orphaned an extension
-    # table, which aborts the output module (with a segfault alongside).
-    parts.append("process = dropOrphanExtensionTables(process)")
+        parts.append("process = produceMiniAODGenInputs(process)")
     return "; ".join(parts)
-
-
-def ensure_labels_file(infile, explicit=None, cache_dir="/work/.spix_labels"):
-    """Branch labels present in `infile`, cached. Mirrors the archived extract_labels.py."""
-    if explicit:
-        return explicit
-    os.makedirs(cache_dir, exist_ok=True)
-    tag = os.path.basename(infile).replace(".root", "")
-    out = os.path.join(cache_dir, f"{tag}.labels.txt")
-    if os.path.exists(out) and os.path.getsize(out) > 0:
-        return out
-    print(f"[labels] edmDumpEventContent {infile} -> {out}", file=sys.stderr)
-    r = subprocess.run(["edmDumpEventContent", f"file:{infile}"],
-                       capture_output=True, text=True, timeout=1800)
-    if r.returncode != 0:
-        print(f"[labels] WARNING: edmDumpEventContent failed; auto-prune disabled. "
-              f"Expect ProductNotFound aborts.\n{r.stderr[-500:]}", file=sys.stderr)
-        return None
-    labels = sorted({p.split('"')[1].strip()
-                     for p in r.stdout.splitlines() if len(p.split('"')) >= 2
-                     if p.split('"')[1].strip()})
-    with open(out, "w") as fh:
-        fh.write("\n".join(labels) + "\n")
-    print(f"[labels] {len(labels)} labels cached", file=sys.stderr)
-    return out
 
 
 def cmsdriver_cmd(args, out_py, overrides):
@@ -222,7 +155,6 @@ def cmsdriver_cmd(args, out_py, overrides):
     if not infile:
         raise SystemExit(f"no known input for pu={args.pu} release={args.release_compat}; "
                          "pass --filein explicitly")
-    args.labels_file = ensure_labels_file(infile, args.labels_file)
     return [
         "cmsDriver.py", os.path.splitext(os.path.basename(out_py))[0],
         "-s", steps,
@@ -268,15 +200,9 @@ def main():
     ap.add_argument("--prompt-hnpar", type=int, default=5, choices=[4, 5])
     ap.add_argument("--use-angles", default=None, choices=["none", "alpha", "alphaBeta"])
     ap.add_argument("--pixelav-angle-set", default=DEFAULT_ANGLE_SET)
-    ap.add_argument("--drop-tables", action="append", default=[], metavar="LABEL",
-                    help="extra nano table module label to drop (repeatable), on top of "
-                         "the curated _ABSENT_MENU_TABLES_DEFAULT")
-    ap.add_argument("--keep-table", action="append", default=[], metavar="LABEL",
-                    help="do NOT drop this table even though it is in the default "
-                         "absent-on-RelVal list (repeatable)")
-    ap.add_argument("--labels-file", default=None,
-                    help="newline-separated available-branch list for pruneAbsentSimpleTables. "
-                         "Derived from the input via edmDumpEventContent and cached if omitted.")
+    ap.add_argument("--coopt", action="store_true",
+                    help="canonical single-view nano (smartPixelsCoopt): the one --variant "
+                         "replaces the tracklet tracks for the whole L1 emulation")
     ap.add_argument("--filein", default=None)
     ap.add_argument("--fileout", default=None)
     ap.add_argument("--needs-truth", action="store_true",

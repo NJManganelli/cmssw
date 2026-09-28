@@ -52,15 +52,6 @@ if options.noGMT:
 if options.noCLX:
     spixpostfix += "_noCLX"
     skipModulesForSP.append("PFTrackProducerFromL1Tracks")
-if len(skipModulesForSP) == 0:
-    skipModulesForSP = None #uses defaults
-else:
-    # Add defaults too for explicit list of producer to skip co-opting inputs to
-    skipModulesForSP += ["L1SmartPixelsTrackProducer",
-                         "TTTrackAssociator_Phase2TrackerDigi_",
-                         "L1FPGATrackProducer",
-                         "SimpleL1TTTrackCandidateFlatTableProducer"
-                         ]
 
 process = cms.Process("RESP", eras.Phase2C17I13M9)
 
