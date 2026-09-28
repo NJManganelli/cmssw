@@ -1054,11 +1054,8 @@ def smartPixelsCoexist(process, variants=None, correctionSet=DEFAULT_CORRECTION_
       # link table + track extension table. Other modes produce no sidecar.
       if mode == "digiRefit":
         addPh3L1SmartPixelsRefitTables(process, srcLabel=prompt, srcExtendedLabel=extended, tableSuffix=suffix)
-    # Reference-track OT stub-position tables (task Part B): added ONCE per job,
-    # keyed to the reference L1TTrack / L1TExtTrack collections (not the refit
-    # variants -- the refit reuses the same stub refs). Idempotent, so calling it
-    # per coexist is safe. The prompt reference is 5-par when promptHnpar=5 (this
-    # only affects the seed helix; the stub geometry is unchanged either way).
+    # L1TOTStub and the link-only track -> stub tables of the reference L1TTrack /
+    # L1TExtTrack collections (the refit reuses the same stub refs). Idempotent.
     addPh3L1SmartPixelsStubTables(process, doExtended=extendedTracks)
   return process
 

@@ -26,9 +26,9 @@ them (`_reconcile`), so whichever end is added second creates the link.
 |---|---|---|
 | `@L1Trk` | `L1TTrack`, `L1TExtTrack` (15 `cov_*`), GTT columns; with gen: track truth | `L1DispVertex` track indices |
 | `@L1PF` | `L1PFCand`, `L1PuppiCand`, `L1ExtPuppiCand`, `L1HGCCluster`, SC4/SC8/SC4NG constituent links | candidate `l1TrackIdx` -> `L1TTrack`/`L1TExtTrack`, or the SmartPixels tables when a variant is wired |
-| `@TrkStubs` | `L1TOTStub` (every OT stub, with truth) | OT track -> stub |
+| `@TrkStubs` | `L1TOTStub` (every OT stub, with truth) | link-only track -> stub tables `<track table>Stub` (`trackIdx`, `otStubIdx`) for `L1TTrack`, `L1TExtTrack` and the SmartPixels tables |
 | `@SPTrk` | `L1TSmartPixelsTrack`, `L1TSmartPixelsExtTrack` (15 `cov_*`) of the wired variant | `l1TrackIdx` -> the OT track it was built from |
-| `@SPClustersStubs` | `L1TOTStub`, `L1TSmartPixelsCluster` (every IT cluster) | as above |
+| `@SPClustersStubs` | `L1TOTStub`, `L1TSmartPixelsCluster` (every IT cluster) | as above, and SmartPixels track -> cluster `<track table>Cluster` (`trackIdx`, `clusterIdx`; digiRefit: the accepted IT hits, no rows for passthrough) |
 | `@SPSeedlessRefit` | mode tag, digiRefit: `L1TSmartPixels[Ext]RefitHit` + `spix*` columns on the SmartPixels tables | hit -> SmartPixels track, hit -> cluster |
 | `@SPParallelSeedRefit`, `@SPJointSeedFit` | reserved (raise) | |
 | `@SPActiveLayers<mask>` | mask tag (16 masks; character k = ILk and IDk, A/I); `IIII` = passthrough control | |

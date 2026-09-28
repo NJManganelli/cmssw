@@ -1,16 +1,15 @@
 // Nano producer for the COMPLETE Outer-Tracker stub collection -- every stub the
 // L1 track finder was offered, not only the ones that ended up on a track.
 //
-// WHY THIS EXISTS, AND WHY THE EXISTING STUB TABLE COULD NOT ANSWER IT.
-// L1SmartPixelsStubPosTableProducer walks track->getStubRefs(), so it is an
-// ON-TRACK table by construction: measured 1004 rows/event at PU200, which is
-// ~5.3 stubs on each of ~190 found tracks. That is the right table for
-// visualising or refitting a track that already exists. It is the WRONG table
-// for any combinatorics or cost question, because those are questions about the
+// WHY THIS EXISTS. The track -> stub link tables (L1SmartPixelsTrackStubLinkTableProducer)
+// walk track->getStubRefs(), so they are ON-TRACK by construction: measured 1004
+// rows/event at PU200, ~5.3 stubs on each of ~190 found tracks. That is enough for
+// visualising or refitting a track that already exists, and not for any
+// combinatorics or cost question, because those are questions about the
 // stubs the finder had to consider and reject -- exactly the rows getStubRefs()
 // cannot contain. Comparing an Inner-Tracker seeding design against the OT
-// tracklet baseline needs the OT INPUT multiplicity, and no table in this
-// package carried it.
+// tracklet baseline needs the OT INPUT multiplicity. This table is also where the
+// link tables read each stub (otStubIdx = row here).
 //
 // It cannot be recovered offline either: the persisted collection is an
 // edmNew::DetSetVector, which uproot refuses ("memberwise serialization of

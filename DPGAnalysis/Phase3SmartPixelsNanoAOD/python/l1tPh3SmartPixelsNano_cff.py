@@ -138,30 +138,31 @@ def addPh3L1SmartPixelsRefitTables(process,
 
 
 # ---------------------------------------------------------------------------
-# Reference-track OT stub position tables (task Part B; viz true-anchor + refit
-# research). The L1SmartPixelsStubPosTableProducer walks getStubRefs() on a
-# reference TTTrack collection and emits ONE per-stub LINK table (one row per stub
-# across all tracks) carrying the stub's real global position (x,y,z,r,phi), its
-# tracker layer/disk id, isBarrel, detId, and FE bend. trackIdx links back to the
-# reference track table (the L1SC4NGJetCands / refit-hit link-table pattern).
-#
-# KEYED TO THE REFERENCE COLLECTIONS, NOT THE REFIT VARIANTS (task Part B.2):
-#   prompt  -> l1tTTTracksFromTrackletEmulation:Level1TTTracks       (nano "L1TTrack")
-#   extended-> l1tTTTracksFromExtendedTrackletEmulation:Level1TTTracks (nano "L1TExtTrack")
-# The refit variants reuse the SAME stub refs (setStubRefs) so the stub geometry is
-# identical -- but the SEED's stubs are the physics constraint being visualized, and
-# the reference tables are the untouched anchor that trackIdx and the L1TrackTruth
-# table both resolve against. Emitting once against the reference collections (rather
-# than once per variant) is therefore both correct AND avoids redundant identical
-# copies. Under trackInputMode=rebuildTracksFromStubs these reference labels are re-run in-job
-# from the file's stubs, so the stub geometry is the fresh new-layout one.
-l1tPh3SmartPixelsStubTable = cms.EDProducer(
-    "L1SmartPixelsStubPosTableProducer",
+# Track -> OT stub link tables. Each is LINK-ONLY: one row per (track, stub) pair with
+# trackIdx (row in the track table) and otStubIdx (row in L1TOTStub, the complete OT
+# stub table, which carries the stub position, layer, bend and truth). The ref is
+# asserted to point into the stub collection L1TOTStub is built from.
+# The SmartPixels tracks carry the stub refs of the OT track they were built from, so
+# the same producer serves both.
+# ---------------------------------------------------------------------------
+l1tPh3TrackStubLinkTable = cms.EDProducer(
+    "L1SmartPixelsTrackStubLinkTableProducer",
     tracks = cms.InputTag("l1tTTTracksFromTrackletEmulation", "Level1TTTracks"),
-    # the collection L1TOTStub is built from: otStubIdx is a row there (product ID asserted)
     stubs = cms.InputTag("TTStubsFromPhase2TrackerDigis", "StubAccepted"),
-    stubTableName = cms.string("L1TTrackStub"),
+    linkTableName = cms.string("L1TTrackStub"),
     trackTableName = cms.string("L1TTrack"),
+    stubTableName = cms.string("L1TOTStub"),
+)
+
+# SmartPixels track -> IT cluster link table (trackIdx, clusterIdx -> L1TSmartPixelsCluster):
+# the IT hits the variant used, from the digiRefit sidecar; no rows without a sidecar.
+l1tPh3SmartPixelsTrackClusterLinkTable = cms.EDProducer(
+    "L1SmartPixelsTrackClusterLinkTableProducer",
+    tracks = cms.InputTag("l1tSmartPixelsTrackProducer", "Level1TTTracks"),
+    sidecar = cms.InputTag(""),
+    linkTableName = cms.string("L1TSmartPixelsTrackCluster"),
+    trackTableName = cms.string("L1TSmartPixelsTrack"),
+    clusterTableName = cms.string("L1TSmartPixelsCluster"),
 )
 
 
@@ -172,42 +173,32 @@ def addPh3L1SmartPixelsStubTables(process,
                                   extendedTrackTable="L1TExtTrack",
                                   doPrompt=True,
                                   doExtended=True):
-    """Add the reference-track OT stub-position tables (prompt + extended).
+    """Add L1TOTStub and the link-only OT track -> stub tables (<track table>Stub:
+    trackIdx, otStubIdx) of the reference collections (prompt + extended).
 
-    One per-stub LINK table per reference collection, so the viz can render the
-    true OT anchors of whichever seed (prompt or extended) it visualizes. The
-    stub table's trackIdx links into promptTrackTable / extendedTrackTable (the
-    reference L1TTrack / L1TExtTrack nano tables), which the L1TrackTruth table
-    also aligns to -- so stubs, kinematics and truth all share one track index.
-
-    Idempotent per table name: skips if the label already exists (a job that
-    calls this twice adds each table once).
+    Idempotent per module label: a job that calls this twice adds each table once.
     """
     # Module labels must END in "Table" (keep-pattern gotcha): NANOAOD event
     # content keeps only nanoaodFlatTable_*Table_*_* and the output module's
     # consumes (which trigger the unscheduled producers) derive from that.
-    promptLabel = "l1tPh3SmartPixelsStubTable"
-    extendedLabel = "l1tPh3ExtSmartPixelsStubTable"
-    newModules = []
-    if doPrompt and not hasattr(process, promptLabel):
-        setattr(process, promptLabel, l1tPh3SmartPixelsStubTable.clone(
-            tracks = cms.InputTag(*promptSrc),
-            stubTableName = cms.string(f"{promptTrackTable}Stub"),
-            trackTableName = cms.string(promptTrackTable),
-        ))
-        newModules.append(promptLabel)
-    if doExtended and not hasattr(process, extendedLabel):
-        setattr(process, extendedLabel, l1tPh3SmartPixelsStubTable.clone(
-            tracks = cms.InputTag(*extendedSrc),
-            stubTableName = cms.string(f"{extendedTrackTable}Stub"),
-            trackTableName = cms.string(extendedTrackTable),
-        ))
-        newModules.append(extendedLabel)
-    if newModules:
-        if not hasattr(process, "p3L1SmartPixelsStubTask"):
-            process.p3L1SmartPixelsStubTask = cms.Task()
-            process.l1tPh2NanoTask.add(process.p3L1SmartPixelsStubTask)
-        process.p3L1SmartPixelsStubTask.add(*[getattr(process, m) for m in newModules])
+    labels = ["l1tPh3SmartPixelsAllStubTable"]
+    if not hasattr(process, labels[0]):
+        process.l1tPh3SmartPixelsAllStubTable = l1tPh3SmartPixelsAllStubTable.clone()
+    for do, label, src, trackTable in ((doPrompt, "l1tPh3TrackStubLinkTable", promptSrc, promptTrackTable),
+                                       (doExtended, "l1tPh3ExtTrackStubLinkTable", extendedSrc, extendedTrackTable)):
+        if not do:
+            continue
+        if not hasattr(process, label):
+            setattr(process, label, l1tPh3TrackStubLinkTable.clone(
+                tracks = cms.InputTag(*src),
+                linkTableName = cms.string(f"{trackTable}Stub"),
+                trackTableName = cms.string(trackTable),
+            ))
+        labels.append(label)
+    if not hasattr(process, "p3L1SmartPixelsStubTask"):
+        process.p3L1SmartPixelsStubTask = cms.Task()
+        process.l1tPh2NanoTask.add(process.p3L1SmartPixelsStubTask)
+    process.p3L1SmartPixelsStubTask.add(*[getattr(process, label) for label in labels])
     assertTrackTablesUncut(process)
     return process
 
@@ -308,10 +299,9 @@ l1tPh3SmartPixelsClusterTable = cms.EDProducer(
 #
 # The questions the SmartPixels tiers exist to answer are comparative: an IT seeding design is only interesting
 # relative to what the OT tracklet already does, and that comparison needs the OT
-# INPUT multiplicity. The existing stub tables (L1TTrackStub, L1TExtTrackStub) are
-# on-track only -- 1004 rows/event at PU200 against ~190 tracks -- so they cannot
-# supply it, and the persisted edmNew::DetSetVector is unreadable by uproot. Any
-# study wanting both halves would otherwise have to splice two data tiers.
+# INPUT multiplicity. The track -> stub link tables (L1TTrackStub, ...) are on-track
+# only -- 1004 rows/event at PU200 against ~190 tracks -- and read every stub from
+# here (otStubIdx); the persisted edmNew::DetSetVector is unreadable by uproot.
 l1tPh3SmartPixelsAllStubTable = cms.EDProducer(
     "L1SmartPixelsAllStubTableProducer",
     stubs = cms.InputTag("TTStubsFromPhase2TrackerDigis", "StubAccepted"),
