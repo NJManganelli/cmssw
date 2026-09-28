@@ -29,6 +29,11 @@ So configs are GENERATED here, from named axes, and are not kept.
     ./makeSpixConfig.py --pu 200 --tier study --coopt --variant digiRefit:1111 \
         --events 100 -o /work/spix_coopt.py
 
+    # SPStudyNano: the study tier plus the regular nano (@PHYS). The input is inspected:
+    # with MINIAOD products the job is NANO only, else it also runs RAW2DIGI,RECO,RECOSIM,PAT
+    # with the step-3 options of the RelVal workflow (runTheMatrix --dryRun)
+    ./makeSpixConfig.py --pu 200 --reco --variant digiRefit:1111 --events 2 -o /work/spix_reco.py
+
 No nano table is ever dropped: every table of the tier is produced (the L1
 emulation runs on demand, the MINIAOD gen inputs of a truth tier are made in-job).
 
@@ -74,8 +79,10 @@ TIERS = {
     # rows/event at PU200, measured 0.29 MB/event (88.6 stored bits/cluster).
     "clusters":       ("L1PFTrkNano", "Clusters", False),
     "clusters-truth": ("L1PFTrkNano", "Clusters", True),
-    # --coopt only: the standard L1 SmartPixels study tier (L1TSPStudyNano)
+    # --coopt only: the standard L1 SmartPixels study tier (L1TSPStudyNano), and the same
+    # plus the regular nano (SPStudyNano, --reco)
     "study":          (None, None, True),
+    "reco":           (None, "PHYS", True),
 }
 COOPT_ADDONS = {
     "L1TrkNano": ["@L1Trk", "@SPTrk"],
@@ -102,11 +109,14 @@ def nano_step(args):
         if base is None:
             raise SystemExit(f"--tier {args.tier} is a --coopt tier")
         return f"NANO:@{base}{gen}"
+    tags = variant_tags(args.variant[0])
     if base is None:
-        flavours = ["@L1TSPStudyNano"]
+        # the aliases carry the mode tag; the variant adds its mask tag
+        flavours = ["@SPStudyNano" if payload == "PHYS" else "@L1TSPStudyNano"]
+        tags = [tag for tag in tags if tag.startswith("@SPActiveLayers")]
     else:
         flavours = [f"@Phase2L1DPG{gen}"] + COOPT_ADDONS[base] + (["@SPClustersStubs"] if payload else [])
-    return "NANO:" + "+".join(flavours + variant_tags(args.variant[0]))
+    return "NANO:" + "+".join(flavours + tags)
 
 
 GEOMETRY, ERA, CONDITIONS = "ExtendedRun4D121", "Phase2C22I13M9", "auto:phase2_realistic_T35"
@@ -179,7 +189,8 @@ def build_customise(args, overrides):
                      f"addNanoTables=True, {posture}, digiRefitConfig={refit!r})")
     # withGen tiers read MINIAOD gen products (prunedGenParticles, slimmedGenJets, ...);
     # the GEN-SIM-DIGI-RAW RelVals carry only genParticles/ak4GenJetsNoNu, so make them.
-    if truth:
+    # SPStudyNano gets them from its MINIAOD input or from the PAT step it runs.
+    if truth and args.tier != "reco":
         parts.append("process = p3nano.produceMiniAODGenInputs(process)")
     return "; ".join(parts)
 
@@ -194,6 +205,8 @@ def cmsdriver_cmd(args, out_py, overrides):
     if not infile:
         raise SystemExit(f"no known input for pu={args.pu} release={args.release_compat}; "
                          "pass --filein explicitly")
+    if args.tier == "reco":
+        return reco_cmd(args, out_py, overrides, infile)
     return [
         "cmsDriver.py", os.path.splitext(os.path.basename(out_py))[0],
         "-s", nano_step(args),
@@ -201,6 +214,70 @@ def cmsdriver_cmd(args, out_py, overrides):
         "--geometry", GEOMETRY,
         "--era", ERA,
         "--procModifiers", "nano_l1_hlt",
+        "--datatier", "NANOAODSIM",
+        "--eventcontent", "NANOAODSIM",
+        "--filein", f"file:{infile}",
+        "--fileout", f"file:{args.fileout or os.path.splitext(out_py)[0] + '.root'}",
+        "--python_filename", out_py,
+        "-n", str(args.events),
+        "--mc", "--nThreads", str(args.threads), "--no_exec",
+        "--customise_commands", build_customise(args, overrides),
+    ]
+
+
+# The RelVal workflow the test inputs come from: TTbar_14TeV, Run4D121, PU200.
+RELVAL_WORKFLOW = "34634.0"
+# step-3 options the SmartPixels job sets itself; --pileup/--pileup_input also go, since the
+# job reads the mixed TrackingParticles from the input and the pileup files are on DAS
+STEP3_OWN_OPTIONS = {"-s", "--step", "-n", "--filein", "--fileout", "--datatier", "--eventcontent",
+                     "--pileup", "--pileup_input", "--python_filename", "--no_exec", "--nThreads"}
+
+
+def relval_step3(workflow):
+    """(steps up to PAT, [other cmsDriver options]) of the workflow's step 3, from
+    runTheMatrix --dryRun: the RECO the RelVal itself was made with."""
+    import glob
+    import tempfile
+    with tempfile.TemporaryDirectory() as tmp:
+        subprocess.run(["runTheMatrix.py", "-w", "upgrade", "-l", workflow, "--dryRun"], cwd=tmp,
+                       check=True, capture_output=True)
+        logs = glob.glob(os.path.join(tmp, "*", "cmdLog"))
+        lines = [line for log in logs for line in open(log) if "cmsDriver.py step3" in line]
+    if not lines:
+        raise SystemExit(f"runTheMatrix --dryRun of workflow {workflow} gave no step 3")
+    tokens = shlex.split(lines[0].split(">")[0])
+    tokens = tokens[tokens.index("cmsDriver.py") + 2:]
+    steps, options, i = None, [], 0
+    while i < len(tokens):
+        opt = tokens[i]
+        value = tokens[i + 1] if i + 1 < len(tokens) and not tokens[i + 1].startswith("-") else None
+        i += 2 if value is not None else 1
+        if opt in ("-s", "--step"):
+            steps = value.split(",")
+        elif opt not in STEP3_OWN_OPTIONS:
+            options.append((opt, value))
+    if steps is None or "PAT" not in steps:
+        raise SystemExit(f"step 3 of workflow {workflow} runs no PAT: {steps}")
+    return steps[:steps.index("PAT") + 1], options
+
+
+def reco_cmd(args, out_py, overrides, infile):
+    """SPStudyNano: NANO only on an input with MINIAOD products, else RECO and PAT in the
+    job with the RelVal workflow's step-3 options."""
+    from DPGAnalysis.Phase3SmartPixelsNanoAOD.l1tPh3SmartPixelsNanoFlavours_cff import inputHasMiniAOD
+    steps, options = relval_step3(args.reco_workflow)
+    nano = nano_step(args)
+    if not inputHasMiniAOD(f"file:{infile}"):
+        nano = ",".join(steps + [nano])
+    modifiers = ["nano_l1_hlt"]
+    cmd = ["cmsDriver.py", os.path.splitext(os.path.basename(out_py))[0], "-s", nano]
+    for opt, value in options:
+        if opt == "--procModifiers":
+            modifiers = value.split(",") + modifiers
+        else:
+            cmd += [opt] + ([value] if value is not None else [])
+    return cmd + [
+        "--procModifiers", ",".join(modifiers),
         "--datatier", "NANOAODSIM",
         "--eventcontent", "NANOAODSIM",
         "--filein", f"file:{infile}",
@@ -242,6 +319,11 @@ def main():
                     help="rec-hit angle source (default: emu with --coopt, the nano flavours' "
                          "default; payload for coexist)")
     ap.add_argument("--pixelav-angle-set", default=DEFAULT_ANGLE_SET)
+    ap.add_argument("--reco", action="store_true",
+                    help="SPStudyNano (--tier reco --coopt): the study tier plus the regular nano; "
+                         "runs RECO and PAT in the job when the input has no MINIAOD products")
+    ap.add_argument("--reco-workflow", default=RELVAL_WORKFLOW,
+                    help="RelVal workflow whose step-3 options the RECO+PAT steps take (%(default)s)")
     ap.add_argument("--coopt", action="store_true",
                     help="canonical single-view nano (the SmartPixels nano flavours): the one "
                          "--variant replaces the tracklet tracks for the whole L1 emulation")
@@ -260,6 +342,8 @@ def main():
     args = ap.parse_args()
     if not args.variant:
         args.variant = ["digiRefit:1111"]
+    if args.reco:
+        args.tier, args.coopt = "reco", True
 
     def _tobool(v):
         # bool("False") is True in Python, so --set applyProcessNoise=False would

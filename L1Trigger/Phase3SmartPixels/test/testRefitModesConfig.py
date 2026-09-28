@@ -633,6 +633,41 @@ p_ok.l1tTracksTable = l1tTracksTable.clone()
 assertTrackTablesUncut(p_ok)
 check(True, "an uncut L1TTrack table passes the guard")
 
+# --- (j) nano add-on flavours: registry and the @PHYS input guard -----------
+print("[j] nano add-on flavours")
+from PhysicsTools.NanoAOD.autoNANO import autoNANO
+import DPGAnalysis.Phase3SmartPixelsNanoAOD.l1tPh3SmartPixelsNanoFlavours_cff as _flav
+
+check(sum(k.startswith("SPActiveLayers") for k in autoNANO) == 16
+      and all(hasattr(_flav, autoNANO[k]["customize"].split(".")[1]) for k in autoNANO
+              if autoNANO[k].get("customize", "").startswith("DPGAnalysis/Phase3SmartPixelsNanoAOD/")),
+      "16 mask tags registered, every SmartPixels flavour resolves to a customisation")
+check(not any("SmartPix" in k for k in autoNANO), "the combined SmartPix flavours are gone")
+expect_raises(NotImplementedError, lambda: _flav.useSPJointSeedFit(cms.Process("TEST")),
+              "@SPJointSeedFit is reserved", contains="RESERVED")
+
+
+def _phys_job(recoInJob):
+    p = cms.Process("NANO")
+    p.source = cms.Source("PoolSource", fileNames=cms.untracked.vstring())
+    p.tab = cms.EDProducer("X")
+    p.nanoSequenceMC = cms.Sequence(p.tab)
+    p.nanoAOD_step = cms.Path(p.nanoSequenceMC)
+    p.l1tPh2NanoTask = cms.Task()
+    if recoInJob:
+        p.reco = cms.EDProducer("Y")
+        p.reconstruction_step = cms.Path(p.reco)
+        p.patTask = cms.Task(p.reco)
+        p.schedule = cms.Schedule(p.reconstruction_step, p.nanoAOD_step)
+        p.schedule.associate(p.patTask)
+    return p
+
+
+expect_raises(RuntimeError, lambda: _flav._checkRecoInputs(_phys_job(False), _flav._state(_phys_job(False))),
+              "@PHYS without RECO+PAT and without an input to check is refused", contains="MINIAOD")
+_flav._checkRecoInputs(_phys_job(True), _flav._state(_phys_job(True)))
+check(True, "@PHYS with RECO+PAT in the job passes the guard")
+
 # --- summary ---------------------------------------------------------------
 print()
 if _failures:

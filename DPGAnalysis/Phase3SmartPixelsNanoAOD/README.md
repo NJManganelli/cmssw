@@ -49,6 +49,11 @@ them (`_reconcile`), so whichever end is added second creates the link.
   flavours, so it re-applies the settings to what the tags wired; the result equals passing
   them first.
 - The composition is recorded in `process.smartPixelsNano`.
+- `@PHYS` (the regular nano, `SPStudyNano`) reads MINIAOD products. With the add-ons composed,
+  the configuration fails unless the input carries them or the job runs RECO and PAT; the
+  message gives the `-s` string. `test/makeSpixConfig.py --reco` inspects the input and emits
+  `-s NANO:...` or `-s RAW2DIGI,RECO,RECOSIM,PAT,NANO:...` with the step-3 options of the
+  RelVal workflow (`runTheMatrix --dryRun`, default 34634.0).
 
 ## digiRefit sidecar tables (spec §4.4)
 
