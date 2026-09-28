@@ -125,7 +125,7 @@ DIGIREFIT_DEFAULTS = {
     "measAngleMaxAbs": 12.0,  # |measured cot| above this: the refit does not use that angle
     "predAngleMaxAbs": 12.0,  # |predicted crossing cot| above this invalidates the crossing
     # --- Kalman layer visit order ---
-    # The particle traverses L1->L4 outward, but the seed is an OT-ONLY fit, so
+    # The particle traverses L1->L4 outward, but the OT track is an OT-ONLY fit, so
     # the state enters from outside. The projection to a layer therefore carries
     # the unmodelled multiple scattering accumulated between that layer and the
     # innermost OT layer, and that budget grows INWARD. "outsideIn" commits the
@@ -138,8 +138,8 @@ DIGIREFIT_DEFAULTS = {
     # pulls follow VISIT ORDER rather than layer identity.
     "applyProcessNoise": True,
     "multScattTerm": 0.00075,   # TMTT KalmanMultiScattTerm convention [rad*GeV]
-    # --- Kalman seed (the seed COVARIANCE is always the track's helixCovMat) ---
-    "seedNPar": 5,            # 4 | 5: seed-track parametrization entering the KF
+    # --- Kalman start (the starting COVARIANCE is always the OT track's helixCovMat) ---
+    "otNPar": 5,              # 4 | 5: OT track parameters entering the KF
     # --- correctionlib payload paths (empty defaults acceptable for Phase 0) ---
     # RESERVED: "smarthit_true" payload. Tier-2 does NOT consume it (position
     # comes from the real digis, angle from the PixelAV response; smarthit_true only
@@ -211,9 +211,9 @@ def _resolveDigiRefitConfig(digiRefitConfig=None):
     raise ValueError(
         "digiRefitConfig['angleSource']='emu' takes no pixelavAngleSet/smarthitFakeSet: "
         "every cluster gets the emulated angle, so a payload would silently go unused")
-  if resolved["seedNPar"] not in (4, 5):
+  if resolved["otNPar"] not in (4, 5):
     raise ValueError(
-        f"digiRefitConfig['seedNPar']={resolved['seedNPar']!r} invalid; must be 4 or 5")
+        f"digiRefitConfig['otNPar']={resolved['otNPar']!r} invalid; must be 4 or 5")
   for wk in ("windowRPhi", "windowZ"):
     wv = resolved[wk]
     if isinstance(wv, (int, float)):
@@ -310,7 +310,7 @@ def _applyDigiRefitConfig(module, resolved):
   module.digiRefitLayerOrder = cms.string(resolved["layerOrder"])
   module.digiRefitApplyProcessNoise = cms.bool(bool(resolved["applyProcessNoise"]))
   module.digiRefitMultScattTerm = cms.double(float(resolved["multScattTerm"]))
-  module.digiRefitSeedNPar = cms.int32(resolved["seedNPar"])
+  module.digiRefitOTNPar = cms.int32(resolved["otNPar"])
   # pixelavAngleSet now configures the UPSTREAM SmartPixelsRecHitProducer (the
   # single source of the angle); the refit just reads its output.
   module.smartPixelsRecHitInputTag = cms.InputTag("spixSmartPixelsRecHits")
@@ -540,7 +540,7 @@ def useTruthAssociationFromFile(process, associatorLabels=TRUTH_ASSOCIATOR_LABEL
 #    maps (all in-process associators removed). Pileup kept, but the stored
 #    tracks may predate the current layout (helixCovMat can be all-zero, in
 #    which case digiRefit cannot run at all -- there is no parametrized
-#    fallback, by design; the seed covariance must be the OT fit's own).
+#    fallback, by design; the starting covariance must be the OT fit's own).
 #  - rebuildTracksFromStubs: rebuild new-layout tracks from the file's
 #    persisted stubs (DTC -> tracklet chain), read the cluster/stub maps
 #    from the file, and re-run only the track associator. Pileup AND a real
@@ -578,9 +578,9 @@ def _resolveTrackInputMode(trackInputMode):
 
 
 # promptHnpar=5 is the default so the PROMPT reference (OT-only L1TTrack)
-# carries a real fitted d0 + 5x5 covariance -- the right seed for b-tagging
+# carries a real fitted d0 + 5x5 covariance -- the right OT track for b-tagging
 # impact-parameter / vertexing resolution studies and for the prompt digiRefit
-# (which always seeds from helixCovMat). 4-par (d0 pinned to 0) remains selectable for
+# (which always starts from helixCovMat). 4-par (d0 pinned to 0) remains selectable for
 # ablation. The prompt tracklet producer's shipped default is Extended=False,
 # Hnpar=4; no guard couples Hnpar to Extended (the prompt USEHYBRID path runs
 # TMTT KFParamsComb dimensioned purely by nHelixPar: KFbase.cc pins d0 only on
@@ -594,12 +594,12 @@ def attachStubRebuildChain(process, extendedTracks=True, promptHnpar=5):
 
   promptHnpar (4 | 5): helix-parameter count of the PROMPT tracklet fit. 5 (DEFAULT,
   the 5-par-only framing) makes the prompt collection carry a REAL fitted d0 + 5x5
-  covariance, so the prompt digiRefit seeds from a genuine 5-par covariance
+  covariance, so the prompt digiRefit starts from a genuine 5-par covariance
   and the OT-only prompt reference has real d0 for b-tagging /
   resolution-vs-truth. 4 (ablation only) keeps d0 pinned to 0 with a 4x4 covariance --
-  the prompt digiRefit then seeds with the weak-d0-prior fallback (the producer's
+  the prompt digiRefit then starts with the weak-d0-prior fallback (the producer's
   nFitPars()==5 guard auto-selects it). The extended chain is always Hnpar=5 regardless.
-  Only affects the SEED helix/covariance; the stub geometry (and hence the Part-B stub
+  Only affects the OT track helix/covariance; the stub geometry (and hence the Part-B stub
   tables) is identical either way.
 
   The PU RelVal persists the entire stub tier WITH pileup (TTStubs + all three
@@ -614,7 +614,7 @@ def attachStubRebuildChain(process, extendedTracks=True, promptHnpar=5):
   giving NEW TTTracks (post-PR#51503 layout, real helix covariance, PU tracks
   included) + a FRESH track-truth map keyed to the new collection. No DIGI, no
   mixing, no cluster/stub remaking -> so digiRefit becomes VALID on PU files
-  (it always seeds from helixCovMat, and these tracks have a real one). Same-label in-process production shadows the file's HLT branches for
+  (it always starts from helixCovMat, and these tracks have a real one). Same-label in-process production shadows the file's HLT branches for
   every downstream consumer configured without a process name (identical to the
   reemulateL1TrackFinding labeling model), so the digiRefit producer defaults need no changes.
 
@@ -632,7 +632,7 @@ def attachStubRebuildChain(process, extendedTracks=True, promptHnpar=5):
   Hnpar=5) so the extended digiRefit variant's inputs are fresh new-layout tracks
   and digiRefit is valid for them too. The prompt-only PoC left it off because its
   extended inputs would have resolved to old-layout file tracks (tripping the
-  seed-covariance guard) -- with the chain rebuilt that no longer applies.
+  OT-covariance guard) -- with the chain rebuilt that no longer applies.
 
   NEVER schedules DIGI, the cluster/stub producers, the cluster/stub associators,
   or offlineBeamSpot: those need mix:Tracker PixelDigiSimLinks (transient DIGI
@@ -658,7 +658,7 @@ def attachStubRebuildChain(process, extendedTracks=True, promptHnpar=5):
   process.load('L1Trigger.TrackFindingTracklet.ProducerHPH_cff')
   process.load('SimTracker.TrackTriggerAssociation.TTTrackAssociation_cfi')
 
-  # PRIME TARGET: 5-par PROMPT seed. Keep Extended=False (the prompt seed geometry)
+  # PRIME TARGET: 5-par PROMPT OT track. Keep Extended=False (the prompt seeding geometry)
   # and only bump the helix-parameter count so the prompt fit floats a real d0 + 5x5
   # covariance. Extended stays Hnpar=5 unconditionally (its shipped clone default).
   process.l1tTTTracksFromTrackletEmulation.Hnpar = cms.uint32(promptHnpar)
@@ -691,7 +691,7 @@ def attachStubRebuildChain(process, extendedTracks=True, promptHnpar=5):
   for _, epath in process.endpaths_().items():
     epath.associate(process.l1tSmartPixelsStubRebuildTask)
   print(f"SmartPixels rebuildTracksFromStubs: prompt tracklet Hnpar={promptHnpar} "
-        + ("(5-par PRIME seed: real d0 + 5x5 cov -> usable prompt digiRefit seed)"
+        + ("(5-par PRIME target: real d0 + 5x5 cov -> usable prompt digiRefit start)"
            if promptHnpar == 5
            else "(4-par: d0 pinned 0 -> prompt digiRefit weak-d0-prior fallback)"))
   return process, chainModules
@@ -822,8 +822,8 @@ def smartPixelsTrackAssociator(process, trackLabel, extended=False):
 
   Truth maps are keyed by track Ptr, so a consumer of the SmartPixels tracks must use
   an association of THAT collection, never the tracklet associator. The SmartPixels
-  tracks carry their seed's stub refs, so the association resolves exactly as for
-  the seed. Runs on demand (associated task).
+  tracks carry the stub refs of the OT track they were built from, so the association
+  resolves exactly as for that OT track. Runs on demand (associated task).
   """
   label = f"TTTrackAssociatorFromPixelDigis{'Extended' if extended else ''}W{trackLabel}"
   if not hasattr(process, label):
@@ -987,7 +987,7 @@ def smartPixelsCoexist(process, variants=None, correctionSet=DEFAULT_CORRECTION_
      scheduled DIGI step is refused (signal-only re-digitization would
      destroy pileup) unless allowSignalOnlyRedigitization=True.
    - 'useStoredTracks': stored tracks may carry an all-zero helixCovMat, in
-     which case digiRefit throws (SmartPixelsSeedCovMissing). There is no
+     which case digiRefit throws (SmartPixelsOTCovMissing). There is no
      parametrized fallback -- use one of the rebuilding modes.
    - 'rebuildTracksFromStubs': rebuilt tracks carry a real covariance, so
      digiRefit works on PU files without a usable digi tier. NOTE this holds
@@ -1004,7 +1004,7 @@ def smartPixelsCoexist(process, variants=None, correctionSet=DEFAULT_CORRECTION_
   promptHnpar (rebuildTracksFromStubs only; 4 | 5): helix-parameter count of
   the PROMPT tracklet fit. Default 5: the prompt collection then carries a
   real fitted d0 + 5x5 covariance, giving the OT-only reference a real d0
-  and the prompt digiRefit variant a genuine 5-par seed covariance.
+  and the prompt digiRefit variant a genuine 5-par starting covariance.
   promptHnpar=4 (ablation only) pins d0 to 0; the prompt digiRefit then uses
   the weak-d0-prior fallback (auto-selected per-collection via nFitPars()).
   The extended chain is always Hnpar=5. The other two modes use the shipped
@@ -1013,7 +1013,7 @@ def smartPixelsCoexist(process, variants=None, correctionSet=DEFAULT_CORRECTION_
   digiRefitConfig: dict merged over DIGIREFIT_DEFAULTS (validated loudly),
   relevant only for a digiRefit variant. trackInputMode='useStoredTracks' on
   an old-layout file is not special-cased at config time -- it fails loudly at
-  runtime via the SmartPixelsSeedCovMissing guard, by design; use
+  runtime via the SmartPixelsOTCovMissing guard, by design; use
   'rebuildTracksFromStubs' instead.
 
   cmsDriver (defaults):  --customise L1Trigger/Phase3SmartPixels/customizeSmartPixels_cff.smartPixelsCoexist

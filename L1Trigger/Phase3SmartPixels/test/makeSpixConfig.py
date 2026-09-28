@@ -8,7 +8,7 @@ architecture twin, or a one-off rename. Worse, every name encoded the debugging
 episode that produced it (`stepCOOPT_nano_fat_1100_coopt_file7`) and none
 encoded the settings that decide whether the file is fit for a given
 measurement. That cost real time and produced at least two confounded results:
-a pull comparison taken from a `parametrized` seed, and a layer-order attempt
+a pull comparison taken from a `parametrized` OT covariance, and a layer-order attempt
 staged on a config that silently dropped the TrackingParticle truth columns.
 
 So configs are GENERATED here, from named axes, and are not kept.
@@ -40,9 +40,9 @@ emulation runs on demand, the MINIAOD gen inputs of a truth tier are made in-job
 `--dry-run` prints the cmsDriver command instead of running it, which is what
 doc/ConfigProvenance.md records.
 
-DELIBERATELY NOT AN AXIS: seedCovMode. digiRefit always seeds from the track's
+DELIBERATELY NOT AN AXIS: otCovMode. digiRefit always starts from the OT track's
 own helixCovMat. The removed `parametrized` mode substituted a fixed diagonal
-for a missing covariance and made every seed-covariance-dependent measurement
+for a missing covariance and made every OT-covariance-dependent measurement
 meaningless while still producing plausible numbers.
 """
 from __future__ import annotations
@@ -312,7 +312,7 @@ def main():
     ap.add_argument("--extended-tracks", default="True", choices=["True", "False"],
                     help="rebuild the displaced chain too. False leaves the Extended "
                          "producer reading old-layout stored tracks, whose all-zero "
-                         "helixCovMat makes every extended seed unusable.")
+                         "helixCovMat makes every extended OT track unusable for the refit.")
     ap.add_argument("--prompt-hnpar", type=int, default=5, choices=[4, 5])
     ap.add_argument("--use-angles", default=None, choices=["none", "alpha", "alphaBeta"])
     ap.add_argument("--angle-source", default=None, choices=["emu", "payload"],

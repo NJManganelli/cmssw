@@ -14,7 +14,7 @@
           TODO: Add more inputs
      Outputs (all under the instance outputCollectionName):
          std::vector<TTTrack> - the SmartPixels tracks
-         std::vector<TTTrackRef> - per output track, the input track it was seeded from (null if none)
+         std::vector<TTTrackRef> - per output track, the input (OT) track it was built from (null if none)
          smartpixels::SmartPixelsRefitSidecar - digiRefit mode only
 */
 //
@@ -367,7 +367,7 @@ private:
   double digiRefitMeasAngleMaxAbs_ = 12.0;  // |measured cot| above this: the angle is not used
   double digiRefitPredAngleMaxAbs_ = 12.0;  // |predicted crossing cot| above this invalidates the crossing
   // Order in which IT layers are visited by the Kalman loop. The particle
-  // traverses L1->L4 outward, but the seed is an OT-only fit, so the state
+  // traverses L1->L4 outward, but the OT track is an OT-only fit, so the state
   // enters from OUTSIDE: the projection to a layer carries the unmodelled
   // scattering accumulated between that layer and the innermost OT layer,
   // which grows inward. Visiting L4 first therefore commits the first (and
@@ -375,7 +375,7 @@ private:
   // least unmodelled scattering. Kept as a knob because the opposing argument
   // -- the r-phi window is tightest at L1, so L1 is the least ambiguous match
   // -- is also real, and the two have to be measured against each other.
-  // Store the UNMODIFIED-seed projection (position, cone sigma, angles) for every
+  // Store the UNMODIFIED OT track projection (position, cone sigma, angles) for every
   // crossing. Costs one extra crossLayer plus a 5-point numerical Jacobian per
   // crossing, i.e. roughly doubles projector work. Default ON: v2.6 is a study
   // release, and a default-off knob that every study config must remember to set
@@ -385,9 +385,9 @@ private:
   // default: projected scattering angle = term / pT [rad] per traversed layer.
   bool digiRefitApplyProcessNoise_ = true;
   double digiRefitMultScattTerm_ = 0.00075;
-  bool digiRefitStoreSeedProjection_ = true;
+  bool digiRefitStoreOTProjection_ = true;
   std::string digiRefitLayerOrder_ = "outsideIn";  // "outsideIn" (L4->L1, default) | "insideOut" (L1->L4)
-  int digiRefitSeedNPar_ = 5;           // 4 (prompt) | 5 (extended + covariance seed)
+  int digiRefitOTNPar_ = 5;             // OT track parameters entering the KF: 4 (prompt) | 5
   std::string digiRefitPixelavAngleSet_ = "";  // PixelAV angle sigma/bias/valid payload path
   std::string digiRefitSmarthitTrueSet_ = "";  // smarthit_true payload (RESERVED): NOT consumed by Tier-2; warns if set
   std::string digiRefitSmarthitFakeSet_ = "";  // inclusive noise-angle payload path
@@ -422,7 +422,7 @@ private:
   // passthrough). Reset/accumulated per stream; checked in endStream().
   mutable unsigned long long digiRefitTracksSeen_ = 0;
   mutable unsigned long long digiRefitTruthMatches_ = 0;
-  mutable unsigned long long digiRefitZeroCovTracks_ = 0;  // trackCov seeds with an all-zero helixCovMat
+  mutable unsigned long long digiRefitZeroCovTracks_ = 0;  // OT tracks with an all-zero helixCovMat
   // KF numerical-guard activation counters (spec §6b), reported at endStream.
   mutable unsigned long long digiRefitGatedJacCols_ = 0;   // Jacobian columns zeroed by jacobianMaxAbs
   mutable unsigned long long digiRefitGatedUpdates_ = 0;   // scalar updates skipped by chi2UpdateGate
@@ -558,9 +558,9 @@ L1SmartPixelsTrackProducer::L1SmartPixelsTrackProducer(edm::ParameterSet const& 
     digiRefitPredAngleMaxAbs_ = iConfig.getParameter<double>("digiRefitPredAngleMaxAbs");
     digiRefitApplyProcessNoise_ = iConfig.getParameter<bool>("digiRefitApplyProcessNoise");
     digiRefitMultScattTerm_ = iConfig.getParameter<double>("digiRefitMultScattTerm");
-    digiRefitStoreSeedProjection_ = iConfig.getParameter<bool>("digiRefitStoreSeedProjection");
+    digiRefitStoreOTProjection_ = iConfig.getParameter<bool>("digiRefitStoreOTProjection");
     digiRefitLayerOrder_ = iConfig.getParameter<std::string>("digiRefitLayerOrder");
-    digiRefitSeedNPar_ = iConfig.getParameter<int>("digiRefitSeedNPar");
+    digiRefitOTNPar_ = iConfig.getParameter<int>("digiRefitOTNPar");
     {
       const std::string av = iConfig.getParameter<std::string>("digiRefitPixelavAngleSet");
       digiRefitPixelavAngleSet_ = av.empty() ? std::string() : edm::FileInPath(av).fullPath();
@@ -600,8 +600,8 @@ L1SmartPixelsTrackProducer::L1SmartPixelsTrackProducer(edm::ParameterSet const& 
       throw cms::Exception("Configuration")
           << "digiRefit layerOrder='" << digiRefitLayerOrder_
           << "' is not recognized; use 'outsideIn' (L4->L1) or 'insideOut' (L1->L4).";
-    if (digiRefitSeedNPar_ != 4 && digiRefitSeedNPar_ != 5)
-      throw cms::Exception("Configuration") << "digiRefit seedNPar must be 4 or 5.";
+    if (digiRefitOTNPar_ != 4 && digiRefitOTNPar_ != 5)
+      throw cms::Exception("Configuration") << "digiRefit otNPar must be 4 or 5.";
     if (digiRefitUseAngles_ != "none" && digiRefitUseAngles_ != "alpha" && digiRefitUseAngles_ != "alphaBeta")
       throw cms::Exception("Configuration") << "digiRefit useAngles='" << digiRefitUseAngles_ << "' invalid.";
     if (!(digiRefitJacobianMaxAbs_ > 0.))
@@ -659,8 +659,8 @@ L1SmartPixelsTrackProducer::L1SmartPixelsTrackProducer(edm::ParameterSet const& 
   }
 
   produces<TTTrackCollection>(outputCollectionName_);
-  // Per output track, the input (OT) track it was seeded from; a null Ref marks a
-  // track with no OT seed. Explicit even while the 1:1 contract makes it the identity.
+  // Per output track, the input (OT) track it was built from; a null Ref marks a
+  // track not built from an OT track. Explicit even while the 1:1 contract makes it the identity.
   produces<std::vector<TTTrackRef>>(outputCollectionName_);
 
   // digiRefit sidecar: one product per refit track collection (spec §2), same
@@ -726,9 +726,9 @@ void L1SmartPixelsTrackProducer::endStream() {
              "wrong trackInputMode). Run reemulateL1TrackFinding (L1TrackTrigger re-run on the input digis) so tracks, "
              "digis, simlinks and maps are self-consistent.";
     if (digiRefitZeroCovTracks_ == digiRefitTracksSeen_)
-      throw cms::Exception("SmartPixelsSeedCovMissing")
+      throw cms::Exception("SmartPixelsOTCovMissing")
           << "ALL " << digiRefitTracksSeen_
-          << " seed tracks carried an all-zero helixCovMat, so the refit has no seed uncertainty "
+          << " OT tracks carried an all-zero helixCovMat, so the refit has no OT track uncertainty "
              "to start from. These look like schema-evolved old-layout file tracks. Run "
              "trackInputMode=reemulateL1TrackFinding (or rebuildTracksFromStubs) so the in-job fit "
              "fills the covariance -- and note the mode must rebuild EVERY collection you refit: "
@@ -1512,7 +1512,7 @@ void L1SmartPixelsTrackProducer::produce(edm::Event& iEvent, const edm::EventSet
       // Tier-2 interim refit: project the OT track into BPIX, window-collect the
       // REAL pixel digis, classify each via PixelDigiSimLink, synthesize angle
       // measurements (parent-truth incidence ⊕ PixelAV response payload), then
-      // Kalman-update the OT helix seeded from the track and its covariance.
+      // Kalman-update the OT track helix, starting from its own covariance.
       // Exactly one output track per input track (refit or passthrough fallback).
       ++digiRefitTracksSeen_;
       if (!my_tp.isNull())
@@ -1545,13 +1545,13 @@ void L1SmartPixelsTrackProducer::produce(edm::Event& iEvent, const edm::EventSet
       // summed over all applied scalar updates across the track's crossings.
       double drSumPullX2 = 0., drSumPullY2 = 0., drSumPullAlpha2 = 0., drSumPullBeta2 = 0.;
 
-      // ---- seed state (INVR, PHI0, TANL, Z0, D0) and covariance ----
+      // ---- OT track state (INVR, PHI0, TANL, Z0, D0) and covariance ----
       ROOT::Math::SVector<double, 5> a;
       a[0] = iterL1Track->rInv();
       a[1] = iterL1Track->momentum().phi();
       a[2] = iterL1Track->tanL();
       a[3] = iterL1Track->z0();
-      a[4] = (digiRefitSeedNPar_ == 5 && iterL1Track->nFitPars() == 5) ? tmp_trk_d0 : 0.0;
+      a[4] = (digiRefitOTNPar_ == 5 && iterL1Track->nFitPars() == 5) ? tmp_trk_d0 : 0.0;
       // Matched-TP identity, for joining clusters to the track that owns them.
       if (!drMatchedSimIds.empty()) {
         const auto tit =
@@ -1559,16 +1559,16 @@ void L1SmartPixelsTrackProducer::produce(edm::Event& iEvent, const edm::EventSet
         if (tit != drParentTpIdx.end())
           drTrackInfo.matchedTpIdx = tit->second;
       }
-      // Seed snapshot for the refit-BDT parameter deltas (spec §6a features 11-15).
-      const ROOT::Math::SVector<double, 5> aSeed = a;
+      // OT track snapshot for the refit-BDT parameter deltas (spec §6a features 11-15).
+      const ROOT::Math::SVector<double, 5> aOT = a;
 
-      // The seed covariance is ALWAYS the OT fit's own helixCovMat. There is no
+      // The starting covariance is ALWAYS the OT fit's own helixCovMat. There is no
       // parametrized alternative: a fixed diagonal is not the OT fit's
       // uncertainty, it silently substitutes for a missing one, and every
-      // seed-covariance-dependent measurement (window sizing, pull widths,
+      // measurement that depends on the OT covariance (window sizing, pull widths,
       // layer ordering, the MS term) is meaningless under it.
       ROOT::Math::SMatrix<double, 5, 5, ROOT::Math::MatRepSym<double, 5>> C;
-      bool seedCovOK = true;
+      bool otCovOK = true;
       {
         const auto& tc = iterL1Track->helixCovMat();
         double diagSum = 0.;
@@ -1579,23 +1579,23 @@ void L1SmartPixelsTrackProducer::produce(edm::Event& iEvent, const edm::EventSet
         }
         if (!(diagSum > 0.)) {
           // Schema-evolved old-layout file tracks carry a default (all-zero)
-          // covariance; refitting from a singular seed would be garbage. Fall
+          // covariance; refitting from a singular one would be garbage. Fall
           // back to passthrough for this track and count it — endStream throws
           // if EVERY track looked like this (wrong trackInputMode).
-          seedCovOK = false;
+          otCovOK = false;
           ++digiRefitZeroCovTracks_;
         }
       }
-      // 4-par seeds carry no d0 information: weak prior so the IT hits determine d0.
-      if (digiRefitSeedNPar_ == 4 || !(C(4, 4) > 0.))
+      // 4-par OT tracks carry no d0 information: weak prior so the IT hits determine d0.
+      if (digiRefitOTNPar_ == 4 || !(C(4, 4) > 0.))
         C(4, 4) = std::max(C(4, 4), 0.25);  // (0.5 cm)^2
 
-      // Seed covariance snapshot, taken AFTER the weak-d0 prior so it is the
+      // OT covariance snapshot, taken AFTER the weak-d0 prior so it is the
       // covariance the fit actually starts from. C is destroyed in place by the
       // updates (C -= K v^T) and never restored, so anything that needs the
       // starting uncertainty -- the single-shot projection cone here, and the
       // shift/log-det diagnostics to come -- must keep its own copy.
-      const ROOT::Math::SMatrix<double, 5, 5, ROOT::Math::MatRepSym<double, 5>> CSeed = C;
+      const ROOT::Math::SMatrix<double, 5, 5, ROOT::Math::MatRepSym<double, 5>> COT = C;
 
       const MagneticField& drField = *bFieldHandle.product();
       const auto makeHelix = [&](const ROOT::Math::SVector<double, 5>& s) {
@@ -1626,7 +1626,7 @@ void L1SmartPixelsTrackProducer::produce(edm::Event& iEvent, const edm::EventSet
       const bool drOutsideIn = (digiRefitLayerOrder_ == "outsideIn");
       for (int step = 0; step < drNLayers; ++step) {
         const int layer = drOutsideIn ? (drNLayers - step) : (step + 1);
-        if (!seedCovOK || nUpdates >= digiRefitMaxKFUpdates_)
+        if (!otCovOK || nUpdates >= digiRefitMaxKFUpdates_)
           break;
         const unsigned surface = static_cast<unsigned>(layer);  // projector surfaces are TBPX layers
         if (!drActiveSurface[surface])
@@ -1636,13 +1636,13 @@ void L1SmartPixelsTrackProducer::produce(edm::Event& iEvent, const edm::EventSet
         // Inflate C for the material traversed since the last constraint, BEFORE
         // projecting, so it is visible to both S = H C H^T + sigma^2 and the gain.
         //
-        // WHY IT IS NEEDED. C is filled from the seed, shrunk by every update
+        // WHY IT IS NEEDED. C is filled from the OT track, shrunk by every update
         // (C -= K v^T) and never grows: there is no propagation step at all,
         // because the state IS the 5 helix parameters and "propagating" is
         // crossLayer re-evaluating the same helix at another radius. The measured
         // consequence is that correct-hit pull widths follow VISIT ORDER, not layer
         // identity -- the first-visited layer sits at ~1.0 because it is projected
-        // with the honest seed covariance, and everything after it degrades (4.1,
+        // with the honest OT covariance, and everything after it degrades (4.1,
         // 5.4, 7.8 under the old inside-out order).
         //
         // MATERIAL IS KEYED TO GEOMETRY, NOT TO MEASUREMENTS. The particle scatters
@@ -1714,7 +1714,7 @@ void L1SmartPixelsTrackProducer::produce(edm::Event& iEvent, const edm::EventSet
         const double sigX = pitch.first / std::sqrt(12.0);
         const double sigY = pitch.second / std::sqrt(12.0);
 
-        // A valid crossing was attempted: seed its sidecar record now (spec §2 -
+        // A valid crossing was attempted: start its sidecar record now (spec §2 -
         // one hitInfo entry per valid crossing, whether or not a hit is accepted).
         smartpixels::SmartPixelsRefitHitInfo hi;
         hi.layer = static_cast<uint8_t>(surface);
@@ -1724,28 +1724,28 @@ void L1SmartPixelsTrackProducer::produce(edm::Event& iEvent, const edm::EventSet
         hi.projLocalY = static_cast<float>(cx.local.y());
         hi.projCotAlpha = static_cast<float>(cx.cotAlpha);
         hi.projCotBeta = static_cast<float>(cx.cotBeta);
-        // Seed projection + its cone, from the UNMODIFIED seed helix. Recomputed
+        // OT projection + its cone, from the UNMODIFIED OT track helix. Recomputed
         // per crossing rather than cached because crossLayer resolves the module
-        // from the helix, and the seed may cross a DIFFERENT module than the
+        // from the helix, and the OT track may cross a DIFFERENT module than the
         // updated state does -- silently comparing across modules would corrupt
         // every band count derived from it.
-        if (digiRefitStoreSeedProjection_) {
+        if (digiRefitStoreOTProjection_) {
           const smartpixels::Crossing cs =
-              projector_.crossLayer(makeHelix(aSeed), layer, drField, digiRefitPredAngleMaxAbs_);
+              projector_.crossLayer(makeHelix(aOT), layer, drField, digiRefitPredAngleMaxAbs_);
           if (cs.valid && cs.detId == cx.detId) {
-            hi.projSeedLocalX = static_cast<float>(cs.local.x());
-            hi.projSeedLocalY = static_cast<float>(cs.local.y());
-            hi.projSeedCotAlpha = static_cast<float>(cs.cotAlpha);
-            hi.projSeedCotBeta = static_cast<float>(cs.cotBeta);
-            // Cone sigma: sqrt(diag(H C_seed H^T)) with H the numerical Jacobian of
-            // (localx, localy) at the SEED state. Same one-sided-difference scheme
+            hi.projOTLocalX = static_cast<float>(cs.local.x());
+            hi.projOTLocalY = static_cast<float>(cs.local.y());
+            hi.projOTCotAlpha = static_cast<float>(cs.cotAlpha);
+            hi.projOTCotBeta = static_cast<float>(cs.cotBeta);
+            // Cone sigma: sqrt(diag(H C_OT H^T)) with H the numerical Jacobian of
+            // (localx, localy) at the OT track state. Same one-sided-difference scheme
             // and same same-module guard as the update Jacobian below.
             const double hs0[2] = {cs.local.x(), cs.local.y()};
             double Hs[2][5] = {{0.}};
             constexpr std::array<double, 5> kEpsS{{1e-6, 1e-5, 1e-5, 1e-3, 1e-3}};
             for (int j = 0; j < 5; ++j)
               for (const double sgn : {+1., -1.}) {
-                ROOT::Math::SVector<double, 5> ap = aSeed;
+                ROOT::Math::SVector<double, 5> ap = aOT;
                 ap[j] += sgn * kEpsS[j];
                 const smartpixels::Crossing cp =
                     projector_.crossLayer(makeHelix(ap), layer, drField, digiRefitPredAngleMaxAbs_);
@@ -1766,12 +1766,12 @@ void L1SmartPixelsTrackProducer::produce(edm::Event& iEvent, const edm::EventSet
               }
               if (!ok)
                 continue;
-              const double var = ROOT::Math::Dot(Hrow, CSeed * Hrow);
+              const double var = ROOT::Math::Dot(Hrow, COT * Hrow);
               if (var > 0.) {
                 if (k == 0)
-                  hi.projSeedSigX = static_cast<float>(std::sqrt(var));
+                  hi.projOTSigX = static_cast<float>(std::sqrt(var));
                 else
-                  hi.projSeedSigY = static_cast<float>(std::sqrt(var));
+                  hi.projOTSigY = static_cast<float>(std::sqrt(var));
               }
             }
           }
@@ -1832,10 +1832,10 @@ void L1SmartPixelsTrackProducer::produce(edm::Event& iEvent, const edm::EventSet
 
         // Running projected track uncertainty at this crossing, sqrt(H C H^T), taken
         // BEFORE any update on this layer but AFTER the multiple-scattering Q has
-        // been added. Identical construction to projSeedSig* above except that it
-        // uses the CURRENT covariance instead of CSeed, so the two together bracket
-        // exactly what the refit buys: naive seed cone vs outsideIn refit-order cone.
-        // Track-only, with no cluster CPE term, matching projSeedSig* semantics --
+        // been added. Identical construction to projOTSig* above except that it
+        // uses the CURRENT covariance instead of COT, so the two together bracket
+        // exactly what the refit buys: naive OT cone vs outsideIn refit-order cone.
+        // Track-only, with no cluster CPE term, matching projOTSig* semantics --
         // any consumer comparing against a cluster must add the cluster error itself.
         for (int k = 0; k < 2; ++k) {
           ROOT::Math::SVector<double, 5> Hrow;
@@ -2091,13 +2091,13 @@ void L1SmartPixelsTrackProducer::produce(edm::Event& iEvent, const edm::EventSet
         ++nUpdates;
       }  // layer loop
 
-      if (!seedCovOK || nAcceptedHits < digiRefitMinHits_) {
+      if (!otCovOK || nAcceptedHits < digiRefitMinHits_) {
         // 1:1 passthrough fallback (exact copy, original covariance included).
         // Sidecar: status bit0 unset, EMPTY hitInfo, zeros elsewhere (spec §2).
         outputTracks->push_back(*iterL1Track);
         smartpixels::SmartPixelsRefitTrackInfo pt;  // all zero / status bit0 unset
-        if (seedCovOK)
-          pt.status |= smartpixels::trackstatus::kSeedCovOK;
+        if (otCovOK)
+          pt.status |= smartpixels::trackstatus::kOTCovOK;
         pt.chi2IncXTot = 0.f;
         pt.chi2IncYTot = 0.f;
         pt.chi2IncAlphaTot = 0.f;
@@ -2133,11 +2133,11 @@ void L1SmartPixelsTrackProducer::produce(edm::Event& iEvent, const edm::EventSet
               static_cast<float>(drSumPullBeta2),                       // 8
               static_cast<float>(chi2RPhiTot),                          // 9
               static_cast<float>(chi2RZTot),                            // 10
-              static_cast<float>(a[0] - aSeed[0]),                      // 11 dRinv
-              static_cast<float>(a[1] - aSeed[1]),                      // 12 dPhi
-              static_cast<float>(a[2] - aSeed[2]),                      // 13 dTanl
-              static_cast<float>(a[3] - aSeed[3]),                      // 14 dZ0
-              static_cast<float>(a[4] - aSeed[4]),                      // 15 dD0
+              static_cast<float>(a[0] - aOT[0]),                      // 11 dRinv
+              static_cast<float>(a[1] - aOT[1]),                      // 12 dPhi
+              static_cast<float>(a[2] - aOT[2]),                      // 13 dTanl
+              static_cast<float>(a[3] - aOT[3]),                      // 14 dZ0
+              static_cast<float>(a[4] - aOT[4]),                      // 15 dD0
               static_cast<float>(iterL1Track->trkMVA1())};              // 16 seedTrkMVA1
           // v1 (spec §6a v1): append the INPUT track's classic-7 TrackQuality hw
           // features (indices 17-23), decoded bit-exactly as trkquality.py does
@@ -2181,7 +2181,7 @@ void L1SmartPixelsTrackProducer::produce(edm::Event& iEvent, const edm::EventSet
 
         // Finalize the per-track sidecar record (spec §2).
         drTrackInfo.status |= smartpixels::trackstatus::kRefitPerformed;
-        drTrackInfo.status |= smartpixels::trackstatus::kSeedCovOK;
+        drTrackInfo.status |= smartpixels::trackstatus::kOTCovOK;
         if (drAnyWindowTruncated)
           drTrackInfo.status |= smartpixels::trackstatus::kAnyWindowTruncated;
         drTrackInfo.nAcceptedHits = static_cast<uint8_t>(nAcceptedHits);
@@ -2189,25 +2189,25 @@ void L1SmartPixelsTrackProducer::produce(edm::Event& iEvent, const edm::EventSet
         drTrackInfo.layerHitMask = drLayerHitMask;  // popcount == nAcceptedHits (spec §2)
         drTrackInfo.maxWindowMult = static_cast<uint16_t>(drMaxWindowMult);
 
-        // chi2 of the ACCEPTED IT hits against seed vs refit parameters. The seed
-        // side reuses the stored projSeed* (same crossing, same module, already
+        // chi2 of the ACCEPTED IT hits against OT track vs refit parameters. The OT
+        // side reuses the stored projOT* (same crossing, same module, already
         // module-matched); the refit side re-projects the final helix and requires
         // the SAME module, so a hit whose module moved under the refit is skipped
         // rather than compared across frames.
         {
-          double c2Seed = 0., c2Refit = 0.;
-          bool seedOK = digiRefitStoreSeedProjection_;
+          double c2OT = 0., c2Refit = 0.;
+          bool otOK = digiRefitStoreOTProjection_;
           for (const auto& hrec : drHitInfo) {
             if (!(hrec.flags & smartpixels::hitflag::kHitAccepted))
               continue;
             if (!(hrec.sigX > 0.) || !(hrec.sigY > 0.))
               continue;
-            if (seedOK && hrec.projSeedLocalX > -900.f) {
-              const double dx = hrec.recoLocalX - hrec.projSeedLocalX;
-              const double dy = hrec.recoLocalY - hrec.projSeedLocalY;
-              c2Seed += dx * dx / (hrec.sigX * hrec.sigX) + dy * dy / (hrec.sigY * hrec.sigY);
+            if (otOK && hrec.projOTLocalX > -900.f) {
+              const double dx = hrec.recoLocalX - hrec.projOTLocalX;
+              const double dy = hrec.recoLocalY - hrec.projOTLocalY;
+              c2OT += dx * dx / (hrec.sigX * hrec.sigX) + dy * dy / (hrec.sigY * hrec.sigY);
             } else {
-              seedOK = false;
+              otOK = false;
             }
             const smartpixels::Crossing cr =
                 projector_.crossLayer(makeHelix(a), hrec.layer, drField, digiRefitPredAngleMaxAbs_);
@@ -2217,19 +2217,19 @@ void L1SmartPixelsTrackProducer::produce(edm::Event& iEvent, const edm::EventSet
               c2Refit += dx * dx / (hrec.sigX * hrec.sigX) + dy * dy / (hrec.sigY * hrec.sigY);
             }
           }
-          if (seedOK)
-            drTrackInfo.chi2ITAtSeed = static_cast<float>(c2Seed);
+          if (otOK)
+            drTrackInfo.chi2ITAtOT = static_cast<float>(c2OT);
           drTrackInfo.chi2ITAtRefit = static_cast<float>(c2Refit);
         }
 
-        // shiftChi2 and logDetRatio from the seed vs final covariance.
+        // shiftChi2 and logDetRatio from the OT vs final covariance.
         {
           ROOT::Math::SVector<double, 5> da;
           for (int i = 0; i < 5; ++i)
-            da[i] = a[i] - aSeed[i];
+            da[i] = a[i] - aOT[i];
           // SMatrix arithmetic yields expression templates; materialize before
           // Inverse/Det2, both of which need a concrete (and for Det2, mutable) matrix.
-          ROOT::Math::SMatrix<double, 5, 5, ROOT::Math::MatRepSym<double, 5>> dC = CSeed - C;
+          ROOT::Math::SMatrix<double, 5, 5, ROOT::Math::MatRepSym<double, 5>> dC = COT - C;
           int ifail = 0;
           const auto dCinv = dC.Inverse(ifail);
           if (ifail == 0) {
@@ -2237,14 +2237,14 @@ void L1SmartPixelsTrackProducer::produce(edm::Event& iEvent, const edm::EventSet
             if (std::isfinite(q) && q >= 0.)
               drTrackInfo.shiftChi2 = static_cast<float>(q);
           }
-          ROOT::Math::SMatrix<double, 5, 5, ROOT::Math::MatRepSym<double, 5>> Cs = CSeed, Cf = C;
-          double dSeed = 0., dRef = 0.;
-          if (!Cs.Det2(dSeed))
-            dSeed = -1.;
+          ROOT::Math::SMatrix<double, 5, 5, ROOT::Math::MatRepSym<double, 5>> Cs = COT, Cf = C;
+          double dOT = 0., dRef = 0.;
+          if (!Cs.Det2(dOT))
+            dOT = -1.;
           if (!Cf.Det2(dRef))
             dRef = -1.;
-          if (dSeed > 0. && dRef > 0.) {
-            const double lr = std::log(dSeed) - std::log(dRef);
+          if (dOT > 0. && dRef > 0.) {
+            const double lr = std::log(dOT) - std::log(dRef);
             if (std::isfinite(lr))
               drTrackInfo.logDetRatio = static_cast<float>(lr);
           }
@@ -2362,11 +2362,11 @@ void L1SmartPixelsTrackProducer::produce(edm::Event& iEvent, const edm::EventSet
     iEvent.put(std::move(sidecar), outputCollectionName_);
   }
 
-  auto seedLinks = std::make_unique<std::vector<TTTrackRef>>();
-  seedLinks->reserve(nInput);
+  auto otTrackLinks = std::make_unique<std::vector<TTTrackRef>>();
+  otTrackLinks->reserve(nInput);
   for (size_t i = 0; i < nInput; ++i)
-    seedLinks->emplace_back(TTTrackHandle, i);
-  iEvent.put(std::move(seedLinks), outputCollectionName_);
+    otTrackLinks->emplace_back(TTTrackHandle, i);
+  iEvent.put(std::move(otTrackLinks), outputCollectionName_);
   iEvent.put(std::move(outputTracks), outputCollectionName_);
 }  // end of produce()
 
@@ -2434,19 +2434,19 @@ void L1SmartPixelsTrackProducer::fillDescriptions(edm::ConfigurationDescriptions
                    "TMTT's KalmanMultiScattTerm convention and default value, but applied to the "
                    "STATE covariance rather than by inflating the measurement error, so the "
                    "emitted outCov is honest for downstream vertexing and tagging.");
-  desc.add<bool>("digiRefitStoreSeedProjection", true)
-      ->setComment("store projSeedLocalX/Y, projSeedSigX/Y and projSeedCotAlpha/Beta per crossing: "
-                   "the UNMODIFIED OT-seed projection and its covariance-derived cone. Costs one "
+  desc.add<bool>("digiRefitStoreOTProjection", true)
+      ->setComment("store projOTLocalX/Y, projOTSigX/Y and projOTCotAlpha/Beta per crossing: "
+                   "the UNMODIFIED OT track projection and its covariance-derived cone. Costs one "
                    "extra crossLayer plus a 5-point Jacobian per crossing. Needed by the "
                    "combinatorics study; disable for timing measurements.");
   desc.add<std::string>("digiRefitLayerOrder", "outsideIn")
       ->setComment("IT layer visit order for the Kalman loop: outsideIn (L4->L1, default) | insideOut (L1->L4). "
-                   "The seed is an OT-only fit, so the projection to a layer carries the unmodelled multiple "
+                   "The OT track is an OT-only fit, so the projection to a layer carries the unmodelled multiple "
                    "scattering accumulated between that layer and the innermost OT layer, which grows inward. "
                    "outsideIn commits the first update - the one that collapses the covariance - on the "
                    "least-extrapolated projection. insideOut instead takes the tightest r-phi window first. "
                    "Affects hit selection and the refit result, NOT the set of layers considered.");
-  desc.add<int>("digiRefitSeedNPar", 5)->setComment("seed-track parametrization for the KF: 4 | 5");
+  desc.add<int>("digiRefitOTNPar", 5)->setComment("OT track parameters entering the KF: 4 | 5");
   desc.add<std::string>("digiRefitPixelavAngleSet", "")->setComment("PixelAV angle-response correctionlib payload path (REQUIRED for digiRefit)");
   desc.add<std::string>("digiRefitSmarthitFakeSet", "")->setComment("optional smarthit_fake payload (inclusive noise-angle model)");
   desc.add<std::string>("digiRefitSmarthitTrueSet", "")

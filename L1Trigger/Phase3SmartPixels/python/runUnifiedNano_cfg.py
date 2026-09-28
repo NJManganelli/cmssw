@@ -9,7 +9,7 @@ Produces, in ONE cmsRun job on a GEN-SIM-DIGI-RAW-MINIAOD input:
   (2) the SmartPixels digiRefit track + refit-hit + stub tables for the chosen
       activeSP, layered via smartPixelsCoexist (trackInputMode='reemulateL1TrackFinding' -- the
       re-emulated tracklet tracks carry a real helixCovMat, which digiRefit
-      requires as its seed covariance; the covariance is native to this branch
+      requires as its starting covariance; the covariance is native to this branch
       via the cms-L1TK merge, no covMatrix backport needed).
 
 Input must be POST-cms-sw/cmssw#51503: that PR rewrote the persisted L1
@@ -273,7 +273,7 @@ process = addGenObjects(process)
 # trackInputMode='reemulateL1TrackFinding': this job re-runs L1TrackTrigger +
 # SimL1Emulator, so the in-process TT truth associators run and the re-emulated
 # tracklet tracks carry a real helixCovMat, which digiRefit requires as its
-# seed covariance.
+# starting covariance.
 # ---------------------------------------------------------------------------
 from L1Trigger.Phase3SmartPixels.customizeSmartPixels_cff import smartPixelsCoexist
 

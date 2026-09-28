@@ -116,5 +116,5 @@ expected direction without crashing:
   `DIGI:pdigi_valid,L1TrackTrigger,...`) so digis/simlinks/maps are self-consistent.
 - Angle payload: PixelAV stand-in from
   `python/validatePixelAVAngleSet.py --write-example` until the real fit arrives.
-- Seed collection: both `nPar=4` (standard prompt) and `nPar=5` (extended prompt
+- OT track collection: both `nPar=4` (standard prompt) and `nPar=5` (extended prompt
   + covariance, default) are run for the A/B comparison.

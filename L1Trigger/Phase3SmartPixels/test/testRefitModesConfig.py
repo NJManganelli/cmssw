@@ -115,7 +115,7 @@ _dr_prompt = "l1tSmartPixelsTrackProducerWdigiRefitAAII"
 check(hasattr(p_dr, _dr_prompt), "digiRefit prompt producer variant exists")
 _m = getattr(p_dr, _dr_prompt)
 check(_m.smartPixelsEmulatorMode.value() == "digiRefit", "mode set to digiRefit")
-check(_m.digiRefitSeedNPar.value() == 5, "seedNPar default is 5")
+check(_m.digiRefitOTNPar.value() == 5, "otNPar default is 5")
 check(_m.digiRefitUseAngles.value() == "alphaBeta", "useAngles default is alphaBeta (the production setting)")
 check(_m.smartPixelsRecHitInputTag.value() == "spixSmartPixelsRecHits",
       "refit reads the SmartPixelsRecHit product, not raw pixel rec hits")
@@ -438,8 +438,8 @@ _p, _chain = attachStubRebuildChain(p_direct, extendedTracks=False)
 check(_chain == _PROMPT_CHAIN,
       f"attachStubRebuildChain(extendedTracks=False) returns prompt chain (got {_chain})")
 
-# --- (g) promptHnpar (PRIME target: 5-par prompt seed) ----------------------
-print("[g] promptHnpar wiring (5-par prompt seed -> real 5x5 digiRefit seed cov)")
+# --- (g) promptHnpar (PRIME target: 5-par prompt OT track) ------------------
+print("[g] promptHnpar wiring (5-par prompt OT track -> real 5x5 digiRefit starting cov)")
 check(set(PROMPT_HNPAR_CHOICES) == {4, 5},
       "promptHnpar vocabulary is exactly {4, 5}")
 
@@ -455,7 +455,7 @@ def _build_ffs_hnpar(promptHnpar):
 
 
 # promptHnpar=5 -> PRIME target: prompt tracklet producer set to Hnpar=5, extended
-# stays 5, and the prompt digiRefit variant seeds seedNPar=5.
+# stays 5, and the prompt digiRefit variant uses otNPar=5.
 p_h5 = _build_ffs_hnpar(5)
 check(p_h5.l1tTTTracksFromTrackletEmulation.Hnpar.value() == 5,
       "promptHnpar=5 sets prompt l1tTTTracksFromTrackletEmulation.Hnpar = 5")
@@ -464,8 +464,8 @@ check(p_h5.l1tTTTracksFromTrackletEmulation.Extended.value() is False,
 check(p_h5.l1tTTTracksFromExtendedTrackletEmulation.Hnpar.value() == 5,
       "extended chain stays Hnpar = 5")
 _dr5 = getattr(p_h5, "l1tSmartPixelsTrackProducerWdigiRefitAAII")
-check(_dr5.digiRefitSeedNPar.value() == 5,
-      "prompt digiRefit variant seeds seedNPar=5 (prime target)")
+check(_dr5.digiRefitOTNPar.value() == 5,
+      "prompt digiRefit variant uses otNPar=5 (prime target)")
 
 # promptHnpar=4 (ablation only, still selectable) -> prompt Hnpar=4, d0 pinned.
 p_h4 = _build_ffs_hnpar(4)
@@ -540,8 +540,8 @@ _cox_tables = {m.name.value() for m in p_cox.producers_().values()
 check("L1TSmartPixelsTrackPassthrough" in _cox_tables
       and not _cox_tables & {"L1TSmartPixelsTrack", "L1TSmartPixelsExtTrack"},
       "smartPixelsCoexist writes suffixed variant tables only, never the canonical unsuffixed ones")
-check(not hasattr(p_cox, "l1tPh3SmartPixelsSeedLinkTable"),
-      "smartPixelsCoexist adds no unsuffixed seed-link table")
+check(not hasattr(p_cox, "l1tPh3SmartPixelsOTTrackLinkTable"),
+      "smartPixelsCoexist adds no unsuffixed OT-track link table")
 
 # coexist with the canonical SmartPixels tables (@SPTrk) raises
 p_coxtier = cms.Process("TEST")

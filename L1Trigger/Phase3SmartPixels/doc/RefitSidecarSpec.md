@@ -193,8 +193,8 @@ struct SmartPixelsRefitHitInfo {   // one entry per LAYER CROSSING attempted (no
 };
 
 struct SmartPixelsRefitTrackInfo { // one entry per track (refit or passthrough)
-  uint8_t  status;         // bit0 refit performed (else passthrough); bit1 seedCovOK;
-                           // bit2 RETIRED (was parametrized seed); bit3 anyWindowTruncated;
+  uint8_t  status;         // bit0 refit performed (else passthrough); bit1 otCovOK;
+                           // bit2 RETIRED (was the parametrized OT covariance); bit3 anyWindowTruncated;
                            // bits4-7 reserved
   uint8_t  nCrossings;     // valid layer crossings attempted
   uint8_t  nAcceptedHits;  // hits accepted into the KF
@@ -311,7 +311,7 @@ exact order; the model JSON's feature count is validated against it at load.
  8  sumPullBeta2
  9  chi2IncXTot + chi2IncAlphaTot   (the r-phi total; post-guard values, see 6b)
 10  chi2IncYTot + chi2IncBetaTot    (the r-z total)
-11  dRinv               (refit minus seed, this track)
+11  dRinv               (refit minus OT track, this track)
 12  dPhi
 13  dTanl
 14  dZ0
