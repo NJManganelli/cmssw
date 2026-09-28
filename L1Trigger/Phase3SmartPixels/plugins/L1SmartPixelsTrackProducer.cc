@@ -15,7 +15,7 @@
      Outputs (all under the instance outputCollectionName):
          std::vector<TTTrack> - the SmartPixels tracks
          std::vector<TTTrackRef> - per output track, the input (OT) track it was built from (null if none)
-         smartpixels::SmartPixelsRefitSidecar - digiRefit mode only
+         smartpixels::SmartPixelsRefitSidecar - seedlessRefit mode only
 */
 //
 // Original Author:  Nick Manganelli
@@ -33,7 +33,7 @@
 #include "FWCore/ParameterSet/interface/ParameterSet.h"
 #include "FWCore/ServiceRegistry/interface/Service.h"
 #include "FWCore/Utilities/interface/Exception.h"
-// digiRefit: shared projector + pixel digi/simlink formats. The angle-synthesis
+// seedlessRefit: shared projector + pixel digi/simlink formats. The angle-synthesis
 // throw is FACTORIZED OUT of compiled code into the payload (HashPRNG fused shift
 // compounds, doc/PixelAVAngleResponseSpec.md §3): synthesized angles are pure
 // correctionlib evaluates, deterministic per input tuple, no engine involved.
@@ -147,7 +147,7 @@ using namespace std;
 using namespace edm;
 
 namespace {
-  // Deterministic per-event seed for the digiRefit local RNG. FNV-1a 64-bit hash
+  // Deterministic per-event seed for the seedlessRefit local RNG. FNV-1a 64-bit hash
   // over the module label chars, then run/lumi/event folded in the SAME 1a step
   // (xor-then-multiply) so the result depends on (label, run, lumi, event) only.
   // This makes the angle-synthesis draw sequence identical for a given physics
@@ -340,32 +340,32 @@ private:
   std::string smartPixelsCorrectionSet_;
 
   // -----------------------------------------------------------------------------------------------
-  // digiRefit (Tier 2) configuration + machinery. Only used when
-  // smartPixelsEmulatorMode_ == "digiRefit"
+  // seedlessRefit (Tier 2) configuration + machinery. Only used when
+  // smartPixelsEmulatorMode_ == "seedlessRefit"
   // and doc/PixelAVAngleResponseSpec.md / doc/Phase2Acceptance.md.
   // Per-layer search half-widths [cm] ([layer-1], TBPX L1-L4). The rphi spread
   // of the beamline-constrained extrapolation GROWS outward (MS-compensation
   // bulge between origin anchor and OT stubs; PSimHit-verified), z shrinks.
-  std::vector<double> digiRefitWindowRPhi_;  // module-local x
-  std::vector<double> digiRefitWindowZ_;     // module-local y
-  int digiRefitMinHits_ = 1;            // min attached IT hits to emit a refit track
-  std::string digiRefitUseAngles_ = "alphaBeta";  // "none" | "alpha" | "alphaBeta"
-  int digiRefitMaxHitsPerWindow_ = 8;   // combinatorics truncation
-  double digiRefitClusterMergeFrac_ = 0.1;  // runner-up charge share that flags a merged cluster
-  int digiRefitMaxKFUpdates_ = 4;       // KF update / layer cap
-  std::string digiRefitGainMode_ = "full";     // "full" | "lut" (RESERVED -> throws)
+  std::vector<double> seedlessRefitWindowRPhi_;  // module-local x
+  std::vector<double> seedlessRefitWindowZ_;     // module-local y
+  int seedlessRefitMinHits_ = 1;            // min attached IT hits to emit a refit track
+  std::string seedlessRefitUseAngles_ = "alphaBeta";  // "none" | "alpha" | "alphaBeta"
+  int seedlessRefitMaxHitsPerWindow_ = 8;   // combinatorics truncation
+  double seedlessRefitClusterMergeFrac_ = 0.1;  // runner-up charge share that flags a merged cluster
+  int seedlessRefitMaxKFUpdates_ = 4;       // KF update / layer cap
+  std::string seedlessRefitGainMode_ = "full";     // "full" | "lut" (RESERVED -> throws)
   // KF numerical guards (spec §6b, FPGA-fidelity handles). Defaults chosen from
   // the PU chi2-tail investigation: physical |H| tops out ~200 and the physical
   // (incl. wrong-hit) chi2-increment ceiling is ~1.9e6, so 1e4/2e6 remove only the
   // non-physical grazing-crossing tail and leave the physical bulk untouched.
-  double digiRefitJacobianMaxAbs_ = 1.0e4;  // |H[k][j]| above this (or non-finite) zeroes the column
-  double digiRefitChi2UpdateGate_ = 2.0e6;  // scalar update with r^2/S above this is skipped entirely
+  double seedlessRefitJacobianMaxAbs_ = 1.0e4;  // |H[k][j]| above this (or non-finite) zeroes the column
+  double seedlessRefitChi2UpdateGate_ = 2.0e6;  // scalar update with r^2/S above this is skipped entirely
   // Grazing-angle clamps (spec §6b). measAngleMaxAbs is the LOAD-BEARING
   // clamp: a measured cotAlpha/cotBeta beyond it is not used by the refit (THAT
   // ANGLE only; the hit keeps its position). predAngleMaxAbs is secondary hygiene,
   // passed to the projector to reject non-physical predicted crossings.
-  double digiRefitMeasAngleMaxAbs_ = 12.0;  // |measured cot| above this: the angle is not used
-  double digiRefitPredAngleMaxAbs_ = 12.0;  // |predicted crossing cot| above this invalidates the crossing
+  double seedlessRefitMeasAngleMaxAbs_ = 12.0;  // |measured cot| above this: the angle is not used
+  double seedlessRefitPredAngleMaxAbs_ = 12.0;  // |predicted crossing cot| above this invalidates the crossing
   // Order in which IT layers are visited by the Kalman loop. The particle
   // traverses L1->L4 outward, but the OT track is an OT-only fit, so the state
   // enters from OUTSIDE: the projection to a layer carries the unmodelled
@@ -383,27 +383,27 @@ private:
   // hitting. Turn it off for timing runs.
   // Multiple-scattering process noise. TMTT's KalmanMultiScattTerm convention and
   // default: projected scattering angle = term / pT [rad] per traversed layer.
-  bool digiRefitApplyProcessNoise_ = true;
-  double digiRefitMultScattTerm_ = 0.00075;
-  bool digiRefitStoreOTProjection_ = true;
-  std::string digiRefitLayerOrder_ = "outsideIn";  // "outsideIn" (L4->L1, default) | "insideOut" (L1->L4)
-  int digiRefitOTNPar_ = 5;             // OT track parameters entering the KF: 4 (prompt) | 5
-  std::string digiRefitPixelavAngleSet_ = "";  // PixelAV angle sigma/bias/valid payload path
-  std::string digiRefitSmarthitTrueSet_ = "";  // smarthit_true payload (RESERVED): NOT consumed by Tier-2; warns if set
-  std::string digiRefitSmarthitFakeSet_ = "";  // inclusive noise-angle payload path
-  std::string digiRefitBdtModel_ = "";  // refit-quality BDT (conifer JSON); empty = keep original trkMVA1
+  bool seedlessRefitApplyProcessNoise_ = true;
+  double seedlessRefitMultScattTerm_ = 0.00075;
+  bool seedlessRefitStoreOTProjection_ = true;
+  std::string seedlessRefitLayerOrder_ = "outsideIn";  // "outsideIn" (L4->L1, default) | "insideOut" (L1->L4)
+  int seedlessRefitOTNPar_ = 5;             // OT track parameters entering the KF: 4 (prompt) | 5
+  std::string seedlessRefitPixelavAngleSet_ = "";  // PixelAV angle sigma/bias/valid payload path
+  std::string seedlessRefitSmarthitTrueSet_ = "";  // smarthit_true payload (RESERVED): NOT consumed by Tier-2; warns if set
+  std::string seedlessRefitSmarthitFakeSet_ = "";  // inclusive noise-angle payload path
+  std::string seedlessRefitBdtModel_ = "";  // refit-quality BDT (conifer JSON); empty = keep original trkMVA1
 
-  // Refit-quality BDT (spec §6a). Loaded at construction iff digiRefitBdtModel_
+  // Refit-quality BDT (spec §6a). Loaded at construction iff seedlessRefitBdtModel_
   // is non-empty; evaluated per refit track. The assembly is selected by the
   // loaded model's n_features: 17 = REFIT_BDT_FEATURES v0; 24 = v1 (v0 + the
   // classic-7 TrackQuality hw features of the INPUT track, spec §6a v1); any
   // other count throws at construction.
   static constexpr unsigned kRefitBdtNFeaturesV0 = 17;
   static constexpr unsigned kRefitBdtNFeaturesV1 = 24;
-  unsigned digiRefitBdtNFeatures_ = 0;  // set at load: 17 or 24
-  std::unique_ptr<conifer::BDT<float, float>> digiRefitBdt_;
+  unsigned seedlessRefitBdtNFeatures_ = 0;  // set at load: 17 or 24
+  std::unique_ptr<conifer::BDT<float, float>> seedlessRefitBdt_;
 
-  // Correctionlib refs for the PixelAV angle response (loaded iff digiRefit).
+  // Correctionlib refs for the PixelAV angle response (loaded iff seedlessRefit).
   // The synthesis throw lives in the payload (spec §3 fused shift compounds):
   //   cotX_meas = cotX_true + spix_angle_X_shift(layer,cotA,cotB,bLocalY, 1.0)
   //   accept iff spix_angle_valid_flat(in) < spix_angle_valid_prob(in)
@@ -413,22 +413,22 @@ private:
   // Shared helix propagation + TBPX module lookup (built lazily; one impl w/ analyzer).
   mutable smartpixels::HelixProjector projector_;
 
-  // Extra tokens for digiRefit (pixel digis, simlinks, sim tracks).
+  // Extra tokens for seedlessRefit (pixel digis, simlinks, sim tracks).
   edm::EDGetTokenT<SmartPixelsRecHitCollection> smartPixelsRecHitToken_;
   edm::EDGetTokenT<SmartPixelsRecHitTruthCollection> smartPixelsRecHitTruthToken_;
 
   // Loud-failure guard: count TP-matched tracks across the stream; if a
   // truth-required mode sees zero over a reasonable window, throw (no silent
   // passthrough). Reset/accumulated per stream; checked in endStream().
-  mutable unsigned long long digiRefitTracksSeen_ = 0;
-  mutable unsigned long long digiRefitTruthMatches_ = 0;
-  mutable unsigned long long digiRefitZeroCovTracks_ = 0;  // OT tracks with an all-zero helixCovMat
+  mutable unsigned long long seedlessRefitTracksSeen_ = 0;
+  mutable unsigned long long seedlessRefitTruthMatches_ = 0;
+  mutable unsigned long long seedlessRefitZeroCovTracks_ = 0;  // OT tracks with an all-zero helixCovMat
   // KF numerical-guard activation counters (spec §6b), reported at endStream.
-  mutable unsigned long long digiRefitGatedJacCols_ = 0;   // Jacobian columns zeroed by jacobianMaxAbs
-  mutable unsigned long long digiRefitGatedUpdates_ = 0;   // scalar updates skipped by chi2UpdateGate
-  mutable unsigned long long digiRefitProcessNoiseApplied_ = 0;  // crossings that received MS process noise
-  mutable unsigned long long digiRefitClampedMeasAngles_ = 0;  // candidate angles dropped by measAngleMaxAbs (spec §6b)
-  mutable unsigned long long digiRefitClampedPredCross_ = 0;   // predicted crossings rejected by predAngleMaxAbs (spec §6b)
+  mutable unsigned long long seedlessRefitGatedJacCols_ = 0;   // Jacobian columns zeroed by jacobianMaxAbs
+  mutable unsigned long long seedlessRefitGatedUpdates_ = 0;   // scalar updates skipped by chi2UpdateGate
+  mutable unsigned long long seedlessRefitProcessNoiseApplied_ = 0;  // crossings that received MS process noise
+  mutable unsigned long long seedlessRefitClampedMeasAngles_ = 0;  // candidate angles dropped by measAngleMaxAbs (spec §6b)
+  mutable unsigned long long seedlessRefitClampedPredCross_ = 0;   // predicted crossings rejected by predAngleMaxAbs (spec §6b)
 
   edm::InputTag L1TrackInputTag;       // L1 track collection
   edm::InputTag MCTruthTrackInputTag;  // MC truth collection
@@ -537,37 +537,37 @@ L1SmartPixelsTrackProducer::L1SmartPixelsTrackProducer(edm::ParameterSet const& 
   getTokenHPHSetup_ = esConsumes<hph::Setup, trackerDTC::SetupRcd>();
 
   // -----------------------------------------------------------------------------------------------
-  // digiRefit (Tier 2) configuration + payload loading. Kept entirely off the
+  // seedlessRefit (Tier 2) configuration + payload loading. Kept entirely off the
   // other modes' code paths.
-  if (smartPixelsEmulatorMode_ == "digiRefit") {
-    digiRefitWindowRPhi_ = iConfig.getParameter<std::vector<double>>("digiRefitWindowRPhi");
-    digiRefitWindowZ_ = iConfig.getParameter<std::vector<double>>("digiRefitWindowZ");
-    if (digiRefitWindowRPhi_.size() != 4 || digiRefitWindowZ_.size() != 4)
+  if (smartPixelsEmulatorMode_ == "seedlessRefit") {
+    seedlessRefitWindowRPhi_ = iConfig.getParameter<std::vector<double>>("seedlessRefitWindowRPhi");
+    seedlessRefitWindowZ_ = iConfig.getParameter<std::vector<double>>("seedlessRefitWindowZ");
+    if (seedlessRefitWindowRPhi_.size() != 4 || seedlessRefitWindowZ_.size() != 4)
       throw cms::Exception("Configuration")
-          << "digiRefitWindowRPhi/digiRefitWindowZ must each have exactly 4 per-layer entries, got "
-          << digiRefitWindowRPhi_.size() << "/" << digiRefitWindowZ_.size() << ".";
-    digiRefitMinHits_ = iConfig.getParameter<int>("digiRefitMinHits");
-    digiRefitUseAngles_ = iConfig.getParameter<std::string>("digiRefitUseAngles");
-    digiRefitMaxHitsPerWindow_ = iConfig.getParameter<int>("digiRefitMaxHitsPerWindow");
-    digiRefitClusterMergeFrac_ = iConfig.getParameter<double>("digiRefitClusterMergeFrac");
-    digiRefitMaxKFUpdates_ = iConfig.getParameter<int>("digiRefitMaxKFUpdates");
-    digiRefitGainMode_ = iConfig.getParameter<std::string>("digiRefitGainMode");
-    digiRefitJacobianMaxAbs_ = iConfig.getParameter<double>("digiRefitJacobianMaxAbs");
-    digiRefitChi2UpdateGate_ = iConfig.getParameter<double>("digiRefitChi2UpdateGate");
-    digiRefitMeasAngleMaxAbs_ = iConfig.getParameter<double>("digiRefitMeasAngleMaxAbs");
-    digiRefitPredAngleMaxAbs_ = iConfig.getParameter<double>("digiRefitPredAngleMaxAbs");
-    digiRefitApplyProcessNoise_ = iConfig.getParameter<bool>("digiRefitApplyProcessNoise");
-    digiRefitMultScattTerm_ = iConfig.getParameter<double>("digiRefitMultScattTerm");
-    digiRefitStoreOTProjection_ = iConfig.getParameter<bool>("digiRefitStoreOTProjection");
-    digiRefitLayerOrder_ = iConfig.getParameter<std::string>("digiRefitLayerOrder");
-    digiRefitOTNPar_ = iConfig.getParameter<int>("digiRefitOTNPar");
+          << "seedlessRefitWindowRPhi/seedlessRefitWindowZ must each have exactly 4 per-layer entries, got "
+          << seedlessRefitWindowRPhi_.size() << "/" << seedlessRefitWindowZ_.size() << ".";
+    seedlessRefitMinHits_ = iConfig.getParameter<int>("seedlessRefitMinHits");
+    seedlessRefitUseAngles_ = iConfig.getParameter<std::string>("seedlessRefitUseAngles");
+    seedlessRefitMaxHitsPerWindow_ = iConfig.getParameter<int>("seedlessRefitMaxHitsPerWindow");
+    seedlessRefitClusterMergeFrac_ = iConfig.getParameter<double>("seedlessRefitClusterMergeFrac");
+    seedlessRefitMaxKFUpdates_ = iConfig.getParameter<int>("seedlessRefitMaxKFUpdates");
+    seedlessRefitGainMode_ = iConfig.getParameter<std::string>("seedlessRefitGainMode");
+    seedlessRefitJacobianMaxAbs_ = iConfig.getParameter<double>("seedlessRefitJacobianMaxAbs");
+    seedlessRefitChi2UpdateGate_ = iConfig.getParameter<double>("seedlessRefitChi2UpdateGate");
+    seedlessRefitMeasAngleMaxAbs_ = iConfig.getParameter<double>("seedlessRefitMeasAngleMaxAbs");
+    seedlessRefitPredAngleMaxAbs_ = iConfig.getParameter<double>("seedlessRefitPredAngleMaxAbs");
+    seedlessRefitApplyProcessNoise_ = iConfig.getParameter<bool>("seedlessRefitApplyProcessNoise");
+    seedlessRefitMultScattTerm_ = iConfig.getParameter<double>("seedlessRefitMultScattTerm");
+    seedlessRefitStoreOTProjection_ = iConfig.getParameter<bool>("seedlessRefitStoreOTProjection");
+    seedlessRefitLayerOrder_ = iConfig.getParameter<std::string>("seedlessRefitLayerOrder");
+    seedlessRefitOTNPar_ = iConfig.getParameter<int>("seedlessRefitOTNPar");
     {
-      const std::string av = iConfig.getParameter<std::string>("digiRefitPixelavAngleSet");
-      digiRefitPixelavAngleSet_ = av.empty() ? std::string() : edm::FileInPath(av).fullPath();
+      const std::string av = iConfig.getParameter<std::string>("seedlessRefitPixelavAngleSet");
+      seedlessRefitPixelavAngleSet_ = av.empty() ? std::string() : edm::FileInPath(av).fullPath();
     }
     {
-      const std::string fk = iConfig.getParameter<std::string>("digiRefitSmarthitFakeSet");
-      digiRefitSmarthitFakeSet_ = fk.empty() ? std::string() : edm::FileInPath(fk).fullPath();
+      const std::string fk = iConfig.getParameter<std::string>("seedlessRefitSmarthitFakeSet");
+      seedlessRefitSmarthitFakeSet_ = fk.empty() ? std::string() : edm::FileInPath(fk).fullPath();
     }
     // "smarthit_true" payload (RESERVED): validated but deliberately NOT consumed
     // by Tier-2. Tier-2 takes position from the real digis and angle from the
@@ -576,11 +576,11 @@ L1SmartPixelsTrackProducer::L1SmartPixelsTrackProducer(edm::ParameterSet const& 
     // which the digitizer cannot express. Resolve the path (so a bad path still fails
     // loudly), warn LOUDLY if set, and load nothing.
     {
-      const std::string st = iConfig.getParameter<std::string>("digiRefitSmarthitTrueSet");
-      digiRefitSmarthitTrueSet_ = st.empty() ? std::string() : edm::FileInPath(st).fullPath();
-      if (!digiRefitSmarthitTrueSet_.empty())
+      const std::string st = iConfig.getParameter<std::string>("seedlessRefitSmarthitTrueSet");
+      seedlessRefitSmarthitTrueSet_ = st.empty() ? std::string() : edm::FileInPath(st).fullPath();
+      if (!seedlessRefitSmarthitTrueSet_.empty())
         edm::LogWarning("SmartPixelsStackAUnused")
-            << "digiRefit: smarthitTrueSet was provided (" << digiRefitSmarthitTrueSet_
+            << "seedlessRefit: smarthitTrueSet was provided (" << seedlessRefitSmarthitTrueSet_
             << ") but is NOT consumed by Tier-2 and is being IGNORED. Tier-2 takes hit position "
                "from the real pixel digis and hit angle from the PixelAV angle-response payload; "
                "the smarthit_true payload only characterizes true hits. This config key is RESERVED "
@@ -588,66 +588,66 @@ L1SmartPixelsTrackProducer::L1SmartPixelsTrackProducer(edm::ParameterSet const& 
                "which is not yet wired. No smarthit_true payload will be loaded.";
     }
     {
-      const std::string bm = iConfig.getParameter<std::string>("digiRefitBdtModel");
-      digiRefitBdtModel_ = bm.empty() ? std::string() : edm::FileInPath(bm).fullPath();
+      const std::string bm = iConfig.getParameter<std::string>("seedlessRefitBdtModel");
+      seedlessRefitBdtModel_ = bm.empty() ? std::string() : edm::FileInPath(bm).fullPath();
     }
 
-    if (digiRefitGainMode_ == "lut")
+    if (seedlessRefitGainMode_ == "lut")
       throw cms::Exception("NotImplemented")
-          << "digiRefit gainMode='lut' (table-driven Kalman gains) is a reserved placeholder; "
+          << "seedlessRefit gainMode='lut' (table-driven Kalman gains) is a reserved placeholder; "
              "use gainMode='full'.";
-    if (digiRefitLayerOrder_ != "outsideIn" && digiRefitLayerOrder_ != "insideOut")
+    if (seedlessRefitLayerOrder_ != "outsideIn" && seedlessRefitLayerOrder_ != "insideOut")
       throw cms::Exception("Configuration")
-          << "digiRefit layerOrder='" << digiRefitLayerOrder_
+          << "seedlessRefit layerOrder='" << seedlessRefitLayerOrder_
           << "' is not recognized; use 'outsideIn' (L4->L1) or 'insideOut' (L1->L4).";
-    if (digiRefitOTNPar_ != 4 && digiRefitOTNPar_ != 5)
-      throw cms::Exception("Configuration") << "digiRefit otNPar must be 4 or 5.";
-    if (digiRefitUseAngles_ != "none" && digiRefitUseAngles_ != "alpha" && digiRefitUseAngles_ != "alphaBeta")
-      throw cms::Exception("Configuration") << "digiRefit useAngles='" << digiRefitUseAngles_ << "' invalid.";
-    if (!(digiRefitJacobianMaxAbs_ > 0.))
+    if (seedlessRefitOTNPar_ != 4 && seedlessRefitOTNPar_ != 5)
+      throw cms::Exception("Configuration") << "seedlessRefit otNPar must be 4 or 5.";
+    if (seedlessRefitUseAngles_ != "none" && seedlessRefitUseAngles_ != "alpha" && seedlessRefitUseAngles_ != "alphaBeta")
+      throw cms::Exception("Configuration") << "seedlessRefit useAngles='" << seedlessRefitUseAngles_ << "' invalid.";
+    if (!(seedlessRefitJacobianMaxAbs_ > 0.))
       throw cms::Exception("Configuration")
-          << "digiRefitJacobianMaxAbs must be a positive double, got " << digiRefitJacobianMaxAbs_ << ".";
-    if (!(digiRefitChi2UpdateGate_ > 0.))
+          << "seedlessRefitJacobianMaxAbs must be a positive double, got " << seedlessRefitJacobianMaxAbs_ << ".";
+    if (!(seedlessRefitChi2UpdateGate_ > 0.))
       throw cms::Exception("Configuration")
-          << "digiRefitChi2UpdateGate must be a positive double, got " << digiRefitChi2UpdateGate_ << ".";
-    if (!(digiRefitMeasAngleMaxAbs_ > 0.))
+          << "seedlessRefitChi2UpdateGate must be a positive double, got " << seedlessRefitChi2UpdateGate_ << ".";
+    if (!(seedlessRefitMeasAngleMaxAbs_ > 0.))
       throw cms::Exception("Configuration")
-          << "digiRefitMeasAngleMaxAbs must be a positive double, got " << digiRefitMeasAngleMaxAbs_ << ".";
-    if (!(digiRefitPredAngleMaxAbs_ > 0.))
+          << "seedlessRefitMeasAngleMaxAbs must be a positive double, got " << seedlessRefitMeasAngleMaxAbs_ << ".";
+    if (!(seedlessRefitPredAngleMaxAbs_ > 0.))
       throw cms::Exception("Configuration")
-          << "digiRefitPredAngleMaxAbs must be a positive double, got " << digiRefitPredAngleMaxAbs_ << ".";
+          << "seedlessRefitPredAngleMaxAbs must be a positive double, got " << seedlessRefitPredAngleMaxAbs_ << ".";
 
     // Refit-quality BDT (spec §6a): load the conifer model at construction and
     // validate its feature count against REFIT_BDT_FEATURES v0 (17). conifer's
     // own decision_function() only assert()s the count (compiled out in opt
     // builds), so we read n_features from the JSON and throw LOUDLY on mismatch.
-    if (!digiRefitBdtModel_.empty()) {
-      std::ifstream ifs(digiRefitBdtModel_);
+    if (!seedlessRefitBdtModel_.empty()) {
+      std::ifstream ifs(seedlessRefitBdtModel_);
       if (!ifs.good())
         throw cms::Exception("Configuration")
-            << "digiRefitBdtModel could not be opened: " << digiRefitBdtModel_;
+            << "seedlessRefitBdtModel could not be opened: " << seedlessRefitBdtModel_;
       unsigned nFeat = 0;
       try {
         const nlohmann::json j = nlohmann::json::parse(ifs);
         nFeat = j.at("n_features").get<unsigned>();
       } catch (const std::exception& e) {
         throw cms::Exception("Configuration")
-            << "digiRefitBdtModel " << digiRefitBdtModel_
+            << "seedlessRefitBdtModel " << seedlessRefitBdtModel_
             << " is not a valid conifer JSON (n_features unreadable): " << e.what();
       }
       if (nFeat != kRefitBdtNFeaturesV0 && nFeat != kRefitBdtNFeaturesV1)
         throw cms::Exception("Configuration")
-            << "digiRefitBdtModel " << digiRefitBdtModel_ << " has n_features=" << nFeat
+            << "seedlessRefitBdtModel " << seedlessRefitBdtModel_ << " has n_features=" << nFeat
             << " but REFIT_BDT_FEATURES requires exactly " << kRefitBdtNFeaturesV0 << " (v0) or "
             << kRefitBdtNFeaturesV1 << " (v1).";
-      digiRefitBdtNFeatures_ = nFeat;
-      digiRefitBdt_ = std::make_unique<conifer::BDT<float, float>>(digiRefitBdtModel_);
+      seedlessRefitBdtNFeatures_ = nFeat;
+      seedlessRefitBdt_ = std::make_unique<conifer::BDT<float, float>>(seedlessRefitBdtModel_);
     }
 
     // Angle-synthesis randomness is PAYLOAD-SIDE (HashPRNG fused shift compounds,
     // spec §3): deterministic per input tuple, replay-identical, no engine. A local
     // engine (seeded per produce() from hash(module label, run, lumi, event), see
-    // digiRefitSeed()) is created ONLY when the optional smarthitFakeSet noise-angle
+    // seedlessRefitSeed()) is created ONLY when the optional smarthitFakeSet noise-angle
     // model is configured -- its inverse-CDF quantile draws still need a uniform
     // stream. The RandomNumberGeneratorService is deliberately NOT used
     // (its per-stream engine makes outputs order-dependent).
@@ -663,10 +663,10 @@ L1SmartPixelsTrackProducer::L1SmartPixelsTrackProducer(edm::ParameterSet const& 
   // track not built from an OT track. Explicit even while the 1:1 contract makes it the identity.
   produces<std::vector<TTTrackRef>>(outputCollectionName_);
 
-  // digiRefit sidecar: one product per refit track collection (spec §2), same
+  // seedlessRefit sidecar: one product per refit track collection (spec §2), same
   // instance label as the tracks so downstream adapters resolve them together
   // and rely on the 1:1 row-sync invariant (spec §1).
-  if (smartPixelsEmulatorMode_ == "digiRefit")
+  if (smartPixelsEmulatorMode_ == "seedlessRefit")
     produces<smartpixels::SmartPixelsRefitSidecar>(outputCollectionName_);
 
   // -----------------------------------------------------------------------------------------------
@@ -706,28 +706,28 @@ L1SmartPixelsTrackProducer::~L1SmartPixelsTrackProducer() {
 void L1SmartPixelsTrackProducer::beginStream(edm::StreamID) {
 }
 void L1SmartPixelsTrackProducer::endStream() {
-  // Loud-failure guard: truth-required digiRefit must never silently degrade to
+  // Loud-failure guard: truth-required seedlessRefit must never silently degrade to
   // per-track passthrough (stale/mismatched maps or a wrong trackInputMode would
   // otherwise silently break every downstream study).
-  if (smartPixelsEmulatorMode_ == "digiRefit" && digiRefitTracksSeen_ > 0) {
+  if (smartPixelsEmulatorMode_ == "seedlessRefit" && seedlessRefitTracksSeen_ > 0) {
     // KF numerical-guard activation summary (spec §6b). These count the
     // non-physical grazing-crossing pathologies removed by the two guards.
     edm::LogVerbatim("SmartPixelsTrackProducer")
-        << "digiRefit KF guards: jacobianMaxAbs zeroed " << digiRefitGatedJacCols_
-        << " Jacobian column(s); chi2UpdateGate skipped " << digiRefitGatedUpdates_
-        << " scalar update(s); measAngleMaxAbs dropped " << digiRefitClampedMeasAngles_
-        << " candidate angle(s); predAngleMaxAbs rejected " << digiRefitClampedPredCross_
-        << " predicted crossing(s) over " << digiRefitTracksSeen_ << " tracks.";
-    if (digiRefitTruthMatches_ == 0)
+        << "seedlessRefit KF guards: jacobianMaxAbs zeroed " << seedlessRefitGatedJacCols_
+        << " Jacobian column(s); chi2UpdateGate skipped " << seedlessRefitGatedUpdates_
+        << " scalar update(s); measAngleMaxAbs dropped " << seedlessRefitClampedMeasAngles_
+        << " candidate angle(s); predAngleMaxAbs rejected " << seedlessRefitClampedPredCross_
+        << " predicted crossing(s) over " << seedlessRefitTracksSeen_ << " tracks.";
+    if (seedlessRefitTruthMatches_ == 0)
       throw cms::Exception("SmartPixelsTruthMissing")
-          << "digiRefit processed " << digiRefitTracksSeen_
+          << "seedlessRefit processed " << seedlessRefitTracksSeen_
           << " tracks with ZERO truth (TP) matches. The TTTrackAssociationMap almost certainly "
              "does not correspond to the input track collection (stale map + remade tracks, or "
              "wrong trackInputMode). Run reemulateL1TrackFinding (L1TrackTrigger re-run on the input digis) so tracks, "
              "digis, simlinks and maps are self-consistent.";
-    if (digiRefitZeroCovTracks_ == digiRefitTracksSeen_)
+    if (seedlessRefitZeroCovTracks_ == seedlessRefitTracksSeen_)
       throw cms::Exception("SmartPixelsOTCovMissing")
-          << "ALL " << digiRefitTracksSeen_
+          << "ALL " << seedlessRefitTracksSeen_
           << " OT tracks carried an all-zero helixCovMat, so the refit has no OT track uncertainty "
              "to start from. These look like schema-evolved old-layout file tracks. Run "
              "trackInputMode=reemulateL1TrackFinding (or rebuildTracksFromStubs) so the in-job fit "
@@ -788,7 +788,7 @@ void L1SmartPixelsTrackProducer::produce(edm::Event& iEvent, const edm::EventSet
   const hph::Setup* hphSetup = hphHandle.product();
 
   // -----------------------------------------------------------------------------------------------
-  // digiRefit (Tier 2) per-event inputs: real pixel digis + simlinks, SimTrack
+  // seedlessRefit (Tier 2) per-event inputs: real pixel digis + simlinks, SimTrack
   // origin momenta (parent-angle synthesis), shared projector, local RNG engine,
   // and the per-collection refit sidecar (spec §2).
   edm::Handle<SmartPixelsRecHitCollection> drRecHits;
@@ -797,7 +797,7 @@ void L1SmartPixelsTrackProducer::produce(edm::Event& iEvent, const edm::EventSet
   std::unordered_map<uint32_t, unsigned> drClusterBaseIdx;
   std::array<bool, smartpixels::kMaxSurfaceCode + 1> drActiveSurface{};
   auto sidecar = std::make_unique<smartpixels::SmartPixelsRefitSidecar>();
-  if (smartPixelsEmulatorMode_ == "digiRefit") {
+  if (smartPixelsEmulatorMode_ == "seedlessRefit") {
     iEvent.getByToken(smartPixelsRecHitToken_, drRecHits);
     iEvent.getByToken(smartPixelsRecHitTruthToken_, drRecHitTruth);
     edm::Handle<std::vector<TrackingParticle>> drTPs;
@@ -814,7 +814,7 @@ void L1SmartPixelsTrackProducer::produce(edm::Event& iEvent, const edm::EventSet
     drActiveSurface = smartpixels::activeSurfaces(smartPixelsActiveLayers_);
     if (std::none_of(drActiveSurface.begin(), drActiveSurface.end(), [](bool b) { return b; }))
       throw cms::Exception("Configuration")
-          << "digiRefit requires at least one active layer (smartPixelsActiveLayers='"
+          << "seedlessRefit requires at least one active layer (smartPixelsActiveLayers='"
           << smartPixelsActiveLayers_ << "').";
     projector_.build(*theTrackerGeom, *tTopo, 4);
     // No RNG here any more. Angle synthesis moved to SmartPixelsRecHitProducer,
@@ -1507,19 +1507,19 @@ void L1SmartPixelsTrackProducer::produce(edm::Event& iEvent, const edm::EventSet
 	} // end debug logging
       }
     } // end correctionlibRegression path
-    else if(smartPixelsEmulatorMode_ == "digiRefit") {
+    else if(smartPixelsEmulatorMode_ == "seedlessRefit") {
       // ------------------------------------------------------------------------------------------
       // Tier-2 interim refit: project the OT track into BPIX, window-collect the
       // REAL pixel digis, classify each via PixelDigiSimLink, synthesize angle
       // measurements (parent-truth incidence ⊕ PixelAV response payload), then
       // Kalman-update the OT track helix, starting from its own covariance.
       // Exactly one output track per input track (refit or passthrough fallback).
-      ++digiRefitTracksSeen_;
+      ++seedlessRefitTracksSeen_;
       if (!my_tp.isNull())
-        ++digiRefitTruthMatches_;
+        ++seedlessRefitTruthMatches_;
 
-      const bool useAlpha = (digiRefitUseAngles_ != "none");
-      const bool useBeta = (digiRefitUseAngles_ == "alphaBeta");
+      const bool useAlpha = (seedlessRefitUseAngles_ != "none");
+      const bool useBeta = (seedlessRefitUseAngles_ == "alphaBeta");
 
       // Truth identity of THIS track, for same-TP vs other-TP digi classification.
       // (Class does not change the measurement model here — other-TP digis carry
@@ -1551,7 +1551,7 @@ void L1SmartPixelsTrackProducer::produce(edm::Event& iEvent, const edm::EventSet
       a[1] = iterL1Track->momentum().phi();
       a[2] = iterL1Track->tanL();
       a[3] = iterL1Track->z0();
-      a[4] = (digiRefitOTNPar_ == 5 && iterL1Track->nFitPars() == 5) ? tmp_trk_d0 : 0.0;
+      a[4] = (seedlessRefitOTNPar_ == 5 && iterL1Track->nFitPars() == 5) ? tmp_trk_d0 : 0.0;
       // Matched-TP identity, for joining clusters to the track that owns them.
       if (!drMatchedSimIds.empty()) {
         const auto tit =
@@ -1583,11 +1583,11 @@ void L1SmartPixelsTrackProducer::produce(edm::Event& iEvent, const edm::EventSet
           // back to passthrough for this track and count it — endStream throws
           // if EVERY track looked like this (wrong trackInputMode).
           otCovOK = false;
-          ++digiRefitZeroCovTracks_;
+          ++seedlessRefitZeroCovTracks_;
         }
       }
       // 4-par OT tracks carry no d0 information: weak prior so the IT hits determine d0.
-      if (digiRefitOTNPar_ == 4 || !(C(4, 4) > 0.))
+      if (seedlessRefitOTNPar_ == 4 || !(C(4, 4) > 0.))
         C(4, 4) = std::max(C(4, 4), 0.25);  // (0.5 cm)^2
 
       // OT covariance snapshot, taken AFTER the weak-d0 prior so it is the
@@ -1619,14 +1619,14 @@ void L1SmartPixelsTrackProducer::produce(edm::Event& iEvent, const edm::EventSet
       int drPrevLayer = 0;
       double drPrevLayerR = -1.;
 
-      // Visit order per digiRefitLayerOrder_. Sidecar hitInfo records are pushed
+      // Visit order per seedlessRefitLayerOrder_. Sidecar hitInfo records are pushed
       // in VISIT order, so their sequence documents how the fit actually
       // proceeded; every consumer selects on hitInfo.layer, never on position.
       const int drNLayers = projector_.nLayers();
-      const bool drOutsideIn = (digiRefitLayerOrder_ == "outsideIn");
+      const bool drOutsideIn = (seedlessRefitLayerOrder_ == "outsideIn");
       for (int step = 0; step < drNLayers; ++step) {
         const int layer = drOutsideIn ? (drNLayers - step) : (step + 1);
-        if (!otCovOK || nUpdates >= digiRefitMaxKFUpdates_)
+        if (!otCovOK || nUpdates >= seedlessRefitMaxKFUpdates_)
           break;
         const unsigned surface = static_cast<unsigned>(layer);  // projector surfaces are TBPX layers
         if (!drActiveSurface[surface])
@@ -1672,14 +1672,14 @@ void L1SmartPixelsTrackProducer::produce(edm::Event& iEvent, const edm::EventSet
         // crossing AT the kink by a median 33 um and inflated the lever arm to
         // ~(r + r_s). It also used theta = multScattTerm / pT with d(tanL) = theta
         // sec^2, overstating the dip term by sec(lam).
-        if (digiRefitApplyProcessNoise_ && nUpdates > 0 && drPrevLayerR > 0.) {
+        if (seedlessRefitApplyProcessNoise_ && nUpdates > 0 && drPrevLayerR > 0.) {
           const double ptNow = std::abs(MagConstant * b_field / (a[0] * 100.0));
           const int nCross = std::max(1, std::abs(layer - drPrevLayer));
           if (ptNow > 1e-3) {
             const double sec2 = 1.0 + a[2] * a[2];
             const double sec = std::sqrt(sec2);
             const double pNow = ptNow * sec;
-            const double theta0 = digiRefitMultScattTerm_ / pNow;  // projected space angle
+            const double theta0 = seedlessRefitMultScattTerm_ / pNow;  // projected space angle
             const double var = theta0 * theta0 * static_cast<double>(nCross);
             const double rs = drPrevLayerR;  // kink sits at the material, i.e. the
                                              // last layer crossed, giving the lever
@@ -1690,12 +1690,12 @@ void L1SmartPixelsTrackProducer::produce(edm::Event& iEvent, const edm::EventSet
             for (int i = 0; i < 5; ++i)
               for (int j = 0; j <= i; ++j)
                 C(i, j) += var * (jT[i] * jT[j] + jL[i] * jL[j]);
-            ++digiRefitProcessNoiseApplied_;
+            ++seedlessRefitProcessNoiseApplied_;
           }
         }
 
         const smartpixels::Crossing cx =
-            projector_.crossLayer(makeHelix(a), layer, drField, digiRefitPredAngleMaxAbs_);
+            projector_.crossLayer(makeHelix(a), layer, drField, seedlessRefitPredAngleMaxAbs_);
         if (!cx.valid) {
           // Predicted-angle clamp (spec §6b hygiene) or genuine off-acceptance.
           // Count the clamp activations for the endStream report (attribute a
@@ -1703,9 +1703,9 @@ void L1SmartPixelsTrackProducer::produce(edm::Event& iEvent, const edm::EventSet
           // been valid but exceeded the predicted-angle bound).
           const smartpixels::Crossing cxUnclamped = projector_.crossLayer(makeHelix(a), layer, drField, 0.);
           if (cxUnclamped.valid &&
-              (std::abs(cxUnclamped.cotAlpha) > digiRefitPredAngleMaxAbs_ ||
-               std::abs(cxUnclamped.cotBeta) > digiRefitPredAngleMaxAbs_))
-            ++digiRefitClampedPredCross_;
+              (std::abs(cxUnclamped.cotAlpha) > seedlessRefitPredAngleMaxAbs_ ||
+               std::abs(cxUnclamped.cotBeta) > seedlessRefitPredAngleMaxAbs_))
+            ++seedlessRefitClampedPredCross_;
           continue;
         }
         const PixelGeomDetUnit* pixDet = cx.det;
@@ -1729,9 +1729,9 @@ void L1SmartPixelsTrackProducer::produce(edm::Event& iEvent, const edm::EventSet
         // from the helix, and the OT track may cross a DIFFERENT module than the
         // updated state does -- silently comparing across modules would corrupt
         // every band count derived from it.
-        if (digiRefitStoreOTProjection_) {
+        if (seedlessRefitStoreOTProjection_) {
           const smartpixels::Crossing cs =
-              projector_.crossLayer(makeHelix(aOT), layer, drField, digiRefitPredAngleMaxAbs_);
+              projector_.crossLayer(makeHelix(aOT), layer, drField, seedlessRefitPredAngleMaxAbs_);
           if (cs.valid && cs.detId == cx.detId) {
             hi.projOTLocalX = static_cast<float>(cs.local.x());
             hi.projOTLocalY = static_cast<float>(cs.local.y());
@@ -1748,7 +1748,7 @@ void L1SmartPixelsTrackProducer::produce(edm::Event& iEvent, const edm::EventSet
                 ROOT::Math::SVector<double, 5> ap = aOT;
                 ap[j] += sgn * kEpsS[j];
                 const smartpixels::Crossing cp =
-                    projector_.crossLayer(makeHelix(ap), layer, drField, digiRefitPredAngleMaxAbs_);
+                    projector_.crossLayer(makeHelix(ap), layer, drField, seedlessRefitPredAngleMaxAbs_);
                 if (!cp.valid || cp.detId != cs.detId)
                   continue;
                 const double inv = 1.0 / (sgn * kEpsS[j]);
@@ -1761,7 +1761,7 @@ void L1SmartPixelsTrackProducer::produce(edm::Event& iEvent, const edm::EventSet
               bool ok = true;
               for (int j = 0; j < 5; ++j) {
                 Hrow[j] = Hs[k][j];
-                if (!std::isfinite(Hs[k][j]) || std::abs(Hs[k][j]) > digiRefitJacobianMaxAbs_)
+                if (!std::isfinite(Hs[k][j]) || std::abs(Hs[k][j]) > seedlessRefitJacobianMaxAbs_)
                   ok = false;
               }
               if (!ok)
@@ -1799,7 +1799,7 @@ void L1SmartPixelsTrackProducer::produce(edm::Event& iEvent, const edm::EventSet
             ROOT::Math::SVector<double, 5> ap = a;
             ap[j] += sgn * kEps[j];
             const smartpixels::Crossing cp =
-                projector_.crossLayer(makeHelix(ap), layer, drField, digiRefitPredAngleMaxAbs_);
+                projector_.crossLayer(makeHelix(ap), layer, drField, seedlessRefitPredAngleMaxAbs_);
             if (!cp.valid || cp.detId != cx.detId)
               continue;
             const double inv = 1.0 / (sgn * kEps[j]);
@@ -1819,12 +1819,12 @@ void L1SmartPixelsTrackProducer::produce(edm::Event& iEvent, const edm::EventSet
         for (int j = 0; j < 5; ++j) {
           bool bad = false;
           for (int k = 0; k < 4; ++k)
-            if (!std::isfinite(H[k][j]) || std::abs(H[k][j]) > digiRefitJacobianMaxAbs_) {
+            if (!std::isfinite(H[k][j]) || std::abs(H[k][j]) > seedlessRefitJacobianMaxAbs_) {
               bad = true;
               break;
             }
           if (bad) {
-            ++digiRefitGatedJacCols_;
+            ++seedlessRefitGatedJacCols_;
             for (int k = 0; k < 4; ++k)
               H[k][j] = 0.;
           }
@@ -1890,13 +1890,13 @@ void L1SmartPixelsTrackProducer::produce(edm::Event& iEvent, const edm::EventSet
           int rhPos = -1;
           for (const auto& rh : *rhSet) {
             ++rhPos;
-            if (static_cast<int>(cands.size()) >= digiRefitMaxHitsPerWindow_) {
+            if (static_cast<int>(cands.size()) >= seedlessRefitMaxHitsPerWindow_) {
               windowTruncated = true;  // combinatorics truncation in readout order (hardware-like)
               break;
             }
             const LocalPoint dlp = rh.localPosition();
-            if (std::abs(dlp.x() - cx.local.x()) > digiRefitWindowRPhi_[layer - 1] ||
-                std::abs(dlp.y() - cx.local.y()) > digiRefitWindowZ_[layer - 1])
+            if (std::abs(dlp.x() - cx.local.x()) > seedlessRefitWindowRPhi_[layer - 1] ||
+                std::abs(dlp.y() - cx.local.y()) > seedlessRefitWindowZ_[layer - 1])
               continue;
 
             const auto& tr = (*trSet)[rhPos];
@@ -1927,9 +1927,9 @@ void L1SmartPixelsTrackProducer::produce(edm::Event& iEvent, const edm::EventSet
             cand.cotB = rh.cotBeta();
             cand.sigA = rh.sigAlpha();
             cand.sigB = rh.sigBeta();
-            cand.hasA = rh.hasAlpha() && std::abs(cand.cotA) <= digiRefitMeasAngleMaxAbs_;
-            cand.hasB = rh.hasBeta() && std::abs(cand.cotB) <= digiRefitMeasAngleMaxAbs_;
-            digiRefitClampedMeasAngles_ += (rh.hasAlpha() && !cand.hasA) + (rh.hasBeta() && !cand.hasB);
+            cand.hasA = rh.hasAlpha() && std::abs(cand.cotA) <= seedlessRefitMeasAngleMaxAbs_;
+            cand.hasB = rh.hasBeta() && std::abs(cand.cotB) <= seedlessRefitMeasAngleMaxAbs_;
+            seedlessRefitClampedMeasAngles_ += (rh.hasAlpha() && !cand.hasA) + (rh.hasBeta() && !cand.hasB);
 
             // TRUTH-ONLY class, by TrackingParticle IDENTITY rather than SimTrack
             // id: a TP owns several g4Tracks. 2 = no TP at all (noise-like).
@@ -2007,8 +2007,8 @@ void L1SmartPixelsTrackProducer::produce(edm::Event& iEvent, const edm::EventSet
           // stays sentinel. This is a numerical-pathology gate, NOT an outlier/quality
           // gate -- physical wrong-hit contamination (r^2/S <= ~2e6 on the PU study) is
           // the BDT's signal and is left untouched. The hit still counts as accepted.
-          if (chi2candidate > digiRefitChi2UpdateGate_) {
-            ++digiRefitGatedUpdates_;
+          if (chi2candidate > seedlessRefitChi2UpdateGate_) {
+            ++seedlessRefitGatedUpdates_;
             return;
           }
           pull[k] = r / std::sqrt(S);
@@ -2091,7 +2091,7 @@ void L1SmartPixelsTrackProducer::produce(edm::Event& iEvent, const edm::EventSet
         ++nUpdates;
       }  // layer loop
 
-      if (!otCovOK || nAcceptedHits < digiRefitMinHits_) {
+      if (!otCovOK || nAcceptedHits < seedlessRefitMinHits_) {
         // 1:1 passthrough fallback (exact copy, original covariance included).
         // Sidecar: status bit0 unset, EMPTY hitInfo, zeros elsewhere (spec §2).
         outputTracks->push_back(*iterL1Track);
@@ -2116,7 +2116,7 @@ void L1SmartPixelsTrackProducer::produce(edm::Event& iEvent, const edm::EventSet
         // track. Empty model -> keep the input track's trkMVA1 (current behavior).
         // Passthrough tracks are never scored (handled in the fallback branch).
         double refitTrkMVA1 = iterL1Track->trkMVA1();
-        if (digiRefitBdt_) {
+        if (seedlessRefitBdt_) {
           // Features 9/10 are the r-phi (X+Alpha) and r-z (Y+Beta) combinations.
           const auto posOr0 = [](float v) { return (v < -900.f) ? 0. : static_cast<double>(v); };
           const double chi2RPhiTot = posOr0(drTrackInfo.chi2IncXTot) + posOr0(drTrackInfo.chi2IncAlphaTot);
@@ -2143,7 +2143,7 @@ void L1SmartPixelsTrackProducer::produce(edm::Event& iEvent, const edm::EventSet
           // features (indices 17-23), decoded bit-exactly as trkquality.py does
           // on the raw nano hw columns (getXxxBits() -> two's-complement / raw
           // bin index; nStubs = getStubRefs().size(); nlaymiss over hitPattern()).
-          if (digiRefitBdtNFeatures_ == kRefitBdtNFeaturesV1) {
+          if (seedlessRefitBdtNFeatures_ == kRefitBdtNFeaturesV1) {
             feats.push_back(static_cast<float>(twosComplement(iterL1Track->getTanlBits(), 16)));   // 17 tanl
             feats.push_back(static_cast<float>(twosComplement(iterL1Track->getZ0Bits(), 12)));     // 18 z0_scaled
             feats.push_back(static_cast<float>(iterL1Track->getBendChi2Bits()));                   // 19 bendchi2_bin
@@ -2152,7 +2152,7 @@ void L1SmartPixelsTrackProducer::produce(edm::Event& iEvent, const edm::EventSet
             feats.push_back(static_cast<float>(iterL1Track->getChi2RPhiBits()));                   // 22 chi2rphi_bin
             feats.push_back(static_cast<float>(iterL1Track->getChi2RZBits()));                     // 23 chi2rz_bin
           }
-          refitTrkMVA1 = digiRefitBdt_->decision_function(feats).at(0);
+          refitTrkMVA1 = seedlessRefitBdt_->decision_function(feats).at(0);
         }
 
         // nFitPars kept from the input; the refit d0/covariance live in the
@@ -2196,7 +2196,7 @@ void L1SmartPixelsTrackProducer::produce(edm::Event& iEvent, const edm::EventSet
         // rather than compared across frames.
         {
           double c2OT = 0., c2Refit = 0.;
-          bool otOK = digiRefitStoreOTProjection_;
+          bool otOK = seedlessRefitStoreOTProjection_;
           for (const auto& hrec : drHitInfo) {
             if (!(hrec.flags & smartpixels::hitflag::kHitAccepted))
               continue;
@@ -2210,7 +2210,7 @@ void L1SmartPixelsTrackProducer::produce(edm::Event& iEvent, const edm::EventSet
               otOK = false;
             }
             const smartpixels::Crossing cr =
-                projector_.crossLayer(makeHelix(a), hrec.layer, drField, digiRefitPredAngleMaxAbs_);
+                projector_.crossLayer(makeHelix(a), hrec.layer, drField, seedlessRefitPredAngleMaxAbs_);
             if (cr.valid && cr.detId == hrec.detId) {
               const double dx = hrec.recoLocalX - cr.local.x();
               const double dy = hrec.recoLocalY - cr.local.y();
@@ -2258,7 +2258,7 @@ void L1SmartPixelsTrackProducer::produce(edm::Event& iEvent, const edm::EventSet
         sidecar->trackInfo.push_back(drTrackInfo);
         sidecar->hitInfo.push_back(std::move(drHitInfo));
       }
-    } // end digiRefit path
+    } // end seedlessRefit path
 
     // Summary info for track changes
     if (my_tp.isNull() == false) {
@@ -2345,7 +2345,7 @@ void L1SmartPixelsTrackProducer::produce(edm::Event& iEvent, const edm::EventSet
     edm::LogVerbatim("SmartPixelsTrackProducer") << "(L1SmartPixelsTrackProducer.cc) Event unmatched_tracks: " << unmatched_tracks << " matched_tracks: " << matched_tracks << std::endl;
   }
   // 1:1 output-sync invariant (spec §1): exactly one output track per input
-  // track, and (in digiRefit) sidecar sizes equal to the track count. This
+  // track, and (in seedlessRefit) sidecar sizes equal to the track count. This
   // contract is what keeps every externally-synced collection (PF/Puppi track
   // refs, DispVertex indices, the truth table) valid row-wise. Fail LOUDLY.
   const size_t nInput = TTTrackHandle->size();
@@ -2353,10 +2353,10 @@ void L1SmartPixelsTrackProducer::produce(edm::Event& iEvent, const edm::EventSet
     throw cms::Exception("SmartPixelsSyncBroken")
         << "output track count " << outputTracks->size() << " != input track count " << nInput
         << " (1:1 output-sync invariant broken).";
-  if (smartPixelsEmulatorMode_ == "digiRefit") {
+  if (smartPixelsEmulatorMode_ == "seedlessRefit") {
     if (sidecar->trackInfo.size() != nInput || sidecar->hitInfo.size() != nInput)
       throw cms::Exception("SmartPixelsSyncBroken")
-          << "digiRefit sidecar sizes (trackInfo=" << sidecar->trackInfo.size()
+          << "seedlessRefit sidecar sizes (trackInfo=" << sidecar->trackInfo.size()
           << ", hitInfo=" << sidecar->hitInfo.size() << ") != input track count " << nInput
           << " (1:1 output-sync invariant broken).";
     iEvent.put(std::move(sidecar), outputCollectionName_);
@@ -2385,76 +2385,76 @@ void L1SmartPixelsTrackProducer::fillDescriptions(edm::ConfigurationDescriptions
   desc.add<edm::InputTag>("TrackingParticleInputTag", edm::InputTag("mix", "MergedTrackTruth"));
   desc.add<std::string>("outputCollectionName", "Level1TTTracksEmulation");
   desc.add<std::string>("smartPixelsEmulatorMode", "passthrough")->setComment("passthrough, passthroughFloat, passthroughHW, trackingParticleTruth, correctionlibRegression, correctionlibTPToySmear");
-  desc.add<std::string>("smartPixelsActiveLayers", "0000")->setComment("Active SmartPixels surfaces: character k switches barrel layer ILk AND disc IDk, '0000' is none active, '1111' is all active, '0110' has IL2+IL3 and ID2+ID3 active. digiRefit skips inactive surfaces; it visits TBPX layers only so far");
+  desc.add<std::string>("smartPixelsActiveLayers", "0000")->setComment("Active SmartPixels surfaces: character k switches barrel layer ILk AND disc IDk, '0000' is none active, '1111' is all active, '0110' has IL2+IL3 and ID2+ID3 active. seedlessRefit skips inactive surfaces; it visits TBPX layers only so far");
   desc.add<edm::FileInPath>("smartPixelsCorrectionSet")->setComment("Name of json file containing the correctionlib set used for smartPixelsEmulatorMode (correctionlibRegression | correctionlibTPToySmear )");
-  // --- digiRefit (Tier 2) ---
-  desc.add<std::vector<double>>("digiRefitWindowRPhi", std::vector<double>{0.05, 0.17, 0.5, 0.9})
+  // --- seedlessRefit (Tier 2) ---
+  desc.add<std::vector<double>>("seedlessRefitWindowRPhi", std::vector<double>{0.05, 0.17, 0.5, 0.9})
       ->setComment("per-layer r-phi search-window half-widths [cm] (TBPX L1-L4; ~q68 of the 2-5 GeV extrapolation spread)");
-  desc.add<std::vector<double>>("digiRefitWindowZ", std::vector<double>{0.45, 0.35, 0.25, 0.2})
+  desc.add<std::vector<double>>("seedlessRefitWindowZ", std::vector<double>{0.45, 0.35, 0.25, 0.2})
       ->setComment("per-layer z search-window half-widths [cm] (TBPX L1-L4)");
-  desc.add<int>("digiRefitMinHits", 1)->setComment("min attached IT hits to emit a refit track (else passthrough copy)");
-  desc.add<std::string>("digiRefitUseAngles", "alphaBeta")
+  desc.add<int>("seedlessRefitMinHits", 1)->setComment("min attached IT hits to emit a refit track (else passthrough copy)");
+  desc.add<std::string>("seedlessRefitUseAngles", "alphaBeta")
       ->setComment("which synthesized angles enter the refit: none | alpha | alphaBeta (alphaBeta = the intended "
                    "production setting; none/alpha are ablations)");
-  desc.add<int>("digiRefitMaxHitsPerWindow", 8)
+  desc.add<int>("seedlessRefitMaxHitsPerWindow", 8)
       ->setComment("combinatorics truncation: max in-window CLUSTERS kept per layer (readout order). This is a "
                    "LATENCY model of the match stage, not a fidelity knob: every surviving candidate costs time "
                    "in the ~1 us refit budget.");
-  desc.add<double>("digiRefitClusterMergeFrac", 0.1)
+  desc.add<double>("seedlessRefitClusterMergeFrac", 0.1)
       ->setComment("TRUTH-ONLY diagnostic: runner-up charge share above which a cluster is flagged merged "
                    "(hitflag::kClusterMerged). Such a cluster has a biased position and an ill-defined angle.");
-  desc.add<int>("digiRefitMaxKFUpdates", 4)->setComment("max Kalman layer updates applied");
-  desc.add<std::string>("digiRefitGainMode", "full")->setComment("full (exact gains) | lut (RESERVED table-driven placeholder)");
-  desc.add<double>("digiRefitJacobianMaxAbs", 1.0e4)
+  desc.add<int>("seedlessRefitMaxKFUpdates", 4)->setComment("max Kalman layer updates applied");
+  desc.add<std::string>("seedlessRefitGainMode", "full")->setComment("full (exact gains) | lut (RESERVED table-driven placeholder)");
+  desc.add<double>("seedlessRefitJacobianMaxAbs", 1.0e4)
       ->setComment("FPGA-fidelity KF guard: any |H[k][j]| above this bound (or non-finite) zeroes that "
                    "Jacobian column (parameter locally unobservable). Physical |H|<~200 on the PU study; "
                    "1e4 leaves the physical+fake bulk untouched and only bounds grazing-crossing divergence.");
-  desc.add<double>("digiRefitChi2UpdateGate", 2.0e6)
+  desc.add<double>("seedlessRefitChi2UpdateGate", 2.0e6)
       ->setComment("FPGA-fidelity KF guard: a scalar update with r^2/S above this gate is skipped entirely "
                    "(no state/cov change, no chi2 contribution, pull sentinel; the hit still counts as accepted). "
                    "Numerical-pathology gate ONLY - the physical wrong-hit-contamination ceiling is ~1.9e6, so "
                    "2e6 removes only the non-physical tail (up to ~1e10) and does NOT gate genuine wrong hits. "
                    "Backstop to the grazing-angle clamps.");
-  desc.add<double>("digiRefitMeasAngleMaxAbs", 12.0)
+  desc.add<double>("seedlessRefitMeasAngleMaxAbs", 12.0)
       ->setComment("LOAD-BEARING grazing clamp (spec §6b): a measured |cotAlpha|/|cotBeta| above this bound "
                    "is not used by the refit (THAT ANGLE only: no selection term, no update, no chi2; the hit "
                    "keeps its position; the sidecar hasAlpha/hasBeta record the use). Applied here because the "
                    "emu source reports every angle; a no-op for the payload source, whose rec hits already clear "
                    "hasAlpha/hasBeta beyond the same bound. Default 12 preserves the O(1-6) wrong-hit signal.");
-  desc.add<double>("digiRefitPredAngleMaxAbs", 12.0)
+  desc.add<double>("seedlessRefitPredAngleMaxAbs", 12.0)
       ->setComment("secondary hygiene grazing clamp (spec §6b): a predicted crossing |cotAlpha|/|cotBeta| "
                    "above this bound invalidates the crossing at the projector (no window, no sidecar record). "
                    "Rejects the ~18 non-physical predicted crossings (up to |cotAlpha| 51.8); NOT the gate driver.");
-  desc.add<bool>("digiRefitApplyProcessNoise", true)
+  desc.add<bool>("seedlessRefitApplyProcessNoise", true)
       ->setComment("inflate the state covariance for multiple scattering between constraint "
                    "points. Without it C never grows and correct-hit pulls follow VISIT ORDER "
                    "rather than layer identity (first-visited ~1.0, later layers 4-8).");
-  desc.add<double>("digiRefitMultScattTerm", 0.00075)
+  desc.add<double>("seedlessRefitMultScattTerm", 0.00075)
       ->setComment("projected multiple-scattering angle per traversed layer = term / pT [rad*GeV]. "
                    "TMTT's KalmanMultiScattTerm convention and default value, but applied to the "
                    "STATE covariance rather than by inflating the measurement error, so the "
                    "emitted outCov is honest for downstream vertexing and tagging.");
-  desc.add<bool>("digiRefitStoreOTProjection", true)
+  desc.add<bool>("seedlessRefitStoreOTProjection", true)
       ->setComment("store projOTLocalX/Y, projOTSigX/Y and projOTCotAlpha/Beta per crossing: "
                    "the UNMODIFIED OT track projection and its covariance-derived cone. Costs one "
                    "extra crossLayer plus a 5-point Jacobian per crossing. Needed by the "
                    "combinatorics study; disable for timing measurements.");
-  desc.add<std::string>("digiRefitLayerOrder", "outsideIn")
+  desc.add<std::string>("seedlessRefitLayerOrder", "outsideIn")
       ->setComment("IT layer visit order for the Kalman loop: outsideIn (L4->L1, default) | insideOut (L1->L4). "
                    "The OT track is an OT-only fit, so the projection to a layer carries the unmodelled multiple "
                    "scattering accumulated between that layer and the innermost OT layer, which grows inward. "
                    "outsideIn commits the first update - the one that collapses the covariance - on the "
                    "least-extrapolated projection. insideOut instead takes the tightest r-phi window first. "
                    "Affects hit selection and the refit result, NOT the set of layers considered.");
-  desc.add<int>("digiRefitOTNPar", 5)->setComment("OT track parameters entering the KF: 4 | 5");
-  desc.add<std::string>("digiRefitPixelavAngleSet", "")->setComment("PixelAV angle-response correctionlib payload path (REQUIRED for digiRefit)");
-  desc.add<std::string>("digiRefitSmarthitFakeSet", "")->setComment("optional smarthit_fake payload (inclusive noise-angle model)");
-  desc.add<std::string>("digiRefitSmarthitTrueSet", "")
+  desc.add<int>("seedlessRefitOTNPar", 5)->setComment("OT track parameters entering the KF: 4 | 5");
+  desc.add<std::string>("seedlessRefitPixelavAngleSet", "")->setComment("PixelAV angle-response correctionlib payload path (REQUIRED for seedlessRefit)");
+  desc.add<std::string>("seedlessRefitSmarthitFakeSet", "")->setComment("optional smarthit_fake payload (inclusive noise-angle model)");
+  desc.add<std::string>("seedlessRefitSmarthitTrueSet", "")
       ->setComment("RESERVED: smarthit_true payload path. NOT consumed by Tier-2 (position from real "
                    "digis, angle from PixelAV; smarthit_true only characterizes true hits). Kept for a future "
                    "SmartPixels ASIC on-chip readout-inefficiency model (smarthit_true_eff). If non-empty, "
                    "the producer emits a LogWarning (category SmartPixelsStackAUnused) and loads nothing.");
-  desc.add<std::string>("digiRefitBdtModel", "")
+  desc.add<std::string>("seedlessRefitBdtModel", "")
       ->setComment("optional refit-quality BDT: conifer JSON over REFIT_BDT_FEATURES (spec §6a). The assembly is "
                    "selected by the model's n_features: 17 = v0, 24 = v1 (v0 + the classic-7 TrackQuality hw "
                    "features of the input track). Empty = keep the input trkMVA1. When set, the score replaces the "

@@ -4,7 +4,7 @@
 Produces one CRAB `config` script that runs the L1 NanoAOD tier
 (@L1PFTrkNanowithGen -- the fullest nano flavor: L1 tracks + matched-TP truth,
 PF/Puppi candidates + jet-constituent links, the NG jet-tagger tier, GenJet
-flavor labels, and vertices) with the SmartPixels digiRefit tables for a chosen
+flavor labels, and vertices) with the SmartPixels seedlessRefit tables for a chosen
 SmartPixels config (activeSP, e.g. 1100) layered on top via smartPixelsCoexist.
 
 The emitted CRAB config points at the production pset

@@ -1,6 +1,6 @@
 import FWCore.ParameterSet.Config as cms
 
-# Phase-1 payload-derivation analyzer (Tier-2 digiRefit plan).
+# Phase-1 payload-derivation analyzer (Tier-2 seedlessRefit plan).
 # Pure file-reading: consumes persisted TTTracks, the TTTrack association map,
 # TrackingParticles, the simSiPixelDigis:Pixel PixelDigi + PixelDigiSimLink
 # collections, and g4SimHits SimTracks/SimVertices. Records, per L1Track x
@@ -16,7 +16,7 @@ smartPixelsPayloadAnalyzer = cms.EDAnalyzer(
     simTrackInputTag           = cms.InputTag("g4SimHits"),
     simVertexInputTag          = cms.InputTag("g4SimHits"),
     # MEASUREMENT window half-widths [cm]. Deliberately much wider than the
-    # refit windows in DIGIREFIT_DEFAULTS: the OT-track expected-position
+    # refit windows in SEEDLESSREFIT_DEFAULTS: the OT-track expected-position
     # resolution at TBPX radii is O(100um) in r-phi but O(mm) in z (L1 z0
     # resolution, no material model), and the payload must measure the FULL
     # residual distribution — truncation belongs to the refit, not here.

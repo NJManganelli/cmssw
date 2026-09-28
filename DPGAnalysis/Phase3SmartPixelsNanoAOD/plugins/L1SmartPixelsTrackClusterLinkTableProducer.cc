@@ -1,7 +1,7 @@
 // SmartPixels track -> IT cluster LINK table: one row per (track, cluster) pair,
 //   trackIdx   -> row of the track in trackTableName
 //   clusterIdx -> row of the cluster in clusterTableName (L1TSmartPixelsCluster)
-// The clusters of a track are the IT hits its variant used: for digiRefit the hits
+// The clusters of a track are the IT hits its variant used: for seedlessRefit the hits
 // accepted into the Kalman refit, read from the refit sidecar. A variant that uses no IT
 // hits (passthrough) has no sidecar: leave `sidecar` empty and the table has no rows, so
 // the schema does not depend on the variant.
@@ -65,7 +65,7 @@ public:
     table->addColumn<int32_t>("trackIdx", trackIdx, "row of the track in " + trackTableName_);
     table->addColumn<int32_t>("clusterIdx", clusterIdx, "row of the cluster in " + clusterTableName_);
     table->setDoc("IT clusters used by the " + trackTableName_ +
-                  " tracks (digiRefit: the hits accepted into the refit; one row per track-cluster pair)");
+                  " tracks (seedlessRefit: the hits accepted into the refit; one row per track-cluster pair)");
     iEvent.put(std::move(table));
   }
 

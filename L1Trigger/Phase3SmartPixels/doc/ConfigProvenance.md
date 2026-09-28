@@ -6,6 +6,12 @@ generator, `test/makeSpixConfig.py`. This document is what has to survive the
 deletion: the commands that produced them, and the commit range each command is
 still valid at.
 
+The archived commands are quoted as they were run, with the names of their time: the
+mode `digiRefit` is now `seedlessRefit` (`digiRefitConfig` -> `seedlessRefitConfig`,
+table suffix `DigiRefit<mask>` -> `SeedlessRefit<mask>`), `seedCovMode` was removed, and
+the combined `L1*NanoSmartPix*` flavours are replaced by the add-on flavours of
+`DPGAnalysis/Phase3SmartPixelsNanoAOD`.
+
 ## Why they are going away
 
 The 163 files collapse to **15 distinct cmsDriver shapes**. Everything else was a

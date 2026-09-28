@@ -85,7 +85,7 @@
 //
 // NO |cot| CAP HERE, for either source: hasAlpha/hasBeta only say whether the sensor
 // reports the angle at all (payload: the PixelAV validity gate; emu: always). The cap
-// is applied by the algorithms that need it (the refit: digiRefitMeasAngleMaxAbs).
+// is applied by the algorithms that need it (the refit: seedlessRefitMeasAngleMaxAbs).
 
 #include "FWCore/Framework/interface/Event.h"
 #include "FWCore/Framework/interface/EventSetup.h"

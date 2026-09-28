@@ -1,21 +1,21 @@
-"""useStoredTracks digiRefit job for PU RelVals.
+"""useStoredTracks seedlessRefit job for PU RelVals.
 
-Nothing is remade: the digiRefit producer consumes the file's TTTracks,
+Nothing is remade: the seedlessRefit producer consumes the file's TTTracks,
 simSiPixelDigis:Pixel digis+simlinks, association maps and TrackingParticles
 (all HLT-process, mutually consistent, WITH pileup). Re-running DIGI here would
 re-digitize the signal-only g4SimHits and silently lose the PU.
 
-The INPUT MUST BE POST-cms-sw/cmssw#51503. digiRefit always starts from the
+The INPUT MUST BE POST-cms-sw/cmssw#51503. seedlessRefit always starts from the
 OT track's own helixCovMat (there is no parametrized alternative), and pre-#51503
 tracks schema-evolve to an all-zero covariance, so an old-layout file throws
 SmartPixelsOTCovMissing here — by design. For such files, rebuild the tracks
 (trackInputMode='rebuildTracksFromStubs') instead of reading them.
 
 Run (in the container, cmsenv):
-  cmsRun L1Trigger/Phase3SmartPixels/test/runDigiRefitFromFile_cfg.py \
+  cmsRun L1Trigger/Phase3SmartPixels/test/runSeedlessRefitFromFile_cfg.py \
       maxEvents=100 useAngles=alphaBeta \
       inputFiles=file:/work/testfiles/RelValTTbar_14TeV_PU_150X_mcRun4_realistic_v1_STD_D121_RegeneratedGS_PU-v1.root \
-      outputFile=digirefit_pu.root
+      outputFile=seedlessrefit_pu.root
 """
 import FWCore.ParameterSet.Config as cms
 from FWCore.ParameterSet.VarParsing import VarParsing
@@ -23,16 +23,16 @@ from Configuration.Eras.Era_Phase2C22I13M9_cff import Phase2C22I13M9
 
 options = VarParsing('analysis')
 options.register('useAngles', 'alphaBeta', VarParsing.multiplicity.singleton, VarParsing.varType.string,
-                 "digiRefit angle usage: none | alpha | alphaBeta")
+                 "seedlessRefit angle usage: none | alpha | alphaBeta")
 options.register('activeSP', '1100', VarParsing.multiplicity.singleton, VarParsing.varType.string,
-                 "active layer encoding for the digiRefit variant")
+                 "active layer encoding for the seedlessRefit variant")
 options.register('pixelavAngleSet', '/work/spxsmoke/pixelav_angle_example.json',
                  VarParsing.multiplicity.singleton, VarParsing.varType.string,
                  "PixelAV angle-response payload path")
 options.setDefault('maxEvents', 100)
 options.setDefault('inputFiles',
                    'file:/work/testfiles/RelValTTbar_14TeV_PU_150X_mcRun4_realistic_v1_STD_D121_RegeneratedGS_PU-v1.root')
-options.setDefault('outputFile', 'digirefit_pu.root')
+options.setDefault('outputFile', 'seedlessrefit_pu.root')
 options.parseArguments()
 
 process = cms.Process("SPIXREFIT", Phase2C22I13M9)
@@ -57,8 +57,8 @@ process.MessageLogger = cms.Service("MessageLogger",
 from L1Trigger.Phase3SmartPixels.customizeSmartPixels_cff import addSmartPixelsTrackProducerVariants
 process, spixModules = addSmartPixelsTrackProducerVariants(
     process,
-    variants=[("passthrough", None), ("digiRefit", options.activeSP)],
-    digiRefitConfig={"pixelavAngleSet": options.pixelavAngleSet,
+    variants=[("passthrough", None), ("seedlessRefit", options.activeSP)],
+    seedlessRefitConfig={"pixelavAngleSet": options.pixelavAngleSet,
                      "useAngles": options.useAngles})
 
 process.p = cms.Path()

@@ -686,7 +686,7 @@ Deliberately thin, because seeding is what this note analyses. What is settled:
   hit resolution, and multiple scattering dominates, giving roughly constant
   ~1% relative pT resolution. IT-only curvature measurement is physically sound;
   the difficulty is entirely in finding the right clusters, not in fitting them.
-- The existing `digiRefit` is **not** this fit: it refits *existing* OT
+- The existing `seedlessRefit` is **not** this fit: it refits *existing* OT
   tracks and its layer order (`outsideIn`) is chosen for an OT-only track
   projecting inward. An IT-seeded fit inverts that geometry and must not inherit
   the ordering conclusion without re-deriving it.

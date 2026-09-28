@@ -1,8 +1,8 @@
 # PixelAV → SmartPixels angle-response payload specification (v0)
 
 Interface contract between the PixelAV simulation + regression-NN team and the CMSSW
-`digiRefit` consumer (`L1Trigger/Phase3SmartPixels`, Tier-2 interim refit). The deliverable
-described here is the `pixelavAngleSet` payload referenced by `DIGIREFIT_DEFAULTS` in
+`seedlessRefit` consumer (`L1Trigger/Phase3SmartPixels`, Tier-2 interim refit). The deliverable
+described here is the `pixelavAngleSet` payload referenced by `SEEDLESSREFIT_DEFAULTS` in
 `python/customizeSmartPixels_cff.py`.
 
 Reference implementation / self-test: `python/validatePixelAVAngleSet.py`
@@ -11,7 +11,7 @@ any candidate payload against this spec).
 
 ## 1. Role in the refit
 
-For every in-window pixel digi with a truth-linked parent, the digiRefit producer computes
+For every in-window pixel digi with a truth-linked parent, the seedlessRefit producer computes
 the parent particle's TRUE local incidence angles at the module and synthesizes the
 "SmartPixels-measured" angles as
 
@@ -35,10 +35,10 @@ via this dedicated `pixelavAngleSet` payload, NOT via a `smarthitTrueSet`. The r
 **characterizes** true hits (it measures what a true hit looks like) but does **not drive**
 Tier-2 synthesis: position comes from the real CMSSW pixel digis (digi/cluster fidelity), and
 the angle comes from this PixelAV response applied to the truth-linked parent's true incidence
-angle. There is therefore no `smarthitTrueSet` input to the digiRefit producer.
+angle. There is therefore no `smarthitTrueSet` input to the seedlessRefit producer.
 
 The `smarthitTrueSet` config key is nonetheless kept (present + validated) in
-`DIGIREFIT_DEFAULTS`, **RESERVED** for a future use: a SmartPixels ASIC on-chip readout
+`SEEDLESSREFIT_DEFAULTS`, **RESERVED** for a future use: a SmartPixels ASIC on-chip readout
 inefficiency model (`smarthit_true_eff`) — a hit-loss mechanism internal to the SmartPixels
 chip that the CMSSW digitizer cannot express, and that would gate/weight otherwise-present
 true hits. Wiring it in requires (a) a hardware-derived payload and (b) a collaboration-agreed
@@ -204,7 +204,7 @@ PixelAV version/tag, NN training identifier, sensor variant name, assumed E-fiel
 temperature, the B grid actually simulated, date, and the git revision of the fitting code.
 The payload is refused in review if provenance is missing.
 
-## 7. Consumer-side usage (as it will appear in the digiRefit producer)
+## 7. Consumer-side usage (as it will appear in the seedlessRefit producer)
 
 ```cpp
 #include "correction.h"   // correctionlib

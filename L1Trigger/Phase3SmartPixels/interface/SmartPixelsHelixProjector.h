@@ -5,7 +5,7 @@
 //
 // Shared helix-propagation + Inner-Tracker BARREL (TBPX) module lookup used by
 // BOTH the SmartPixelsPayloadAnalyzer (Phase 1) and the L1SmartPixelsTrackProducer
-// digiRefit mode (Phase 2). ONE implementation, no drift.
+// seedlessRefit mode (Phase 2). ONE implementation, no drift.
 //
 // Carries the two hard-won Phase-1 fixes verbatim:
 //   1. law-of-cosines uses |R| (unsigned) — a signed R flips cosArg for
@@ -93,7 +93,7 @@ namespace smartpixels {
     // treated as INVALID (valid=false) — a near-grazing predicted crossing whose
     // angle is non-physical. Default <=0 DISABLES the clamp: the analyzer
     // measurement path must stay unclipped so payload fits see the full angle
-    // distribution; only the digiRefit producer passes a finite bound.
+    // distribution; only the seedlessRefit producer passes a finite bound.
     Crossing crossLayer(const HelixParams& helix, int layer1based, const MagneticField& field,
                         double predAngleMaxAbs = 0.) const;
 
