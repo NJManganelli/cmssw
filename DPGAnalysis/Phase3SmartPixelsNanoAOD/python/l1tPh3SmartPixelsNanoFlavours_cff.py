@@ -352,6 +352,7 @@ def _applyDigiRefitSettings(process, st):
 # ---------------------------------------------------------------------------
 def _reconcile(process):
     st = _state(process)
+    _checkRecoInputs(process, st)
     _wireVariant(process, st)
     _applyPosture(process, st)
     sched = _scheduled(process)
@@ -595,3 +596,72 @@ def _configureTrackingParticles(process, st, variant, sched):
     module.linkedStubAssociations = cms.VInputTag(*stubs)
     module.linkedTrackAssociations = cms.VInputTag(*tracks)
     module.linkedTrackingParticles = cms.VInputTag(*tps)
+
+
+# ---------------------------------------------------------------------------
+# @PHYS (the regular nano: HLT, PUPPI MET, AK4 jets, muons, taus, ...) reads MINIAOD
+# products. They come from the input (GEN-SIM-DIGI-RAW-MINIAOD) or from RECO+PAT run in
+# the same job; today's RelVals (GEN-SIM-DIGI-RAW) need the latter.
+# ---------------------------------------------------------------------------
+_MINIAOD_BRANCHES = ("patPackedCandidates_packedPFCandidates__", "patJets_slimmedJets__",
+                     "patMuons_slimmedMuons__", "recoGenParticles_prunedGenParticles__")
+_RECO_STEPS = "RAW2DIGI,RECO,RECOSIM,PAT"
+_inputMiniAOD = {}
+
+
+def inputHasMiniAOD(fileName):
+    """True if the first file of the input carries the MINIAOD products @PHYS reads."""
+    if fileName not in _inputMiniAOD:
+        import uproot  # reads the branch list without the EDM dictionaries
+        try:
+            with uproot.open(fileName[len("file:"):] if fileName.startswith("file:") else fileName) as f:
+                branches = f["Events"].keys(recursive=False)
+        except Exception as e:
+            raise RuntimeError(f"SmartPixels nano: cannot read {fileName} to check it for MINIAOD products: {e}")
+        _inputMiniAOD[fileName] = all(any(b.startswith(p) for b in branches) for p in _MINIAOD_BRANCHES)
+    return _inputMiniAOD[fileName]
+
+
+def _pathLabels(path):
+    labels = set()
+
+    class Visitor:
+        def enter(self, x):
+            if hasattr(x, "label_"):
+                try:
+                    labels.add(x.label_())
+                except Exception:
+                    pass
+
+        def leave(self, x):
+            pass
+    path.visit(Visitor())
+    return labels
+
+
+def _checkRecoInputs(process, st):
+    """With @PHYS composed, fail at configuration time unless the input has the MINIAOD
+    products or the job runs RECO and PAT."""
+    if not hasattr(process, "nanoAOD_step") or not (
+            _pathLabels(process.nanoAOD_step) & {"nanoSequence", "nanoSequenceMC", "nanoSequenceFS"}):
+        return
+    recoInJob = hasattr(process, "reconstruction_step") and hasattr(process, "patTask") and (
+        process.schedule is None or any(t is process.patTask for t in process.schedule._tasks))
+    if recoInJob:
+        return
+    fileNames = list(getattr(process.source, "fileNames", []))
+    if not fileNames:
+        raise RuntimeError("SmartPixels nano: @PHYS needs MINIAOD products; the job has no input file to check "
+                           "and runs no RECO+PAT")
+    if inputHasMiniAOD(fileNames[0]):
+        return
+    # the NANO spec as given to cmsDriver; the add-ons seen so far otherwise (e.g. under cmsRun)
+    import sys
+    given = [arg.split("NANO:", 1)[1].split(",")[0] for arg in sys.argv if "NANO:" in arg]
+    spec = given[0] if given else "+".join(["@Phase2L1DPGwithGen" if _withGen(process) else "@Phase2L1DPG"]
+                                           + ["@" + tag for tag in st.addOns if tag != "coopt"] + ["@PHYS"])
+    raise RuntimeError(
+        f"SmartPixels nano: @PHYS reads MINIAOD products ({', '.join(b.split('_')[1] for b in _MINIAOD_BRANCHES)}) "
+        f"that {fileNames[0]} does not carry and this job does not produce. Run RECO and PAT in the job, "
+        f"with the RelVal workflow's own step-3 options: -s {_RECO_STEPS},NANO:{spec} "
+        "(L1Trigger/Phase3SmartPixels/test/makeSpixConfig.py --reco emits the full command)")
