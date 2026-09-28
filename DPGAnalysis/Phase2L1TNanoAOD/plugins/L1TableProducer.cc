@@ -18,10 +18,6 @@ typedef SimpleFlatTableProducer<l1t::TkJetWord> SimpleL1TkJetWordCandidateFlatTa
 #include "DataFormats/L1Trigger/interface/TkTripletWord.h"
 typedef SimpleFlatTableProducer<l1t::TkTripletWord> SimpleTkTripletWordCandidateFlatTableProducer;
 
-#include "DataFormats/L1TrackTrigger/interface/TTTrack.h"
-#include "DataFormats/L1TrackTrigger/interface/TTTypes.h"
-typedef SimpleFlatTableProducer<TTTrack<Ref_Phase2TrackerDigi_>> SimpleL1TTTrackCandidateFlatTableProducer;
-
 #include "DataFormats/L1Trigger/interface/L1Candidate.h"
 typedef SimpleFlatTableProducer<l1t::L1Candidate> SimpleTriggerL1CandidateFlatTableProducer;
 
@@ -62,7 +58,6 @@ DEFINE_FWK_MODULE(P2GTAlgoBlockFlatTableProducer);
 DEFINE_FWK_MODULE(SimpleP2GTCandidateFlatTableProducer);
 DEFINE_FWK_MODULE(SimpleL1TkJetWordCandidateFlatTableProducer);
 DEFINE_FWK_MODULE(SimpleTkTripletWordCandidateFlatTableProducer);
-DEFINE_FWK_MODULE(SimpleL1TTTrackCandidateFlatTableProducer);
 DEFINE_FWK_MODULE(SimpleTriggerL1CandidateFlatTableProducer);
 DEFINE_FWK_MODULE(SimpleTriggerL1TkEmFlatTableProducer);
 DEFINE_FWK_MODULE(SimpleTriggerL1TkElectronFlatTableProducer);
