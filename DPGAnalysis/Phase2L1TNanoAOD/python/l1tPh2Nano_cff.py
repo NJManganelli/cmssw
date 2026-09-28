@@ -59,7 +59,7 @@ def addPh2L1TrackTruth(process):
     return process
 
 def addPh2L1TrackingParticles(process):
-    """TrackingParticle table L1TTP (charged, |p| > 1 GeV): the denominator for
+    """TrackingParticle table L1TTP (default selection: charged, |p| > 1 GeV): the denominator for
     efficiency studies. Track/stub/cluster/refit truth link to it by row (tpIdx), encoded
     from the key -> row map this producer puts; without it those links read -2.
     Opt-in: it is ~15k rows/event at PU200, about half of an L1 track nano."""

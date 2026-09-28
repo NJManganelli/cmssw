@@ -33,11 +33,14 @@ them (`_reconcile`), so whichever end is added second creates the link.
 | `@SPParallelSeedRefit`, `@SPJointSeedFit` | reserved (raise) | |
 | `@SPActiveLayers<mask>` | mask tag (16 masks; character k = ILk and IDk, A/I); `IIII` = passthrough control | |
 | `@TPTruth1GeV` | `L1TTP`: charged TrackingParticles with \|p\| > 1 GeV | target of every `tpIdx` |
+| `@TPTruthLinked` | `L1TTP`: TrackingParticles linked by the truth associations to an object the nano writes: OT stubs, OT tracks, SmartPixels tracks, IT clusters (whichever are present) | " |
+| `@TPTruth1GeVLinked` | `L1TTP`: the union of the two above | " |
+| `@TPTruthAll` | `L1TTP`: every TrackingParticle of the input, neutrals included (`tpIdx <= -3` cannot occur) | " |
 
 - One mode tag and one mask tag select the variant; the second of the two wires it through
   the L1 emulation (`smartPixelsCoopt`). A mode tag without a mask tag, a mask other than
   `IIII` without a mode tag, `@SPTrk` without a variant, two mode or mask tags, or two
-  TrackingParticle flavours are errors (the completeness checks run when cmsRun builds the
+  TrackingParticle flavours are errors. With no TrackingParticle flavour every `tpIdx` is -2 (the completeness checks run when cmsRun builds the
   process description). `@SPActiveLayersIIII` wires the passthrough variant (SmartPixels
   tracks equal to their OT tracks); a mode tag next to it adds no mode tables.
 - Settings not in a tag name: `smartPixelsNanoParams(process, ...)` in
