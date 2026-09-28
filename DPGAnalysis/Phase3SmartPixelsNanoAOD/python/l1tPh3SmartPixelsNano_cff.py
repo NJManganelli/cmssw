@@ -275,8 +275,7 @@ def produceMiniAODGenInputs(process):
 # all TBPX clusters first, then the disc clusters in discScope (default sp =
 # ID1-ID4), one table with a surface column (1-4 = IL1-IL4, 11-14 = ID1-ID4).
 #
-# ~26.5k barrel rows/event at PU200, measured at 88.6 stored bits/cluster = 0.29 MB/event
-# for the barrel; ID1-ID4 add ~46k rows/event.
+# ~74k rows/event at PU200 (TBPX + ID1-ID4), measured 3.1 MB/event.
 # The size is the point: at PU200 the crossed module
 # carries 40.6/32.7/31.6/19.7 clusters on L1-L4 (p95 up to 72), the static window
 # admits about 2 of them, and maxHitsPerWindow truncates at 8. Every question

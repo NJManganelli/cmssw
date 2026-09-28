@@ -35,8 +35,8 @@
 // == TTStubRef::key(); the on-track tables' otStubIdx relies on that, and it is
 // asserted per stub.
 //
-// SIZE. ~15k rows/event at PU200 is expected, against ~26.5k for the IT cluster
-// table, so this roughly doubles the Clusters-tier payload. That is accepted
+// SIZE. ~15k rows/event (0.23 MB/event) at PU200, against ~74k (3.1 MB/event) for the
+// IT cluster table. That is accepted
 // on this tier specifically: a tier built to study IT clusters may as well carry
 // the nearest OT equivalent, so that studies stop splicing two data tiers
 // together to get one comparison.

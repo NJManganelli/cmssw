@@ -75,8 +75,8 @@ TIERS = {
     "pftrk-truth": ("L1PFTrkNano", "", True),
     "pf":          ("L1PFNano",    "", False),
     "pf-truth":    ("L1PFNano",    "", True),
-    # Payload tiers. "clusters" carries the UNTRUNCATED IT cluster table: ~26.5k
-    # rows/event at PU200, measured 0.29 MB/event (88.6 stored bits/cluster).
+    # Payload tiers. "clusters" carries the UNTRUNCATED IT cluster table: ~74k
+    # rows/event at PU200 (TBPX + ID1-ID4), measured 3.1 MB/event.
     "clusters":       ("L1PFTrkNano", "Clusters", False),
     "clusters-truth": ("L1PFTrkNano", "Clusters", True),
     # --coopt only: the standard L1 SmartPixels study tier (L1TSPStudyNano), and the same

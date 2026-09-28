@@ -437,7 +437,7 @@ def ensureSmartPixelsRecHits(process, angleSet, noiseSet="", digiTag=SPIX_PIXEL_
     process.spixSmartPixelsRecHitTask = cms.Task(process.spixSmartPixelsRecHits)
     if hasattr(process, "spixPixelRecHitTask"):
       process.spixSmartPixelsRecHitTask.add(process.spixPixelRecHitTask)
-  # The Clusters-tier nano table runs UNSCHEDULED off l1tPh2NanoTask, which is a
+  # The cluster nano table (@SPClustersStubs) runs UNSCHEDULED off l1tPh2NanoTask, which is a
   # different task from the refit paths, so the chain has to be visible there too
   # or the table dies with ProductNotFound at the first event.
   if hasattr(process, "l1tPh2NanoTask"):
