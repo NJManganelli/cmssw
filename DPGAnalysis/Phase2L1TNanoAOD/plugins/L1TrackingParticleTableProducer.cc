@@ -29,7 +29,8 @@
 // a matched track's tp_* columns agree; a neutral TP is a straight line. `phi` is at the
 // production vertex; build a helix from phi0, never from phi.
 //
-// GENERATOR LINK (doGen = true; needs the nano gen chain, i.e. finalGenParticles):
+// GENERATOR LINK (doGen = true; needs the pruning chain from the GenParticles the TPs
+// reference to finalGenParticles, genParticlePruningMaps, all run in the job):
 //   genPartIdx >= 0   the TP's own generator particle is GenPart row genPartIdx
 //   genPartIdx == -1  the TP has no generator particle (pileup, or produced in Geant4)
 //   genPartIdx == -2  it has one, but neither it nor any ancestor survives the pruning
@@ -106,7 +107,8 @@ public:
             << "L1TrackingParticleTableProducer: selection '" << selection_ << "' with no linked objects";
     }
     if (doGen_)
-      genMapToken_ = consumes<GenMap>(cfg.getParameter<edm::InputTag>("genParticlePruningMap"));
+      for (const auto& tag : cfg.getParameter<std::vector<edm::InputTag>>("genParticlePruningMaps"))
+        genMapTokens_.push_back(consumes<GenMap>(tag));
     produces<nanoaod::FlatTable>();
     produces<edm::ValueMap<int>>();
   }
@@ -114,7 +116,9 @@ public:
   void produce(edm::Event& iEvent, const edm::EventSetup& iSetup) override {
     const auto tpHandle = iEvent.getHandle(tpToken_);
     const auto& tps = *tpHandle;
-    const GenMap* genMap = doGen_ ? &iEvent.get(genMapToken_) : nullptr;
+    std::vector<const GenMap*> genMaps;
+    for (const auto& token : genMapTokens_)
+      genMaps.push_back(&iEvent.get(token));
     const float b_field = iSetup.getData(bFieldToken_).inTesla(GlobalPoint(0.f, 0.f, 0.f)).z();
     const float convertRtoPt = CLHEP::c_light / 1.0E5 * b_field;
     const std::vector<bool> linked = linkedKeys(iEvent, tpHandle);
@@ -159,17 +163,12 @@ public:
       phi0.push_back(tphi0);
       d0.push_back(td0);
       z0.push_back(tz0);
-      if (genMap) {
+      if (doGen_) {
         int32_t link = -1;
         bool fromB = false, fromC = false;
         if (!tp.genParticles().empty()) {
           const reco::GenParticleRef g = tp.genParticles()[0];
-          if (!genMap->contains(g.id()))
-            throw cms::Exception("Configuration")
-                << "L1TrackingParticleTableProducer: the TrackingParticle generator links point into a "
-                   "GenParticle product the pruning map was not built from; set finalGenParticles.src to "
-                   "the collection the TrackingParticles reference (useGenParticlesFromFile).";
-          const reco::GenParticleRef kept = (*genMap)[g];
+          const reco::GenParticleRef kept = pruned(genMaps, g);
           if (kept.isNonnull()) {
             link = static_cast<int32_t>(kept.key());
           } else {
@@ -177,7 +176,7 @@ public:
             reco::GenParticleRef a = g;
             for (int depth = 0; depth < kMaxDepth && a->numberOfMothers() > 0; ++depth) {
               a = a->motherRef(0);
-              const reco::GenParticleRef k = (*genMap)[a];
+              const reco::GenParticleRef k = pruned(genMaps, a);
               if (k.isNonnull()) {
                 link = -3 - static_cast<int32_t>(k.key());
                 break;
@@ -244,13 +243,32 @@ public:
     desc.add<std::vector<edm::InputTag>>("linkedTrackingParticles", {})
         ->setComment("linked: TrackingParticleRefVectors of other objects the nano writes (e.g. IT clusters)");
     desc.add<bool>("doGen", false)->setComment("add genPartIdx / genFromB / genFromC (needs the gen chain)");
-    desc.add<edm::InputTag>("genParticlePruningMap", edm::InputTag("finalGenParticles"))
-        ->setComment("GenParticlePruner behind the GenPart table; its full->pruned Association is used");
+    desc.add<std::vector<edm::InputTag>>("genParticlePruningMaps",
+                                         {edm::InputTag("prunedGenParticlesWithStatusOne"),
+                                          edm::InputTag("prunedGenParticles"),
+                                          edm::InputTag("finalGenParticles")})
+        ->setComment("GenParticlePruner chain, in order, from the GenParticles the TrackingParticles reference to the GenPart table");
     descriptions.addWithDefaultLabel(desc);
   }
 
 private:
   static constexpr int kMaxDepth = 256;  // guard against malformed mother chains
+
+  // The GenPart row of a full-record generator particle: follow the pruning chain from the
+  // collection the TrackingParticles reference to finalGenParticles. Null if pruned.
+  static reco::GenParticleRef pruned(const std::vector<const GenMap*>& maps, reco::GenParticleRef g) {
+    for (const GenMap* map : maps) {
+      if (!map->contains(g.id()))
+        throw cms::Exception("Configuration")
+            << "L1TrackingParticleTableProducer: genParticlePruningMaps is not a chain from the GenParticle "
+               "product the TrackingParticles reference ("
+            << g.id() << ") to the GenPart collection";
+      g = (*map)[g];
+      if (g.isNull())
+        break;
+    }
+    return g;
+  }
 
   bool selected(const TrackingParticle& tp, bool linked) const {
     if (selection_ == "all")
@@ -319,7 +337,7 @@ private:
   std::vector<edm::EDGetTokenT<StubMap>> stubMapTokens_;
   std::vector<edm::EDGetTokenT<TrackMap>> trackMapTokens_;
   std::vector<edm::EDGetTokenT<TrackingParticleRefVector>> tpRefTokens_;
-  edm::EDGetTokenT<GenMap> genMapToken_;
+  std::vector<edm::EDGetTokenT<GenMap>> genMapTokens_;
 };
 
 DEFINE_FWK_MODULE(L1TrackingParticleTableProducer);
