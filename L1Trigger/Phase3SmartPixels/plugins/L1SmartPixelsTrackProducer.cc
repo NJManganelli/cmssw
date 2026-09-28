@@ -123,6 +123,7 @@
 
 //////////////
 // STD HEADERS
+#include <algorithm>
 #include <map>
 #include <unordered_map>
 #include <set>
@@ -1521,16 +1522,19 @@ void L1SmartPixelsTrackProducer::produce(edm::Event& iEvent, const edm::EventSet
       const bool useAlpha = (seedlessRefitUseAngles_ != "none");
       const bool useBeta = (seedlessRefitUseAngles_ == "alphaBeta");
 
-      // Truth identity of THIS track, for same-TP vs other-TP digi classification.
-      // (Class does not change the measurement model here — other-TP digis carry
-      // their OWN parent's angle, which is the correct fake phenomenology.)
-      std::set<unsigned int> drMatchedSimIds;
-      EncodedEventId drMatchedEvtId;
-      if (!my_tp.isNull()) {
-        drMatchedEvtId = my_tp->eventId();
-        for (const auto& g4 : my_tp->g4Tracks())
-          drMatchedSimIds.insert(g4.trackId());
-      }
+      // TrackingParticle collection key of a TP, through its g4Tracks (a TP owns several).
+      const auto drTpKey = [&drParentTpIdx](const TrackingParticle& tp) {
+        for (const auto& g4 : tp.g4Tracks()) {
+          const auto it = drParentTpIdx.find({tp.eventId().rawId(), g4.trackId()});
+          if (it != drParentTpIdx.end())
+            return it->second;
+        }
+        return -1;
+      };
+      // The OT track's own TTTrackAssociator TP: the reference for selHitClass.
+      const int drOTTpKey = my_tp.isNull() ? -1 : drTpKey(*my_tp);
+      // Dominant-TP keys of the IT clusters the refit accepts.
+      std::vector<int> drAcceptedTpKeys;
 
       // ---- sidecar accumulators (spec §2): one hitInfo entry per valid layer
       // crossing attempted (whether or not a hit is accepted), one trackInfo
@@ -1552,13 +1556,6 @@ void L1SmartPixelsTrackProducer::produce(edm::Event& iEvent, const edm::EventSet
       a[2] = iterL1Track->tanL();
       a[3] = iterL1Track->z0();
       a[4] = (seedlessRefitOTNPar_ == 5 && iterL1Track->nFitPars() == 5) ? tmp_trk_d0 : 0.0;
-      // Matched-TP identity, for joining clusters to the track that owns them.
-      if (!drMatchedSimIds.empty()) {
-        const auto tit =
-            drParentTpIdx.find({drMatchedEvtId.rawId(), *drMatchedSimIds.begin()});
-        if (tit != drParentTpIdx.end())
-          drTrackInfo.matchedTpIdx = tit->second;
-      }
       // OT track snapshot for the refit-BDT parameter deltas (spec §6a features 11-15).
       const ROOT::Math::SVector<double, 5> aOT = a;
 
@@ -1870,6 +1867,7 @@ void L1SmartPixelsTrackProducer::produce(edm::Event& iEvent, const edm::EventSet
           bool merged = false;              // a second TP contributes > clusterMergeFrac
           double parCotA = -999., parCotB = -999.;  // parent local angles (truth-only)
           int32_t clusterIdx = -1;          // row in the untruncated cluster nano table
+          int tpKey = -1;                   // dominant contributor's TP key (truth-only)
         };
         std::vector<HitCand> cands;
         bool windowTruncated = false;
@@ -1933,11 +1931,8 @@ void L1SmartPixelsTrackProducer::produce(edm::Event& iEvent, const edm::EventSet
 
             // TRUTH-ONLY class, by TrackingParticle IDENTITY rather than SimTrack
             // id: a TP owns several g4Tracks. 2 = no TP at all (noise-like).
-            cand.cls = !tr.hasTp()
-                           ? int8_t(2)
-                           : (static_cast<int>(tr.dominantTp().key()) == drTrackInfo.matchedTpIdx
-                                  ? int8_t(0)
-                                  : int8_t(1));
+            cand.tpKey = tr.hasTp() ? static_cast<int>(tr.dominantTp().key()) : -1;
+            cand.cls = !tr.hasTp() ? int8_t(2) : (cand.tpKey == drOTTpKey ? int8_t(0) : int8_t(1));
 
             // Selection chi2 against the prediction (position always; angles when enabled+valid).
             // Per-hit CPE uncertainties, not a per-module pitch/sqrt(12) constant:
@@ -2087,9 +2082,41 @@ void L1SmartPixelsTrackProducer::produce(edm::Event& iEvent, const edm::EventSet
         drTrackInfo.chi2IncBetaTot =
             (drTrackInfo.chi2IncBetaTot < -900.f ? 0.f : drTrackInfo.chi2IncBetaTot) + static_cast<float>(incBeta);
 
+        drAcceptedTpKeys.push_back(best.tpKey);
         ++nAcceptedHits;
         ++nUpdates;
       }  // layer loop
+
+      // TRUTH-ONLY match over every hit the OUTPUT track carries: its OT stubs, plus the
+      // accepted IT clusters when the refit is kept. TTTrackAssociator's loosely-genuine
+      // rule extended to IT clusters: the unique TP to which all hits but at most one
+      // belong. A stub belongs to every TP in either of its clusters (as in
+      // TTTrackAssociator), an IT cluster to its dominant charge contributor. With no IT
+      // hits this reproduces the OT track's TTTrackAssociator match exactly.
+      const auto drMatchOverHits = [&](const std::vector<int>& itTpKeys) {
+        const auto& stubs = iterL1Track->getStubRefs();
+        std::map<int, TrackingParticlePtr> cands;
+        for (const auto& stub : stubs)
+          for (unsigned ic = 0; ic < 2; ++ic)
+            for (const auto& tp : MCTruthTTClusterHandle->findTrackingParticlePtrs(stub->clusterRef(ic)))
+              if (tp.isNonnull())
+                if (const int k = drTpKey(*tp); k >= 0)
+                  cands.emplace(k, tp);
+        int match = -1;
+        for (const auto& [key, tp] : cands) {
+          const auto& tpStubs = MCTruthTTStubHandle->findTTStubRefs(tp);
+          auto nWrong = std::count_if(
+              itTpKeys.begin(), itTpKeys.end(), [key = key](int k) { return k != key; });
+          for (const auto& stub : stubs)
+            nWrong += std::find(tpStubs.begin(), tpStubs.end(), stub) == tpStubs.end();
+          if (nWrong <= 1) {
+            if (match >= 0)
+              return -1;  // ambiguous, as TTTrackAssociator
+            match = key;
+          }
+        }
+        return match;
+      };
 
       if (!otCovOK || nAcceptedHits < seedlessRefitMinHits_) {
         // 1:1 passthrough fallback (exact copy, original covariance included).
@@ -2102,6 +2129,7 @@ void L1SmartPixelsTrackProducer::produce(edm::Event& iEvent, const edm::EventSet
         pt.chi2IncYTot = 0.f;
         pt.chi2IncAlphaTot = 0.f;
         pt.chi2IncBetaTot = 0.f;
+        pt.matchedTpIdx = drMatchOverHits({});
         sidecar->trackInfo.push_back(pt);
         sidecar->hitInfo.emplace_back();  // empty per spec
       } else {
@@ -2255,6 +2283,7 @@ void L1SmartPixelsTrackProducer::produce(edm::Event& iEvent, const edm::EventSet
                            &drTrackInfo.chi2IncBetaTot})
           if (*tot < -900.f)
             *tot = 0.f;
+        drTrackInfo.matchedTpIdx = drMatchOverHits(drAcceptedTpKeys);
         sidecar->trackInfo.push_back(drTrackInfo);
         sidecar->hitInfo.push_back(std::move(drHitInfo));
       }

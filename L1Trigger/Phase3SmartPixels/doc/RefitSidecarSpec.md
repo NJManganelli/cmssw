@@ -188,7 +188,8 @@ struct SmartPixelsRefitHitInfo {   // one entry per LAYER CROSSING attempted (no
                            // window held fewer than 2 candidates. Hardware-plausible (computed
                            // from in-window quantities); eligible for transmitted subsets v2+.
   // --- TRUTH-ONLY fields (never hardware-available; excluded from every transmitted subset) ---
-  int8_t selHitClass;      // simlink class of the selected hit: 0 sameTP, 1 otherTP, 2 noise, -1 none
+  int8_t selHitClass;      // simlink class of the selected hit: 0 same TP as the OT track's
+                           // TTTrackAssociator TP, 1 other TP, 2 noise, -1 none
   float  tpLocalCotAlpha, tpLocalCotBeta;  // selected hit's unsmeared parent local angles (-999.f if none)
 };
 
@@ -204,6 +205,10 @@ struct SmartPixelsRefitTrackInfo { // one entry per track (refit or passthrough)
   uint16_t maxWindowMult;  // max windowMult over this track's crossings
   float chi2IncXTot, chi2IncYTot;        // per-dimension sums over crossings; the r-phi
   float chi2IncAlphaTot, chi2IncBetaTot; // and r-z totals are X+Alpha and Y+Beta
+  int32_t matchedTpIdx;    // TRUTH-ONLY TrackingParticle key, -1 none: the unique TP owning all
+                           // but at most one of the output track's hits (OT stubs + accepted IT
+                           // clusters; TTTrackAssociator's loosely-genuine rule, stubs only for
+                           // a passthrough track, where it equals the OT track's match)
 };
 
 struct SmartPixelsRefitSidecar {
@@ -214,7 +219,8 @@ struct SmartPixelsRefitSidecar {
 
 Rules:
 - Sentinel for any unavailable float is `-999.f`; consumers MUST test `> -900.f`.
-- Passthrough tracks have `status` bit0 unset, empty `hitInfo[i]`, zeros elsewhere.
+- Passthrough tracks have `status` bit0 unset, empty `hitInfo[i]`, zeros elsewhere
+  (except `matchedTpIdx`).
 - `hitInfo[i]` holds one entry per valid crossing, **in the order the Kalman loop
   visited the layers** — which is a config choice (`seedlessRefitLayerOrder`, default
   `outsideIn` = L4->L1), not ascending layer. The order is meaningful: it is the

@@ -39,6 +39,7 @@
 #include "L1Trigger/Phase3SmartPixels/interface/SmartPixelsRefitSidecar.h"
 #include "L1Trigger/Phase3SmartPixels/interface/SmartPixelsTransmittedSubset.h"
 
+#include <algorithm>
 #include <cstdint>
 #include <string>
 #include <vector>
@@ -78,7 +79,7 @@ public:
     }
 
     // ---- EXTENSION table on the variant track table (extension=true, same name/length) ----
-    std::vector<uint8_t> status, nCrossings, nAcceptedHits, nKFUpdates, layerHitMask, maxWindowMult;
+    std::vector<uint8_t> status, nCrossings, nAcceptedHits, nKFUpdates, layerHitMask, maxWindowMult, nITHitsFromOTTp;
     std::vector<bool> refitPerformed, otCovOK, anyWindowTruncated;
     std::vector<float> chi2IncXTot, chi2IncYTot, chi2IncAlphaTot, chi2IncBetaTot;
     std::vector<float> chi2ITAtOT, chi2ITAtRefit, shiftChi2, logDetRatio;
@@ -89,6 +90,7 @@ public:
     nAcceptedHits.reserve(nTracks);
     nKFUpdates.reserve(nTracks);
     layerHitMask.reserve(nTracks);
+    nITHitsFromOTTp.reserve(nTracks);
     maxWindowMult.reserve(nTracks);
     refitPerformed.reserve(nTracks);
     otCovOK.reserve(nTracks);
@@ -146,6 +148,8 @@ public:
       shiftChi2.push_back(ti.shiftChi2);
       logDetRatio.push_back(ti.logDetRatio);
       compactWord.push_back(static_cast<int32_t>(smartpixels::packCompactWord(ti)));
+      nITHitsFromOTTp.push_back(static_cast<uint8_t>(std::count_if(
+          sidecar.hitInfo[it].begin(), sidecar.hitInfo[it].end(), [](const auto& hi) { return hi.selHitClass == 0; })));
 
       for (const auto& hi : sidecar.hitInfo[it]) {
         hitTrackIdx.push_back(static_cast<int32_t>(it));
@@ -268,7 +272,8 @@ public:
     hitTable->addColumn<float>("chi2IncAlpha", chi2IncAlpha, "crossing chi2 increment, cotAlpha angle term (-999 if none; 0 if not applied)", /*mantissaBits=*/12);
     hitTable->addColumn<float>("chi2IncBeta", chi2IncBeta, "crossing chi2 increment, cotBeta angle term (-999 if none; 0 if not applied)", /*mantissaBits=*/12);
     hitTable->addColumn<float>("selChi2Margin", selChi2Margin, "runner-up minus best selection chi2 (>=0; -999 if <2 candidates or no accepted hit)", /*mantissaBits=*/12);
-    hitTable->addColumn<int32_t>("selHitClass", selHitClass, "TRUTH-ONLY simlink class of selected hit: 0 sameTP, 1 otherTP, 2 noise, -1 none");
+    hitTable->addColumn<int32_t>("selHitClass", selHitClass, "TRUTH-ONLY simlink class of the selected hit by its dominant charge contributor: 0 the OT track's "
+        "matched TP (L1TTrack_tpIdx), 1 another TP, 2 noise, -1 no hit accepted");
     hitTable->addColumn<float>("tpLocalCotAlpha", tpLocalCotAlpha, "TRUTH-ONLY unsmeared parent local cotAlpha of the selected hit (-999 if none)", /*mantissaBits=*/12);
     hitTable->addColumn<float>("tpLocalCotBeta", tpLocalCotBeta, "TRUTH-ONLY unsmeared parent local cotBeta of the selected hit (-999 if none)", /*mantissaBits=*/12);
     hitTable->setDoc(trackTableName_.empty()
@@ -295,9 +300,16 @@ public:
     trkTable->addColumn<float>("spixChi2IncAlphaTot", chi2IncAlphaTot, "sum of cotAlpha chi2 increments over crossings (r-phi total = X + Alpha)");
     trkTable->addColumn<float>("spixChi2IncBetaTot", chi2IncBetaTot, "sum of cotBeta chi2 increments over crossings (r-z total = Y + Beta)");
     trkTable->addColumn<int32_t>("spixMatchedTpIdx", matchedTpIdx,
-        std::string("TRUTH-ONLY, TP this track is matched to (equal L1TSmartPixelsCluster_tpIdx finds every "
-                    "cluster from its particle, including ones the search window never offered): ") +
+        std::string("TRUTH-ONLY, TP this track is matched to: the unique TP owning all but at most one of "
+                    "its hits, i.e. its OT stubs plus, when refitted, its accepted IT clusters (the "
+                    "TTTrackAssociator loosely-genuine rule; a stub belongs to every TP in its two clusters, "
+                    "an IT cluster to its dominant charge contributor). A passthrough track carries exactly "
+                    "its OT track's match (L1TTrack_tpIdx via l1TrackIdx). Equal L1TSmartPixelsCluster_tpIdx "
+                    "finds every cluster from its particle, including ones the search window never offered: ") +
             l1tnano::tpIdxDoc());
+    trkTable->addColumn<uint8_t>("spixNITHitsFromOTTp", nITHitsFromOTTp,
+        "TRUTH-ONLY, accepted IT hits whose dominant charge contributor is the OT track's matched TP "
+        "(per-track count of L1TSmartPixelsRefitHit_selHitClass == 0; 0 if the OT track is unmatched)");
     trkTable->addColumn<float>("spixChi2ITAtOT", chi2ITAtOT,
         "chi2 of the ACCEPTED IT hits against the UNMODIFIED OT track helix. Needs no stubs, so "
         "it travels with the track. CAVEAT: the refit selected these hits by minimising this, so "
