@@ -110,7 +110,9 @@ l1tTrackingParticleTable = cms.EDProducer(
     linkedTrackAssociations = cms.VInputTag(),
     linkedTrackingParticles = cms.VInputTag(),
     doGen = cms.bool(False),
-    genParticlePruningMap = cms.InputTag("finalGenParticles"),
+    # GenParticlePruner chain from the TrackingParticles' GenParticles to the GenPart table
+    genParticlePruningMaps = cms.VInputTag("prunedGenParticlesWithStatusOne", "prunedGenParticles",
+                                           "finalGenParticles"),
 )
 
 p2L1TrackTruthTask = cms.Task(
