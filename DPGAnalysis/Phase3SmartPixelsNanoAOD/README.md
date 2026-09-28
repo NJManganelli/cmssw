@@ -114,34 +114,40 @@ cmsDriver.py stepWF1 -s RAW2DIGI,L1TrackTrigger,L1,L1P2GT,NANO:@L1PFTrkNanoSmart
 ```
 
 Notes:
-- The `@L1PFTrkNanoSmartPix*` flavour adds the DEFAULT-label tables; `smartPixelsCoexist`
-  adds one table pair per requested variant (suffixed). For variant-only tables, use the
-  plain `@L1PFTrkNano*` flavour + the coexist customise.
-- Downstream objects (vertices, PF/Puppi, jets, MET, GT) still reflect the STANDARD
-  tracks in this workflow.
+- The `@L1PFTrkNanoSmartPix*` flavour adds the DEFAULT-label tables (the default-label
+  producers, passthrough per the cfi, run on demand); `smartPixelsCoexist` adds one table
+  pair per requested variant (suffixed). For variant-only tables, use the plain
+  `@L1PFTrkNano*` flavour + the coexist customise.
+- Downstream objects (vertices, PF/Puppi, jets, MET, GT) reflect the STANDARD tracks; in a
+  NANO-only job they are re-emulated on demand from them (standard L1 tasks).
 
-## WF2 — co-opt ("pure view", file-to-file comparison)
+## WF2 — co-opt (canonical single-view nano, file-to-file comparison)
 
-One job per variant; every downstream consumer of the standard tracklet tracks reads
-the chosen SmartPixels collection instead. Any nano flavour then reflects that single
-interpretation:
+One job per variant. The standard L1 emulation (SimL1Emulator + P2GT, on demand) is
+rewired by the generic injector to the chosen SmartPixels collection, so vertices,
+PF/Puppi, jets and the NG tagger, GMT tk muons, track jets/HT/MET, displaced vertices
+and the GT all follow it. The nano carries the pure OT tables `L1TTrack`/`L1TExtTrack`
+and the variant as the unsuffixed `L1TSmartPixelsTrack`/`L1TSmartPixelsExtTrack`
+(+ `L1TSmartPixels[Ext]RefitHit` for digiRefit):
 
 ```bash
-# baseline (standard tracks): same command WITHOUT the customise_commands line
-cmsDriver.py stepWF2 -s RAW2DIGI,L1TrackTrigger,L1,L1P2GT,NANO:@L1PFTrkNanowithGen \
+cmsDriver.py stepWF2 -s NANO:@L1PFTrkNanoSmartPixClusterswithGen \
   --conditions auto:phase2_realistic_T35 --geometry ExtendedRun4D121 --era Phase2C22I13M9 \
   --procModifiers nano_l1_hlt --eventcontent NANOAODSIM --datatier NANOAODSIM \
-  --customise_commands 'from L1Trigger.Phase3SmartPixels.customizeSmartPixels_cff import smartPixelsCoopt; process = smartPixelsCoopt(process, mode="correctionlibRegression", activeSP="1100")' \
+  --customise_commands 'from L1Trigger.Phase3SmartPixels.customizeSmartPixels_cff import smartPixelsCoopt; from DPGAnalysis.Phase3SmartPixelsNanoAOD.l1tPh3SmartPixelsNano_cff import produceMiniAODGenInputs; process = smartPixelsCoopt(process, variant=("digiRefit", "1111"), trackInputMode="rebuildTracksFromStubs", digiRefitConfig={"angleSource": "emu"}); process = produceMiniAODGenInputs(process)' \
   --filein <GEN-SIM-DIGI-RAW> --mc -n -1
 ```
 
 Notes:
-- The injector log prints every `l1tTTTracksFromTrackletEmulation --> <module>`
-  replacement (GTT input, vertex finder, correlator layers, ...); verify with
-  `--no_exec` + `python3 stepWF2_*.py` before large runs.
-- The L1TTrack nano table itself is protected by the injector skip-list, so it keeps
-  the ORIGINAL tracks as an in-file reference; pass `addPh3Table=True` to also write
-  the injected variant as an explicit SmartPixels table.
+- `variant` is the single selector (same forms as a coexist `variants` entry).
+- The injector logs every rewired InputTag (`SmartPixels injector: <module> ...`); it
+  never touches nano tables. Verify with `--no_exec` + `python3 stepWF2_*.py`.
+- Table wiring in coopt (`retargetTablesToSmartPixelsTracks`): `L1PuppiCand`/`L1ExtPuppiCand`
+  `l1TrackIdx` index `L1TSmartPixelsTrack`/`L1TSmartPixelsExtTrack` (the branch doc names
+  the table); candidate track truth uses the associator of the SmartPixels collection;
+  `L1DispVertex` track indices are `L1TSmartPixelsExtTrack` rows; `L1TTrack` keeps its own
+  GTT hardware columns from a GTT conversion of the OT tracks.
+- `produceMiniAODGenInputs` only for inputs without MINIAOD gen products (withGen tiers).
 - Loop `activeSP` over 0000..1111 (or modes) across jobs; comparisons are file-to-file.
 - For the full L1+HLT+Reco no-filter study, extend the steps per
   the recipes in the L1Nano documentation, e.g.

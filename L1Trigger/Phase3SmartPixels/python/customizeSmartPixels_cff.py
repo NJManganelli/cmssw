@@ -13,11 +13,14 @@ import FWCore.ParameterSet.Config as cms
 # need to be appended to the mode lists below; nothing structural assumes
 # "regression"/"correctionlib".
 #
-# Two workflow entry points:
-#  - smartPixelsCoexist (WF1): standard tracks AND SmartPixels variant tables
-#    in one L1Nano file (in-file track-to-track comparison).
-#  - smartPixelsCoopt (WF2, "pure view"): rewire every downstream consumer of
-#    the standard tracklet tracks to ONE variant; compare nano files job-to-job.
+# Two workflow entry points; both make the standard L1 emulation available on
+# demand (attachL1EmulationOnDemand):
+#  - smartPixelsCoexist (WF1): standard tracks AND suffixed SmartPixels variant
+#    tables in one L1Nano file (multi-variant track studies); L1 objects follow
+#    the tracklet tracks.
+#  - smartPixelsCoopt (WF2, canonical): the generic injector rewires the L1
+#    emulation to ONE variant, written as the unsuffixed L1TSmartPixelsTrack
+#    table; compare nano files job-to-job.
 # ---------------------------------------------------------------------------
 
 # Modes that produce one collection per producer instance, no activeSP config
@@ -748,6 +751,90 @@ def _scheduleVariantModules(process, modules, taskName):
   return process
 
 
+# The standard tracklet collections and their truth associators. The injector maps
+# each onto the injected SmartPixels collection / an associator of that collection.
+TRACKLET_TRACK_LABELS = ("l1tTTTracksFromTrackletEmulation", "l1tTTTracksFromExtendedTrackletEmulation")
+TRACKLET_ASSOCIATOR_LABELS = ("TTTrackAssociatorFromPixelDigis", "TTTrackAssociatorFromPixelDigisExtended")
+# Producers the injector never rewires: the SmartPixels producers (their input IS
+# the tracklet collection), the truth associators and the tracklet track finder.
+# Nano tables are never rewired either (_isNanoTable): a table describes the
+# collection it names, and the table wiring is explicit (see smartPixelsCoopt).
+INJECTOR_PROTECTED_TYPES = ("L1SmartPixelsTrackProducer", "TTTrackAssociator_Phase2TrackerDigi_", "L1FPGATrackProducer")
+
+
+def _isNanoTable(label, module):
+  # nano FlatTable producers are *TableProducer types, and their labels end in
+  # "Table" (the NANOAOD keep pattern)
+  return module.type_().endswith("TableProducer") or label.endswith("Table")
+
+
+def _mapInputTags(pset, mapping, prefix=""):
+  """Rewrite, in place and recursively (PSet/VPSet/VInputTag), every InputTag whose
+  module label is a key of `mapping`; return [(parameter path, old, new)]."""
+  changed = []
+
+  def _mapped(tag):
+    new = mapping.get(tag.getModuleLabel())
+    if new is None:
+      return None
+    return cms.InputTag(new, tag.getProductInstanceLabel(), tag.getProcessName())
+
+  for name in pset.parameterNames_():
+    param = getattr(pset, name)
+    if isinstance(param, cms.InputTag):
+      new = _mapped(param)
+      if new is not None:
+        changed.append((prefix + name, param.configValue(), new.configValue()))
+        setattr(pset, name, new)
+    elif isinstance(param, cms.VInputTag):
+      tags = [t if isinstance(t, cms.InputTag) else cms.InputTag(str(t)) for t in param]
+      news = [_mapped(t) for t in tags]
+      if any(n is not None for n in news):
+        for i, (t, n) in enumerate(zip(tags, news)):
+          if n is not None:
+            changed.append((f"{prefix}{name}[{i}]", t.configValue(), n.configValue()))
+        setattr(pset, name, cms.VInputTag(*[n if n is not None else t for t, n in zip(tags, news)]))
+    elif isinstance(param, cms.PSet):
+      changed += _mapInputTags(param, mapping, f"{prefix}{name}.")
+    elif isinstance(param, cms.VPSet):
+      for i, sub in enumerate(param):
+        changed += _mapInputTags(sub, mapping, f"{prefix}{name}[{i}].")
+  return changed
+
+
+def smartPixelsTrackAssociator(process, trackLabel, extended=False):
+  """TTTrackAssociator for a SmartPixels track collection (idempotent); returns its label.
+
+  Truth maps are keyed by track Ptr, so a consumer of the SmartPixels tracks must use
+  an association of THAT collection, never the tracklet associator. The SmartPixels
+  tracks carry their seed's stub refs, so the association resolves exactly as for
+  the seed. Runs on demand (associated task).
+  """
+  label = f"TTTrackAssociatorFromPixelDigis{'Extended' if extended else ''}W{trackLabel}"
+  if not hasattr(process, label):
+    from SimTracker.TrackTriggerAssociation.TTTrackAssociation_cfi import TTTrackAssociatorFromPixelDigis
+    setattr(process, label, TTTrackAssociatorFromPixelDigis.clone(
+        TTTracks=cms.VInputTag(cms.InputTag(trackLabel, "Level1TTTracks"))))
+    task = cms.Task(getattr(process, label))
+    setattr(process, label + "Task", task)
+    for _, path in list(process.paths_().items()) + list(process.endpaths_().items()):
+      path.associate(task)
+  return label
+
+
+class _AssociatorMap:
+  """InputTag mapping tracklet associator -> associator of the injected collection,
+  created only when a rewired consumer actually reads it."""
+  def __init__(self, process, trackMap):
+    self.process, self.trackMap = process, trackMap
+
+  def get(self, label):
+    if label not in TRACKLET_ASSOCIATOR_LABELS:
+      return None
+    extended = label == TRACKLET_ASSOCIATOR_LABELS[1]
+    return smartPixelsTrackAssociator(self.process, self.trackMap[TRACKLET_TRACK_LABELS[extended]], extended)
+
+
 def injectSmartPixelsTrackProducer(process,
                                    smartPixelsEmulatorMode="passthrough",
                                    addAssociation=True,
@@ -755,25 +842,23 @@ def injectSmartPixelsTrackProducer(process,
                                    l1tSmartPixelsTrackProducerExtendedLabel="l1tSmartPixelsTrackProducerExtended",
                                    skipModuleTypes=None,
                                    printProcessInfo=False):
-  """WF2 core: rewrite every producer InputTag that reads the standard tracklet
-  tracks (l1tTTTracksFromTrackletEmulation[Extended] / Level1TTTracks) to the
-  given SmartPixels collections, co-opting the full downstream chain (GTT input,
-  vertex finder, correlator layers, track jets/HT/MET, GT, muon matching, ...).
+  """WF2 core: rewrite every InputTag of a non-table producer that reads the standard
+  tracklet tracks (l1tTTTracksFromTrackletEmulation[Extended]) to the given
+  SmartPixels collections, co-opting the full downstream L1 emulation (GTT input,
+  vertex finder, correlator layers, track jets/HT/MET, GMT tk muons, displaced
+  vertices, ...). Nested PSet/VPSet/VInputTag parameters are rewired too. A rewired
+  consumer that also reads the tracklet TRUTH association is repointed to an
+  associator of the injected collection (smartPixelsTrackAssociator).
 
-  skipModuleTypes protects (by C++ type) the producers that must keep reading
-  the original tracks: the SmartPixels producers themselves (their input), the
-  TTTrack associators, the tracklet track finder, and the L1Nano track-table
-  producer (so the L1TTrack nano table remains the untouched reference).
+  The L1 emulation modules must already be in the process (attachL1EmulationOnDemand);
+  the injector only rewires, and on-demand scheduling then runs the SmartPixels
+  producer because the rewired consumers ask for it.
+
+  Never rewired: nano table producers (_isNanoTable) and the INJECTOR_PROTECTED_TYPES
+  (plus skipModuleTypes, e.g. PFTrackProducerFromL1Tracks to keep the correlator on
+  the tracklet tracks). Every rewired InputTag is logged ("SmartPixels injector: ...").
   """
-  if skipModuleTypes is None:
-    skipModuleTypes = ["L1SmartPixelsTrackProducer",
-                       "TTTrackAssociator_Phase2TrackerDigi_",
-                       "L1FPGATrackProducer",
-                       "SimpleL1TTTrackCandidateFlatTableProducer",
-                       # keep the truth table aligned with the (skipped) reference track
-                       # table; Ref-based truth lookups only resolve on the original
-                       # collection the associator ran on
-                       "L1TrackTruthTableProducer"]
+  protected = set(INJECTOR_PROTECTED_TYPES) | set(skipModuleTypes or ())
 
   def print_helper(item):
     if hasattr(item, "items"):
@@ -789,22 +874,22 @@ def injectSmartPixelsTrackProducer(process,
       print(section, "\n")
       print_helper(getattr(process, section)())
 
-  for modname, module in process.producers_().items():
-    if hasattr(module, '_TypedParameterizable__type') and module._TypedParameterizable__type in skipModuleTypes:
-      print("Skipping module type ", module._TypedParameterizable__type, " with module name ", modname)
+  trackMap = dict(zip(TRACKLET_TRACK_LABELS,
+                      (l1tSmartPixelsTrackProducerLabel, l1tSmartPixelsTrackProducerExtendedLabel)))
+  nRewired, modules = 0, set()
+  for modname, module in list(process.producers_().items()) + list(process.filters_().items()):
+    if module.type_() in protected or _isNanoTable(modname, module):
       continue
-    for param_name in module.parameterNames_():
-      param = getattr(module, param_name)
-      if isinstance(param, cms.InputTag):
-        if param.getModuleLabel() == "l1tTTTracksFromTrackletEmulation":
-          print("module._TypedParameterizable__type --> ", module._TypedParameterizable__type)
-          print("l1tTTTracksFromTrackletEmulation --> ", modname, param_name, param)
-          setattr(module, param_name, cms.InputTag(l1tSmartPixelsTrackProducerLabel, "Level1TTTracks"))
-          print("                                 --> ", modname, param_name, getattr(module, param_name))
-        if param.getModuleLabel() == "l1tTTTracksFromExtendedTrackletEmulation":
-          print("l1tTTTracksFromExtendedTrackletEmulation --> ", modname, param_name, param)
-          setattr(module, param_name, cms.InputTag(l1tSmartPixelsTrackProducerExtendedLabel, "Level1TTTracks"))
-          print("                                         --> ", modname, param_name, getattr(module, param_name))
+    changed = _mapInputTags(module, trackMap)
+    if not changed:
+      continue
+    changed += _mapInputTags(module, _AssociatorMap(process, trackMap))
+    modules.add(modname)
+    nRewired += len(changed)
+    for param, old, new in changed:
+      print(f"SmartPixels injector: {modname} ({module.type_()}) {param}: {old} -> {new}")
+  print(f"SmartPixels injector: rewired {nRewired} InputTag(s) in {len(modules)} module(s); "
+        "nano tables untouched")
 
   if addAssociation:
     process.load('L1Trigger.Phase3SmartPixels.l1tSmartPixelsTrackProducer_cfi')
@@ -819,6 +904,43 @@ def injectSmartPixelsTrackProducer(process,
   return process
 
 
+# The Phase-2 GT menu the cmsDriver L1P2GT step loads by default.
+P2GT_MENU = "step1_2024"
+
+
+def attachL1EmulationOnDemand(process, gtMenu=P2GT_MENU):
+  """Make the STANDARD Phase-2 L1 emulation available on demand: SimL1EmulatorTask
+  (the cmsDriver L1 step) and the P2GT emulator (the L1P2GT step: l1tGTProducer,
+  l1tGTAlgoBlockProducer and the gtMenu algorithm paths, loaded as the step does).
+
+  The tasks are associated with every path, so a module runs only if something
+  consumes its product -- a nano table, the GT menu, or another L1 module those
+  need -- and then re-emulates it in this job, shadowing the input's same-label
+  product. With the injector (coopt) the rewired consumers pull in the SmartPixels
+  producer the same way. Idempotent; a job that already runs the L1 steps keeps them.
+  """
+  if not hasattr(process, "SimL1EmulatorTask"):
+    process.load("Configuration.StandardSequences.SimL1Emulator_cff")
+  # The calo emulators read the HCAL TP transcoder (CaloTPGRecord), which a DIGI step
+  # would provide; a job re-emulating L1 on stored TPs loads it itself.
+  if not hasattr(process, "CaloTPGTranscoder"):
+    process.load("SimCalorimetry.HcalTrigPrimProducers.hcaltpdigi_cff")
+  if not hasattr(process, "l1tGTProducer"):
+    import importlib
+    process.load("Configuration.StandardSequences.SimPhase2L1GlobalTriggerEmulator_cff")
+    menuPaths = []
+    for pathFile in importlib.import_module(f"L1Trigger.Configuration.Phase2GTMenus.{gtMenu}").menu:
+      process.load(pathFile)
+      module = importlib.import_module(pathFile)
+      menuPaths += [name for name in dir(module) if isinstance(getattr(module, name), cms.Path)]
+    if process.schedule is not None:
+      process.schedule.extend([getattr(process, name) for name in sorted(menuPaths)])
+  process.l1tP2GTEmulationTask = cms.Task(process.l1tGTProducer, process.l1tGTAlgoBlockProducer)
+  for _, path in list(process.paths_().items()) + list(process.endpaths_().items()):
+    path.associate(process.SimL1EmulatorTask, process.l1tP2GTEmulationTask)
+  return process
+
+
 # ---------------------------------------------------------------------------
 # WF1: coexist — standard tracks AND SmartPixels variant tables in one L1Nano
 # ---------------------------------------------------------------------------
@@ -827,9 +949,15 @@ def smartPixelsCoexist(process, variants=None, correctionSet=DEFAULT_CORRECTION_
                        extendedTracks=True, promptHnpar=5,
                        allowSignalOnlyRedigitization=False):
   """Add SmartPixels track collections (default: one passthrough variant)
-  alongside the standard tracks, plus one pair of L1Nano track tables per
-  variant. Nothing downstream is rewired: all other L1 objects still reflect
-  the standard tracks, enabling in-file track-to-track comparisons.
+  alongside the standard tracks, plus one pair of SUFFIXED L1Nano track tables per
+  variant (multi-variant track studies). Nothing downstream is rewired: the L1
+  emulation (attachL1EmulationOnDemand) runs from the standard tracklet tracks, so
+  every other L1 object is coherent with L1TTrack/L1TExtTrack.
+
+  The tier's own unsuffixed L1TSmartPixelsTrack/L1TSmartPixelsExtTrack tables read
+  the default-label producers (l1tSmartPixelsTrackProducer[Extended], passthrough
+  mode per the cfi); those are available on demand here. The canonical
+  single-variant table is a coopt concept (smartPixelsCoopt).
 
   trackInputMode (see TRACKINPUTMODE_CHOICES for full semantics):
    - 'reemulateL1TrackFinding' (default): re-run L1TrackTrigger from the
@@ -877,10 +1005,14 @@ def smartPixelsCoexist(process, variants=None, correctionSet=DEFAULT_CORRECTION_
 
   process, modules = addSmartPixelsTrackProducerVariants(process, variants, correctionSet,
                                                          digiRefitConfig=digiRefitConfig)
-  process = _scheduleVariantModules(process, modules, "l1tSmartPixelsCoexistTask")
+  # the default-label producers feed the tier's unsuffixed tables (on demand only)
+  process = _scheduleVariantModules(
+      process, modules + ["l1tSmartPixelsTrackProducer", "l1tSmartPixelsTrackProducerExtended"],
+      "l1tSmartPixelsCoexistTask")
   process = _applyTrackInputMode(process, trackInputMode, variants, extendedTracks=extendedTracks,
                                  promptHnpar=promptHnpar,
                                  allowSignalOnlyRedigitization=allowSignalOnlyRedigitization)
+  process = attachL1EmulationOnDemand(process)
 
   if addNanoTables:
     from DPGAnalysis.Phase3SmartPixelsNanoAOD.l1tPh3SmartPixelsNano_cff import (
@@ -904,50 +1036,48 @@ def smartPixelsCoexist(process, variants=None, correctionSet=DEFAULT_CORRECTION_
 
 
 # ---------------------------------------------------------------------------
-# WF2: co-opt — ONE variant feeds the entire downstream chain ("pure view")
+# WF2: co-opt — ONE variant feeds the entire downstream chain (canonical nano)
 # ---------------------------------------------------------------------------
-def smartPixelsCoopt(process, mode="passthrough", activeSP=None,
-                     correctionSet=DEFAULT_CORRECTION_SET,
-                     addPh3Table=False, skipModuleTypes=None,
+def smartPixelsCoopt(process, variant=("passthrough", None),
+                     correctionSet=DEFAULT_CORRECTION_SET, addNanoTables=True,
+                     skipModuleTypes=None,
                      trackInputMode="reemulateL1TrackFinding", digiRefitConfig=None,
                      extendedTracks=True, promptHnpar=5,
                      allowSignalOnlyRedigitization=False):
-  """Produce ONE SmartPixels variant in-job and inject it into every downstream
-  consumer of the standard tracklet tracks. Any nano flavor run in this job then
-  reflects that single track interpretation; comparisons are file-to-file
-  against a baseline job without this customisation (one job per variant).
+  """The canonical (single coherent view) SmartPixels job: ONE track variant replaces
+  the tracklet tracks for the whole standard L1 emulation.
 
-  addPh3Table=True additionally writes the injected collections as explicit
-  Ph3 SmartPixels track tables (cross-check); default is the pure view, where
-  the standard L1TTrack table (protected by the skip-list) remains the only
-  extra reference.
+  variant is THE selector: 'mode', (mode, activeSP) or {'mode':..., 'activeSP':...},
+  the same forms as a smartPixelsCoexist variants entry, e.g. ("digiRefit", "1111").
+  A future producer (e.g. joint IT+OT seeding/finding/fitting, the RESERVED 'refit'
+  mode) is selected the same way once its mode exists.
 
-  trackInputMode: see smartPixelsCoexist and TRACKINPUTMODE_CHOICES —
-  'reemulateL1TrackFinding' (default; re-run L1TrackTrigger from stored
-  digis, pileup retained), 'useStoredTracks', or 'rebuildTracksFromStubs'
-  (rebuild from file stubs, real PU + real covariance). Truth is REQUIRED for
-  the regression/TP/digiRefit modes.
-  The truthSource= keyword is RETIRED; passing it is a TypeError.
+  The standard L1 emulation is made available on demand (attachL1EmulationOnDemand)
+  and the generic injector rewires its track inputs (and their truth associations)
+  to the variant; on-demand scheduling then runs the variant producer because the
+  rewired consumers ask for it. Nano tables are never rewired by the injector.
 
-  extendedTracks (rebuildTracksFromStubs only): also rebuild the extended
-  chain. Default True.
+  addNanoTables (a nano job): the variant is written as the canonical UNSUFFIXED
+  L1TSmartPixelsTrack/L1TSmartPixelsExtTrack (+ L1TSmartPixels[Ext]RefitHit for
+  digiRefit), next to the untouched OT tables L1TTrack/L1TExtTrack, and every table
+  that indexes the tracks the L1 objects were built from is pointed at the
+  SmartPixels tables (retargetTablesToSmartPixelsTracks).
 
-  digiRefitConfig: dict merged over DIGIREFIT_DEFAULTS (validated loudly),
-  relevant only when mode='digiRefit'. mode='refit' raises the RESERVED
-  NotImplementedError. trackInputMode='useStoredTracks' on an old-layout file
-  fails loudly at runtime (SmartPixelsSeedCovMissing); use
-  'rebuildTracksFromStubs' instead.
+  trackInputMode, extendedTracks, promptHnpar, digiRefitConfig: as smartPixelsCoexist.
+  skipModuleTypes: extra C++ types the injector must not rewire (e.g.
+  "PFTrackProducerFromL1Tracks" keeps the correlator on the tracklet tracks).
 
-  cmsDriver (defaults):  --customise L1Trigger/Phase3SmartPixels/customizeSmartPixels_cff.smartPixelsCoopt
-  cmsDriver (explicit):  --customise_commands 'from L1Trigger.Phase3SmartPixels.customizeSmartPixels_cff import smartPixelsCoopt; process = smartPixelsCoopt(process, mode="correctionlibRegression", activeSP="1100")'
+  cmsDriver:  --customise_commands 'from L1Trigger.Phase3SmartPixels.customizeSmartPixels_cff import smartPixelsCoopt; process = smartPixelsCoopt(process, variant=("digiRefit", "1111"), trackInputMode="rebuildTracksFromStubs")'
   """
   trackInputMode = _resolveTrackInputMode(trackInputMode)
+  (mode, activeSP), = _normalizeVariants([variant])
   process, modules = addSmartPixelsTrackProducerVariants(process, [(mode, activeSP)], correctionSet,
                                                          digiRefitConfig=digiRefitConfig)
   process = _scheduleVariantModules(process, modules, "l1tSmartPixelsCooptTask")
   process = _applyTrackInputMode(process, trackInputMode, [(mode, activeSP)], extendedTracks=extendedTracks,
                                  promptHnpar=promptHnpar,
                                  allowSignalOnlyRedigitization=allowSignalOnlyRedigitization)
+  process = attachL1EmulationOnDemand(process)
 
   prompt, extended = smartPixelsVariantLabels(mode, activeSP)
   process = injectSmartPixelsTrackProducer(process,
@@ -956,19 +1086,15 @@ def smartPixelsCoopt(process, mode="passthrough", activeSP=None,
                                            l1tSmartPixelsTrackProducerExtendedLabel=extended,
                                            skipModuleTypes=skipModuleTypes)
 
-  if addPh3Table:
+  if addNanoTables:
     from DPGAnalysis.Phase3SmartPixelsNanoAOD.l1tPh3SmartPixelsNano_cff import (
         addPh3L1SmartPixelsTracks, addPh3L1SmartPixelsRefitTables,
-        addPh3L1SmartPixelsStubTables)
-    suffix = smartPixelsVariantSuffix(mode, activeSP)
-    addPh3L1SmartPixelsTracks(process, srcLabel=prompt, srcExtendedLabel=extended, tableSuffix=suffix)
+        addPh3L1SmartPixelsStubTables, retargetTablesToSmartPixelsTracks)
+    addPh3L1SmartPixelsTracks(process, srcLabel=prompt, srcExtendedLabel=extended)
     if mode == "digiRefit":
-      addPh3L1SmartPixelsRefitTables(process, srcLabel=prompt, srcExtendedLabel=extended, tableSuffix=suffix)
-    # Reference-track OT stub-position tables (task Part B), keyed to the reference
-    # L1TTrack / L1TExtTrack collections. In coopt the injector rewires downstream
-    # consumers to the variant, but the reference tracklet collections still exist
-    # (they are the injector's protected input) so the stub tables resolve.
+      addPh3L1SmartPixelsRefitTables(process, srcLabel=prompt, srcExtendedLabel=extended)
     addPh3L1SmartPixelsStubTables(process, doExtended=extendedTracks)
+    retargetTablesToSmartPixelsTracks(process, srcLabel=prompt, srcExtendedLabel=extended)
   return process
 
 
