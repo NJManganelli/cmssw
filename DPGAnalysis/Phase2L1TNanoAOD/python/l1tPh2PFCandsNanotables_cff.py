@@ -161,6 +161,7 @@ l1tPuppiCandTrackTruthTable = cms.EDProducer(
     tracks = cms.InputTag("l1tTTTracksFromTrackletEmulation", "Level1TTTracks"),
     truthAssociation = cms.InputTag("TTTrackAssociatorFromPixelDigis", "Level1TTTracks"),
     candTableName = cms.string("L1PuppiCand"),
+    trackTableName = cms.string("L1TTrack"),
 )
 
 l1tExtPuppiCandTrackTruthTable = l1tPuppiCandTrackTruthTable.clone(
@@ -168,6 +169,7 @@ l1tExtPuppiCandTrackTruthTable = l1tPuppiCandTrackTruthTable.clone(
     tracks = cms.InputTag("l1tTTTracksFromExtendedTrackletEmulation", "Level1TTTracks"),
     truthAssociation = cms.InputTag("TTTrackAssociatorFromPixelDigisExtended", "Level1TTTracks"),
     candTableName = cms.string("L1ExtPuppiCand"),
+    trackTableName = cms.string("L1TExtTrack"),
 )
 
 p2L1PFCandTrackTruthTask = cms.Task(

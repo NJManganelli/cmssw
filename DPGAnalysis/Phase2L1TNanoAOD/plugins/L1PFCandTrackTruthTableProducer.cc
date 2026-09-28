@@ -26,7 +26,8 @@ public:
       : candsToken_(consumes<l1t::PFCandidateCollection>(cfg.getParameter<edm::InputTag>("cands"))),
         tracksToken_(consumes<L1TrackCollection>(cfg.getParameter<edm::InputTag>("tracks"))),
         assocToken_(consumes<AssocMap>(cfg.getParameter<edm::InputTag>("truthAssociation"))),
-        candTableName_(cfg.getParameter<std::string>("candTableName")) {
+        candTableName_(cfg.getParameter<std::string>("candTableName")),
+        trackTableName_(cfg.getParameter<std::string>("trackTableName")) {
     produces<nanoaod::FlatTable>();
   }
 
@@ -98,11 +99,12 @@ public:
         "trkTruthStatus", truthStatus,
         "candidate->track truth resolution: 0 = resolved (truth columns valid); -1 = candidate has no "
         "resolvable track ref; -2 = the PFTrack/TTTrack/association product is unavailable this event");
-    table->addColumn<bool>("trkGenuine", genuine, "underlying track is genuine (TTTrackAssociationMap)");
-    table->addColumn<bool>("trkLooselyGenuine", loose, "underlying track is loosely genuine");
-    table->addColumn<bool>("trkCombinatoric", combinatoric, "underlying track is a combinatoric fake");
-    table->addColumn<bool>("trkUnknown", unknown, "underlying track has no truth association");
-    table->addColumn<float>("trkTpPt", tpPt, "pt of the TrackingParticle matched to the underlying track (-1 if none)");
+    const std::string trk = "underlying " + trackTableName_ + " track";
+    table->addColumn<bool>("trkGenuine", genuine, trk + " is genuine (TTTrackAssociationMap of that collection)");
+    table->addColumn<bool>("trkLooselyGenuine", loose, trk + " is loosely genuine");
+    table->addColumn<bool>("trkCombinatoric", combinatoric, trk + " is a combinatoric fake");
+    table->addColumn<bool>("trkUnknown", unknown, trk + " has no truth association");
+    table->addColumn<float>("trkTpPt", tpPt, "pt of the TrackingParticle matched to the " + trk + " (-1 if none)");
     table->addColumn<bool>("trkTpFromHardInteraction",
                            tpFromHardInteraction,
                            "matched TrackingParticle is from the hard interaction");
@@ -115,6 +117,7 @@ public:
     desc.add<edm::InputTag>("tracks", edm::InputTag("l1tTTTracksFromTrackletEmulation", "Level1TTTracks"));
     desc.add<edm::InputTag>("truthAssociation", edm::InputTag("TTTrackAssociatorFromPixelDigis", "Level1TTTracks"));
     desc.add<std::string>("candTableName", "L1PuppiCand");
+    desc.add<std::string>("trackTableName", "L1TTrack")->setComment("table of the `tracks` collection (docs only)");
     descriptions.addWithDefaultLabel(desc);
   }
 
@@ -123,6 +126,7 @@ private:
   const edm::EDGetTokenT<L1TrackCollection> tracksToken_;
   const edm::EDGetTokenT<AssocMap> assocToken_;
   const std::string candTableName_;
+  const std::string trackTableName_;
 };
 
 DEFINE_FWK_MODULE(L1PFCandTrackTruthTableProducer);
