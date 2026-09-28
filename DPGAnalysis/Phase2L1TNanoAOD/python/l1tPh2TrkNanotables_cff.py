@@ -2,14 +2,19 @@ import FWCore.ParameterSet.Config as cms
 from PhysicsTools.NanoAOD.common_cff import Var
 from DPGAnalysis.Phase2L1TNanoAOD.l1tPh2Nanotables_cff import dispVtxTable
 
-#### L1T tracks from the tracklet emulation, with float and hardware (track word) values
+#### L1T tracks from the tracklet emulation, with float and hardware (track word) values and
+#### the track-fit helix covariance (TTTrack::helixCovMat) as 15 upper-triangle columns
+#### cov_<p>_<q> over (rInv, phi, tanL, z0, d0), same units and conventions as those columns.
+#### The covariance is part of every track table (helixCov=True), so it always describes
+#### the table's own rows.
 l1tTracksTable = cms.EDProducer(
-    "SimpleL1TTTrackCandidateFlatTableProducer",
+    "L1TTTrackFlatTableProducer",
     src = cms.InputTag("l1tTTTracksFromTrackletEmulation", "Level1TTTracks"),
     name = cms.string("L1TTrack"),
     doc = cms.string("L1T Prompt Tracks"),
     cut = cms.string(""),
     singleton = cms.bool(False), # the number of entries is variable
+    helixCov = cms.bool(True),
     variables = cms.PSet(
         rInv = Var("rInv()", float, doc="rInv"),
         pt = Var("momentum().perp()", float, doc="pt"),
@@ -48,6 +53,7 @@ l1tTracksTable = cms.EDProducer(
 gttTracksTable = l1tTracksTable.clone(
     src = cms.InputTag('l1tGTTInputProducer','Level1TTTracksConverted'),
     extension = cms.bool(True),
+    helixCov = False,
     variables = cms.PSet(
         hwPt = Var("getRinvBits()", "uint", doc = "hardware pt after GTT conversion"),
         hwEta = Var("getTanlBits()", "uint", doc = "hardware eta after GTT conversion"),
@@ -63,26 +69,13 @@ l1tExtTracksTable = l1tTracksTable.clone(
 gttExtTracksTable = l1tExtTracksTable.clone(
     src = cms.InputTag('l1tGTTInputProducerExtended','Level1TTTracksExtendedConverted'),
     extension = cms.bool(True),
+    helixCov = False,
     variables = cms.PSet(
         hwPt = Var("getRinvBits()", "uint", doc = "hardware pt after GTT conversion"),
         hwEta = Var("getTanlBits()", "uint", doc = "hardware eta after GTT conversion"),
         )
 )
 
-
-#### track-fit helix covariance (TTTrack::helixCovMat), as extension tables of the
-#### main track tables: 15 upper-triangle elements cov_<p>_<q> over
-#### (rInv, phi, tanL, z0, d0), same units and conventions as those columns
-l1tTracksHelixCovTable = cms.EDProducer(
-    "L1TrackHelixCovTableProducer",
-    tracks = cms.InputTag("l1tTTTracksFromTrackletEmulation", "Level1TTTracks"),
-    trackTableName = cms.string("L1TTrack"),
-)
-
-l1tExtTracksHelixCovTable = l1tTracksHelixCovTable.clone(
-    tracks = cms.InputTag("l1tTTTracksFromExtendedTrackletEmulation", "Level1TTTracks"),
-    trackTableName = cms.string("L1TExtTrack"),
-)
 
 #### MC truth extension (nStubs always; genuine/fake + TrackingParticle info
 #### when the TTTrackAssociator ran in the workflow) -- inputs for the
@@ -142,8 +135,6 @@ p2L1DisplacedVertexTask = cms.Task(
 p2L1TracksTask = cms.Task(
     l1tTracksTable,
     gttTracksTable,
-    l1tTracksHelixCovTable,
     l1tExtTracksTable,
     gttExtTracksTable,
-    l1tExtTracksHelixCovTable,
 )
