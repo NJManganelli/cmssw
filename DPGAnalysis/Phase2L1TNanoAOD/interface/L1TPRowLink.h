@@ -2,10 +2,10 @@
 #define DPGAnalysis_Phase2L1TNanoAOD_L1TPRowLink_h
 
 // tpIdx link of a TrackingParticle into the L1TTP nano table, from the key -> row
-// ValueMap that L1TrackingParticleTableProducer puts next to the table (-1 = pruned):
+// ValueMap that L1TrackingParticleTableProducer puts next to the table (-1 = not selected):
 //   >= 0 row in L1TTP; -1 not truth-matched; -2 TrackingParticle product or row map
-//   unavailable; <= -3 matched TP pruned from L1TTP, -3 - tpIdx = its index in the
-//   UNPRUNED (unwritten) TrackingParticle collection.
+//   unavailable; <= -3 matched TP not selected into L1TTP, -3 - tpIdx = its index in the
+//   unwritten TrackingParticle collection. The L1TTP selection is stated in its table doc.
 
 #include "DataFormats/Common/interface/ValueMap.h"
 #include "FWCore/Utilities/interface/Exception.h"
@@ -16,10 +16,10 @@ namespace l1tnano {
 
   inline const char* tpIdxDoc() {
     return "row in L1TTP of the matched TrackingParticle (>= 0); -1 not truth-matched; -2 TrackingParticle "
-           "product unavailable; <= -3 matched TP pruned from L1TTP (fails charged |p| > 1 GeV), -3 - tpIdx "
-           "is its index in the UNPRUNED TrackingParticle collection (mix:MergedTrackTruth), which is NOT "
-           "written -- unlike L1TTP_genPartIdx, where -3 - x is a row of the written GenPart table. Two "
-           "objects share a TP iff their tpIdx are equal";
+           "product or L1TTP unavailable; <= -3 matched TP not selected into L1TTP (its selection is stated in "
+           "the L1TTP table doc), -3 - tpIdx is its index in the TrackingParticle collection "
+           "(mix:MergedTrackTruth), which is NOT written -- unlike L1TTP_genPartIdx, where -3 - x is a row of "
+           "the written GenPart table. Two objects share a TP iff their tpIdx are equal";
   }
 
   inline int32_t tpIdxOfKey(const edm::ValueMap<int>* rowMap, edm::ProductID id, int64_t key) {

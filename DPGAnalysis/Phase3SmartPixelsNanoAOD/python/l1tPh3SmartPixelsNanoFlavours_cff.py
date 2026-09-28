@@ -46,6 +46,7 @@ _OT_ASSOCIATORS = {"prompt": "TTTrackAssociatorFromPixelDigis", "ext": "TTTrackA
 _CAND_SIDE = {"L1PuppiCand": "prompt", "L1ExtPuppiCand": "ext"}
 _OT_STUB_TABLE = "l1tPh3SmartPixelsAllStubTable"
 _CLUSTER_TABLE = "l1tPh3SmartPixelsClusterTable"
+_TP_TABLE = "l1tTrackingParticleTable"
 
 
 class _SmartPixelsNanoState(cms.PSet):
@@ -273,8 +274,6 @@ def _tpTruthTag(tag):
         if st.tpTruth.value():
             raise RuntimeError(f"SmartPixels nano: TrackingParticle truth flavours are mutually exclusive; "
                                f"got @{st.tpTruth.value()} and @{tag}")
-        if _TP_TRUTH_TAGS[tag] != "charged1GeV":
-            raise NotImplementedError(f"@{tag}: this TrackingParticle selection is not implemented yet")
         st.tpTruth = tag
         from DPGAnalysis.Phase2L1TNanoAOD.l1tPh2Nano_cff import (
             addPh2L1TrackingParticles, addPh2L1TrackingParticlesWithGen)
@@ -365,6 +364,7 @@ def _reconcile(process):
     _configureCandidateLinks(process, st, variant, sched)
     _configureDisplacedVertexLink(process, variant, sched)
     _configureGTTColumns(process, variant, sched)
+    _configureTrackingParticles(process, st, variant, sched)
     return process
 
 
@@ -561,3 +561,37 @@ def _configureGTTColumns(process, variant, sched):
             setattr(process, conv, cfi.clone(l1TracksInputTag=cms.InputTag(_OT_TRACKS[side], "Level1TTTracks")))
             _addToNano(process, "smartPixelsOTGTTConversionTask", [conv])
         getattr(process, table).src = cms.InputTag(conv, instance)
+
+
+def _configureTrackingParticles(process, st, variant, sched):
+    """L1TTP selection of the TrackingParticle flavour. The linked selections take their
+    TrackingParticles from the truth associations of the objects the nano writes: OT stubs
+    (L1TOTStub), OT tracks, SmartPixels tracks (the associator of the wired variant) and IT
+    clusters (their dominant TrackingParticle)."""
+    if _TP_TABLE not in sched or not st.tpTruth.value():
+        return
+    selection = _TP_TRUTH_TAGS[st.tpTruth.value()]
+    module = getattr(process, _TP_TABLE)
+    module.selection = selection
+    if selection not in ("linked", "charged1GeVOrLinked"):
+        return
+    from L1Trigger.Phase3SmartPixels.customizeSmartPixels_cff import smartPixelsTrackAssociator
+    stubs, tracks, tps = [], [], []
+    if _OT_STUB_TABLE in sched:
+        stubs.append(getattr(process, _OT_STUB_TABLE).stubTruth)
+    for side in ("prompt", "ext"):
+        if _OT_TABLES[side][0] in sched:
+            tracks.append(cms.InputTag(_OT_ASSOCIATORS[side], "Level1TTTracks"))
+        if variant is not None and _SP_TABLES[side][0] in sched:
+            tracks.append(cms.InputTag(smartPixelsTrackAssociator(process, _spLabels(variant)[side], side == "ext"),
+                                       "Level1TTTracks"))
+    if _CLUSTER_TABLE in sched:
+        if not hasattr(process, "l1tPh3SmartPixelsClusterTPs"):
+            process.l1tPh3SmartPixelsClusterTPs = cms.EDProducer(
+                "L1SmartPixelsClusterTPLinkProducer",
+                smartPixelsRecHits=getattr(process, _CLUSTER_TABLE).smartPixelsRecHits)
+            _addToNano(process, "p3L1SmartPixelsClusterTask", ["l1tPh3SmartPixelsClusterTPs"])
+        tps.append(cms.InputTag("l1tPh3SmartPixelsClusterTPs"))
+    module.linkedStubAssociations = cms.VInputTag(*stubs)
+    module.linkedTrackAssociations = cms.VInputTag(*tracks)
+    module.linkedTrackingParticles = cms.VInputTag(*tps)
