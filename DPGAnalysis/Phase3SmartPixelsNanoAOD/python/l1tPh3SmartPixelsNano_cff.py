@@ -42,8 +42,9 @@ def addPh3L1SmartPixelsTracks(process,
     produced by L1Trigger/Phase3SmartPixels, e.g.
     l1tSmartPixelsTrackProducerWdigiRefitAAAA); tableSuffix
     disambiguates the table/branch names when several variants coexist in one
-    job (WF1). Defaults reproduce the plain flavour reading the default
-    producer labels; smartPixelsCoopt repoints the unsuffixed pair at its variant.
+    job (WF1). The defaults (the autoNANO SmartPix flavors) create the canonical
+    unsuffixed pair, whose input only smartPixelsCoopt provides (it repoints the
+    pair at its variant); without coopt the job stops with ProductNotFound.
     Each table carries l1TrackIdx -> L1TTrack / L1TExtTrack (the seed track row).
     """
     nameSuffix = tableSuffix[:1].upper() + tableSuffix[1:] if tableSuffix else ""

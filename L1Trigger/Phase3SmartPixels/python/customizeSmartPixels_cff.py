@@ -941,6 +941,10 @@ def attachL1EmulationOnDemand(process, gtMenu=P2GT_MENU):
   return process
 
 
+# The canonical single-variant track tables (autoNANO SmartPix flavors, filled by coopt).
+CANONICAL_SMARTPIXELS_TRACK_TABLES = ("L1TSmartPixelsTrack", "L1TSmartPixelsExtTrack")
+
+
 # ---------------------------------------------------------------------------
 # WF1: coexist — standard tracks AND SmartPixels variant tables in one L1Nano
 # ---------------------------------------------------------------------------
@@ -954,10 +958,11 @@ def smartPixelsCoexist(process, variants=None, correctionSet=DEFAULT_CORRECTION_
   emulation (attachL1EmulationOnDemand) runs from the standard tracklet tracks, so
   every other L1 object is coherent with L1TTrack/L1TExtTrack.
 
-  The tier's own unsuffixed L1TSmartPixelsTrack/L1TSmartPixelsExtTrack tables read
-  the default-label producers (l1tSmartPixelsTrackProducer[Extended], passthrough
-  mode per the cfi); those are available on demand here. The canonical
-  single-variant table is a coopt concept (smartPixelsCoopt).
+  Coexist never writes the unsuffixed L1TSmartPixelsTrack/L1TSmartPixelsExtTrack:
+  those are the canonical single-variant tables, which only smartPixelsCoopt fills.
+  The autoNANO SmartPix flavors create them, so coexist refuses to run on one: use
+  the base flavor (e.g. NANO:@L1PFTrkNanowithGen), plus addPh3L1SmartPixelsClusters
+  for the cluster tables.
 
   trackInputMode (see TRACKINPUTMODE_CHOICES for full semantics):
    - 'reemulateL1TrackFinding' (default): re-run L1TrackTrigger from the
@@ -999,16 +1004,23 @@ def smartPixelsCoexist(process, variants=None, correctionSet=DEFAULT_CORRECTION_
   cmsDriver (explicit):  --customise_commands 'from L1Trigger.Phase3SmartPixels.customizeSmartPixels_cff import smartPixelsCoexist; process = smartPixelsCoexist(process, variants=[("correctionlibRegression", "1100")])'
   """
   trackInputMode = _resolveTrackInputMode(trackInputMode)
+  canonical = sorted(label for label, module in process.producers_().items()
+                     if isinstance(getattr(module, "name", None), cms.string)
+                     and module.name.value() in CANONICAL_SMARTPIXELS_TRACK_TABLES)
+  if canonical:
+    raise RuntimeError(
+        f"smartPixelsCoexist: this job already defines the canonical SmartPixels track tables "
+        f"({', '.join(canonical)}), i.e. it uses an autoNANO SmartPix flavor. Coexist writes "
+        "only suffixed variant tables; use the base flavor (e.g. NANO:@L1PFTrkNanowithGen, "
+        "plus addPh3L1SmartPixelsClusters for the cluster tables), or smartPixelsCoopt for "
+        "the canonical L1TSmartPixelsTrack.")
   if variants is None:
     variants = [("passthrough", None)]
   variants = _normalizeVariants(variants)
 
   process, modules = addSmartPixelsTrackProducerVariants(process, variants, correctionSet,
                                                          digiRefitConfig=digiRefitConfig)
-  # the default-label producers feed the tier's unsuffixed tables (on demand only)
-  process = _scheduleVariantModules(
-      process, modules + ["l1tSmartPixelsTrackProducer", "l1tSmartPixelsTrackProducerExtended"],
-      "l1tSmartPixelsCoexistTask")
+  process = _scheduleVariantModules(process, modules, "l1tSmartPixelsCoexistTask")
   process = _applyTrackInputMode(process, trackInputMode, variants, extendedTracks=extendedTracks,
                                  promptHnpar=promptHnpar,
                                  allowSignalOnlyRedigitization=allowSignalOnlyRedigitization)

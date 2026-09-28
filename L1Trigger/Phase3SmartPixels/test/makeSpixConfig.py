@@ -60,21 +60,31 @@ INPUTS = {
 #     (L1TTrack_genuine, L1TTrack_tp_*), WITHOUT WHICH no resolution-vs-truth
 #     or hit-purity study can run at all. That omission is exactly what made
 #     the first layer-order attempt unusable, so the tier names say it.
+#     (base L1 tier, SmartPix payload, withGen). --coopt runs the SmartPix flavor
+#     @<base>SmartPix<payload>[withGen]; coexist never writes its canonical unsuffixed
+#     track tables, so it runs the base flavor @<base>[withGen] and adds the payload
+#     tables with addPh3L1SmartPixels<payload>.
 TIERS = {
-    "trk":        ("NANO:@L1TrkNanoSmartPix",              False),
-    "trk-truth":  ("NANO:@L1TrkNanoSmartPixwithGen",       True),
-    "pftrk":      ("NANO:@L1PFTrkNanoSmartPix",            False),
-    "pftrk-truth": ("NANO:@L1PFTrkNanoSmartPixwithGen",    True),
-    "pf":         ("NANO:@L1PFNanoSmartPix",               False),
-    "pf-truth":   ("NANO:@L1PFNanoSmartPixwithGen",        True),
+    "trk":         ("L1TrkNano",   "", False),
+    "trk-truth":   ("L1TrkNano",   "", True),
+    "pftrk":       ("L1PFTrkNano", "", False),
+    "pftrk-truth": ("L1PFTrkNano", "", True),
+    "pf":          ("L1PFNano",    "", False),
+    "pf-truth":    ("L1PFNano",    "", True),
     # Payload tiers. "clusters" carries the UNTRUNCATED IT cluster table: ~26.5k
     # rows/event at PU200, measured 0.29 MB/event (88.6 stored bits/cluster).
     # "reco" is RESERVED and raises until its content is defined.
-    "clusters":       ("NANO:@L1PFTrkNanoSmartPixClusters",        False),
-    "clusters-truth": ("NANO:@L1PFTrkNanoSmartPixClusterswithGen", True),
-    "reco":           ("NANO:@L1PFTrkNanoSmartPixReco",            False),
-    "reco-truth":     ("NANO:@L1PFTrkNanoSmartPixRecowithGen",     True),
+    "clusters":       ("L1PFTrkNano", "Clusters", False),
+    "clusters-truth": ("L1PFTrkNano", "Clusters", True),
+    "reco":           ("L1PFTrkNano", "Reco",     False),
+    "reco-truth":     ("L1PFTrkNano", "Reco",     True),
 }
+
+
+def nano_step(args):
+    base, payload, truth = TIERS[args.tier]
+    gen = "withGen" if truth else ""
+    return f"NANO:@{base}SmartPix{payload}{gen}" if args.coopt else f"NANO:@{base}{gen}"
 
 
 GEOMETRY, ERA, CONDITIONS = "ExtendedRun4D121", "Phase2C22I13M9", "auto:phase2_realistic_T35"
@@ -128,25 +138,27 @@ def build_customise(args, overrides):
     refit.update(overrides)
     common = (f"trackInputMode='{args.track_input_mode}', extendedTracks={args.extended_tracks}, "
               f"promptHnpar={args.prompt_hnpar}, digiRefitConfig={refit!r}")
-    if args.coopt:
-        call = f"process = smartPixelsCoopt(process, variant={variants[0]}, {common})"
-    else:
-        call = f"process = smartPixelsCoexist(process, variants=[{', '.join(variants)}], addNanoTables=True, {common})"
+    _, payload, truth = TIERS[args.tier]
     parts = [
         "from L1Trigger.Phase3SmartPixels.customizeSmartPixels_cff import smartPixelsCoexist, smartPixelsCoopt",
-        "from DPGAnalysis.Phase3SmartPixelsNanoAOD.l1tPh3SmartPixelsNano_cff import produceMiniAODGenInputs",
-        call,
+        "import DPGAnalysis.Phase3SmartPixelsNanoAOD.l1tPh3SmartPixelsNano_cff as p3nano",
     ]
+    if args.coopt:
+        parts.append(f"process = smartPixelsCoopt(process, variant={variants[0]}, {common})")
+    else:
+        if payload:
+            parts.append(f"process = p3nano.addPh3L1SmartPixels{payload}(process)")
+        parts.append(f"process = smartPixelsCoexist(process, variants=[{', '.join(variants)}], "
+                     f"addNanoTables=True, {common})")
     # withGen tiers read MINIAOD gen products (prunedGenParticles, slimmedGenJets, ...);
     # the GEN-SIM-DIGI-RAW RelVals carry only genParticles/ak4GenJetsNoNu, so make them.
-    if TIERS[args.tier][1]:
-        parts.append("process = produceMiniAODGenInputs(process)")
+    if truth:
+        parts.append("process = p3nano.produceMiniAODGenInputs(process)")
     return "; ".join(parts)
 
 
 def cmsdriver_cmd(args, out_py, overrides):
-    steps, keeps_truth = TIERS[args.tier]
-    if args.needs_truth and not keeps_truth:
+    if args.needs_truth and not TIERS[args.tier][2]:
         raise SystemExit(
             f"--tier {args.tier} does not keep the TrackingParticle truth extension, but "
             "--needs-truth was requested. Use a '-truth' tier; otherwise L1TTrack_genuine "
@@ -157,7 +169,7 @@ def cmsdriver_cmd(args, out_py, overrides):
                          "pass --filein explicitly")
     return [
         "cmsDriver.py", os.path.splitext(os.path.basename(out_py))[0],
-        "-s", steps,
+        "-s", nano_step(args),
         "--conditions", CONDITIONS,
         "--geometry", GEOMETRY,
         "--era", ERA,
