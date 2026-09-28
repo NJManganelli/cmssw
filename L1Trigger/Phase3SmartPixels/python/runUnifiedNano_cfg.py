@@ -1,7 +1,8 @@
 """Unified SmartPixels NanoAOD production pset (CRAB-driven).
 
 Produces, in ONE cmsRun job on a GEN-SIM-DIGI-RAW-MINIAOD input:
-  (1) the L1 nano tier @L1PFTrkNanowithGen (fullest autoNANO flavor:
+  (1) the L1 nano tier @L1PFTrkNanowithGen under the nano_l1_hlt process
+      modifier, as cmsDriver --procModifiers nano_l1_hlt (fullest autoNANO flavor:
       L1TTrack + truth, L1PuppiCand/PFCand crossrefs, SC4/SC8 + NG jet tier,
       HGCCluster, GenJet parton/hadron flavour, ...), re-emulating
       L1TrackTrigger + SimL1Emulator (reemulateL1TrackFinding) from the input, AND
@@ -46,6 +47,7 @@ import os
 import FWCore.ParameterSet.Config as cms
 from FWCore.ParameterSet.VarParsing import VarParsing
 from Configuration.Eras.Era_Phase2C22I13M9_cff import Phase2C22I13M9
+from Configuration.ProcessModifiers.nano_l1_hlt_cff import nano_l1_hlt
 
 # ---------------------------------------------------------------------------
 # Parameter contract (the CRAB generator passes these via JobType.pyCfgParams)
@@ -62,9 +64,9 @@ options.register('pixelavAngleSet', 'spix_angle_response.json',
                  "PixelAV angle-response payload (see resolution below)")
 options.register('hasMiniAOD', False, VarParsing.multiplicity.singleton,
                  VarParsing.varType.bool,
-                 "input carries MINIAOD (pat::/slimmed*) content. False for the "
-                 "D121 RelVals (DIGI-RAW + HLT only), which makes the gen chain's "
-                 "puTable unrunnable -- see the omninano TODO above")
+                 "input carries the MINIAOD gen products (prunedGenParticles, "
+                 "slimmedGenJets, ...). False for the D121 RelVals (DIGI-RAW + HLT "
+                 "only): they are made in-job (produceMiniAODGenInputs)")
 options.setDefault('maxEvents', -1)
 options.setDefault('outputFile', 'file:spix_unifiednano.root')
 options.setDefault('inputFiles',
@@ -96,7 +98,7 @@ def _resolvePixelavAngleSet(payload):
 _pixelavAngleSet = _resolvePixelavAngleSet(options.pixelavAngleSet)
 print("runUnifiedNano: resolved pixelavAngleSet -> %s" % _pixelavAngleSet)
 
-process = cms.Process('NANO', Phase2C22I13M9)
+process = cms.Process('NANO', Phase2C22I13M9, nano_l1_hlt)
 
 # ---------------------------------------------------------------------------
 # Standard configurations (unified-nano base, from the proven spx_int_fatflavor_cfg)
@@ -292,28 +294,11 @@ for _m in ["TTClusterAssociatorFromPixelDigis"]:
   if hasattr(process, _m):
     getattr(process, _m).digiSimLinks = cms.InputTag("simSiPixelDigis", "Tracker")
 
-# ---------------------------------------------------------------------------
-# Tables whose source products a DIGI-RAW+HLT input does not carry. Without this
-# the job dies with ProductNotFound in NANOAODoutput_step:
-#   puTable     -> offlineSlimmedPrimaryVertices (MINIAOD-only)
-#   metMCTable  -> slimmedMETs, pat::MET        (MINIAOD-only)
-#   hpsTauTable -> l1t::HPSPFTau                (absent from the RelVal L1 menu)
-# NOT a canonical recipe (canonical tiers never drop tables; see
-# smartPixelsCoexist/smartPixelsCoopt). Revisit when omninano lands (TODO above):
-# with a MINIAOD-carrying input, pass hasMiniAOD=1 and these tables come back.
-# ---------------------------------------------------------------------------
-#
-# The gen chain needs the same treatment: finalGenParticles prunes MINIAOD's
-# prunedGenParticles, which a GEN-SIM-DIGI-RAW input does not have -- it has plain
-# genParticles. useGenParticlesFromFile() repoints it and drops the gen tables that
-# still depend on packedGenParticles.
-from DPGAnalysis.Phase3SmartPixelsNanoAOD.l1tPh3SmartPixelsNano_cff import (
-    dropAbsentMenuTables, useGenParticlesFromFile)
-
-_ABSENT_ON_DIGIRAW_INPUT = ("puTable", "metMCTable", "hpsTauTable")
+# withGen on a GEN-SIM-DIGI-RAW input: make the MINIAOD gen products the stock gen
+# tables read (prunedGenParticles, packedGenParticles, slimmedGenJets, ...) in-job.
 if not options.hasMiniAOD:
-  process = dropAbsentMenuTables(process, _ABSENT_ON_DIGIRAW_INPUT)
-  process = useGenParticlesFromFile(process)
+  from DPGAnalysis.Phase3SmartPixelsNanoAOD.l1tPh3SmartPixelsNano_cff import produceMiniAODGenInputs
+  process = produceMiniAODGenInputs(process)
 
 # Add early deletion of temporary data products to reduce peak memory need
 from Configuration.StandardSequences.earlyDeleteSettings_cff import customiseEarlyDelete
