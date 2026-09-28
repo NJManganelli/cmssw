@@ -489,7 +489,7 @@ expect_raises(ValueError, lambda: attachStubRebuildChain(
 # --- (h) reference-track OT stub-position tables (Part B) --------------------
 print("[h] reference-track OT stub-position tables")
 from DPGAnalysis.Phase3SmartPixelsNanoAOD.l1tPh3SmartPixelsNano_cff import (
-    addPh3L1SmartPixelsStubTables)
+    addPh3L1SmartPixelsStubTables, addPh3L1SmartPixelsTracks)
 
 
 def _proc_with_nanotask():
@@ -549,6 +549,22 @@ smartPixelsCoexist(p_cox, variants=[("passthrough", None)], addNanoTables=True,
                    trackInputMode="reemulateL1TrackFinding")
 check(hasattr(p_cox, "l1tPh3SmartPixelsStubTable"),
       "smartPixelsCoexist(addNanoTables=True) emits the reference stub table")
+_cox_tables = {m.name.value() for m in p_cox.producers_().values()
+               if isinstance(getattr(m, "name", None), cms.string)}
+check("L1TSmartPixelsTrackPassthrough" in _cox_tables
+      and not _cox_tables & {"L1TSmartPixelsTrack", "L1TSmartPixelsExtTrack"},
+      "smartPixelsCoexist writes suffixed variant tables only, never the canonical unsuffixed ones")
+check(not hasattr(p_cox, "l1tPh3SmartPixelsSeedLinkTable"),
+      "smartPixelsCoexist adds no unsuffixed seed-link table")
+
+# coexist on a SmartPix flavor (canonical tables already defined by the tier) raises
+p_coxtier = cms.Process("TEST")
+p_coxtier.pdummy = cms.Path()
+p_coxtier.l1tPh2NanoTask = cms.Task()
+addPh3L1SmartPixelsTracks(p_coxtier)
+expect_raises(RuntimeError, lambda: smartPixelsCoexist(p_coxtier, variants=[("passthrough", None)]),
+              "smartPixelsCoexist refuses a job with the canonical SmartPixels tables",
+              contains="canonical SmartPixels track tables")
 
 # --- (i) unified cluster table, disc scope, stub index, TP table, cut guard ---
 print("[i] unified cluster table / discScope / otStubIdx / L1TTP / track-table cut guard")

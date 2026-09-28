@@ -16,7 +16,7 @@ NanoAOD tables and autoNANO flavours for the Phase-3 SmartPixels L1 tracks
 - autoNANO flavours (in `PhysicsTools/NanoAOD/autoNANO.py`): one per base L1 DPG tier
   x `{,withGen}` -- `L1TrkNanoSmartPix{,withGen}`, `L1PFNanoSmartPix{,withGen}`,
   `L1PFTrkNanoSmartPix{,withGen}` = `@L1TrkNano`/`@L1PFNano`/`@L1PFTrkNano`
-  (`{,withGen}`) + the default SmartPixels track tables. The base tiers live in
+  (`{,withGen}`) + the canonical SmartPixels track tables (filled by `smartPixelsCoopt`). The base tiers live in
   `DPGAnalysis/Phase2L1TNanoAOD` (not edited here).
 
 ## digiRefit sidecar tables (spec §4.4)
@@ -106,7 +106,7 @@ L1+Reco chains are filter-free by construction.
 One file with the standard L1 objects AND SmartPixels track tables per variant:
 
 ```bash
-cmsDriver.py stepWF1 -s RAW2DIGI,L1TrackTrigger,L1,L1P2GT,NANO:@L1PFTrkNanoSmartPixwithGen \
+cmsDriver.py stepWF1 -s RAW2DIGI,L1TrackTrigger,L1,L1P2GT,NANO:@L1PFTrkNanowithGen \
   --conditions auto:phase2_realistic_T35 --geometry ExtendedRun4D121 --era Phase2C22I13M9 \
   --procModifiers nano_l1_hlt --eventcontent NANOAODSIM --datatier NANOAODSIM \
   --customise_commands 'from L1Trigger.Phase3SmartPixels.customizeSmartPixels_cff import smartPixelsCoexist; process = smartPixelsCoexist(process, variants=[("passthrough", None), ("correctionlibRegression", "1100")])' \
@@ -114,10 +114,14 @@ cmsDriver.py stepWF1 -s RAW2DIGI,L1TrackTrigger,L1,L1P2GT,NANO:@L1PFTrkNanoSmart
 ```
 
 Notes:
-- The `@L1PFTrkNanoSmartPix*` flavour adds the DEFAULT-label tables (the default-label
-  producers, passthrough per the cfi, run on demand); `smartPixelsCoexist` adds one table
-  pair per requested variant (suffixed). For variant-only tables, use the plain
-  `@L1PFTrkNano*` flavour + the coexist customise.
+- Coexist runs on a BASE flavour (`@L1TrkNano*`/`@L1PFNano*`/`@L1PFTrkNano*`) and adds one
+  SUFFIXED table pair per requested variant; it never writes the unsuffixed
+  `L1TSmartPixelsTrack`/`L1TSmartPixelsExtTrack`. Those are the canonical tables of the
+  `@...SmartPix*` flavours, filled only by `smartPixelsCoopt`, so coexist raises on a
+  SmartPix flavour. For the cluster tables add
+  `addPh3L1SmartPixelsClusters` in `--customise_commands`.
+- A SmartPix flavour without `smartPixelsCoopt` stops with ProductNotFound
+  (`l1tSmartPixelsTrackProducer`): nothing produces the canonical collection.
 - Downstream objects (vertices, PF/Puppi, jets, MET, GT) reflect the STANDARD tracks; in a
   NANO-only job they are re-emulated on demand from them (standard L1 tasks).
 
