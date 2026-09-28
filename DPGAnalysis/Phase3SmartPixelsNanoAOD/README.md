@@ -53,9 +53,9 @@ cmsDriver.py spx -s RAW2DIGI,RECO,RECOSIM,PAT,NANO:@SPStudyNano+@SPActiveLayersA
 
 `produceMiniAODGenInputs` makes the MINIAOD gen products the withGen tables read; it is only
 for inputs without them and jobs without PAT. `L1Trigger/Phase3SmartPixels/test/makeSpixConfig.py
---tier study --coopt` / `--reco` emit these commands. **Known blocker:** `@Phase2L1DPG` and
-`@PHYS` both define the module labels `jetTable` and `puppiMetTable`, so `SPStudyNano` (and any
-`@Phase2L1DPG...+@PHYS`) fails at configuration time until one side is relabelled.
+--tier study --coopt` / `--reco` emit these commands. `@Phase2L1DPG` labels its L1 jet template and L1 PUPPI MET table
+`l1jetTable` / `l1puppiMetTable` (as in cms-sw/cmssw#49477), so it composes with `@PHYS`, whose
+`jetTable` / `puppiMetTable` would otherwise clash at configuration time.
 
 ### Flavours
 
