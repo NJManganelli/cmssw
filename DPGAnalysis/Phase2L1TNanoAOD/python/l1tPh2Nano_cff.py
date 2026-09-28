@@ -32,7 +32,8 @@ def _ensureTrackTruthAssociators(process):
     """Schedule the TTCluster/TTStub/TTTrack truth associators in the nano
     task if the upstream workflow did not run them, pointing the track
     associators at the tracklet emulation collections. Requires MC inputs
-    with Phase-2 tracker digi sim links (GEN-SIM-DIGI-RAW)."""
+    with Phase-2 tracker digi sim links (GEN-SIM-DIGI-RAW). An associator a
+    job removed on purpose (its maps are read from the input) stays removed."""
     if not hasattr(process, "TTTrackAssociatorFromPixelDigis"):
         process.load("SimTracker.TrackTriggerAssociation.TrackTriggerAssociator_cff")
         process.TTTrackAssociatorFromPixelDigis.TTTracks = cms.VInputTag(
@@ -42,12 +43,11 @@ def _ensureTrackTruthAssociators(process):
         process.TTTrackAssociatorFromPixelDigisExtended = process.TTTrackAssociatorFromPixelDigis.clone(
             TTTracks = [cms.InputTag("l1tTTTracksFromExtendedTrackletEmulation", "Level1TTTracks")]
         )
-    process.l1tPh2NanoTask.add(
-        process.TTClusterAssociatorFromPixelDigis,
-        process.TTStubAssociatorFromPixelDigis,
-        process.TTTrackAssociatorFromPixelDigis,
-        process.TTTrackAssociatorFromPixelDigisExtended,
-    )
+    process.l1tPh2NanoTask.add(*[getattr(process, label) for label in (
+        "TTClusterAssociatorFromPixelDigis",
+        "TTStubAssociatorFromPixelDigis",
+        "TTTrackAssociatorFromPixelDigis",
+        "TTTrackAssociatorFromPixelDigisExtended") if hasattr(process, label)])
     return process
 
 def addPh2L1TrackTruth(process):

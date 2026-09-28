@@ -12,6 +12,10 @@
 //            name and length as that table) carrying the per-track trackInfo
 //            summary + the materialized compact word (packCompactWord).
 //
+// Links are written only when their target table is in the nano: an empty
+// trackTableName drops the "trk" extension and the hit trackIdx column, an empty
+// clusterTableName drops selClusterIdx.
+//
 // Row-count invariants (asserted, throw SmartPixelsSyncBroken):
 //   sidecar.trackInfo.size() == sidecar.hitInfo.size() == tracks.size()
 //   sum_i sidecar.hitInfo[i].size() == nHitRows
@@ -49,9 +53,11 @@ public:
         sidecarToken_(consumes<smartpixels::SmartPixelsRefitSidecar>(cfg.getParameter<edm::InputTag>("sidecar"))),
         tpRowMapToken_(consumes<edm::ValueMap<int>>(cfg.getParameter<edm::InputTag>("tpRowMap"))),
         trackTableName_(cfg.getParameter<std::string>("trackTableName")),
+        clusterTableName_(cfg.getParameter<std::string>("clusterTableName")),
         hitTableName_(cfg.getParameter<std::string>("hitTableName")) {
     produces<nanoaod::FlatTable>("hit");
-    produces<nanoaod::FlatTable>("trk");
+    if (!trackTableName_.empty())
+      produces<nanoaod::FlatTable>("trk");
   }
 
   void produce(edm::Event& iEvent, const edm::EventSetup&) override {
@@ -198,8 +204,9 @@ public:
 
     // per-hit LINK table (standalone, not an extension)
     auto hitTable = std::make_unique<nanoaod::FlatTable>(nHitRows, hitTableName_, false, false);
-    hitTable->addColumn<int32_t>(
-        "trackIdx", hitTrackIdx, "index of the owning track in the " + trackTableName_ + " table");
+    if (!trackTableName_.empty())
+      hitTable->addColumn<int32_t>(
+          "trackIdx", hitTrackIdx, "index of the owning track in the " + trackTableName_ + " table");
     hitTable->addColumn<uint8_t>("layer", hitLayer,
         "IT surface of the crossing: 1-4 = TBPX IL1-IL4, 11-14 = ID1-ID4 (L1TSmartPixelsCluster_surface)");
     hitTable->addColumn<uint32_t>("detId", hitDetId, "module rawId of the crossing");
@@ -209,11 +216,14 @@ public:
     hitTable->addColumn<bool>("windowTruncated", windowTruncated, "window hit the maxHitsPerWindow truncation");
     hitTable->addColumn<bool>("hasAlpha", hasAlpha, "synthesized cotAlpha available");
     hitTable->addColumn<bool>("hasBeta", hasBeta, "synthesized cotBeta available");
-    hitTable->addColumn<int32_t>("selClusterIdx", selClusterIdx,
-        "row of the SELECTED cluster in L1TSmartPixelsCluster (-1 if none). EXACT link: both "
-        "tables walk the same SiPixelRecHitCollection with the same filter and order. Consumers "
-        "MUST assert cluster[selClusterIdx].detId == detId -- matching on position instead fails, "
-        "since both store coordinates at ~5 um nano precision against a 25 um pitch");
+    if (!clusterTableName_.empty())
+      hitTable->addColumn<int32_t>(
+          "selClusterIdx", selClusterIdx,
+          "row of the SELECTED cluster in " + clusterTableName_ +
+              " (-1 if none). EXACT link: both "
+              "tables walk the same SiPixelRecHitCollection with the same filter and order. Consumers "
+              "MUST assert cluster[selClusterIdx].detId == detId -- matching on position instead fails, "
+              "since both store coordinates at ~5 um nano precision against a 25 um pitch");
     hitTable->addColumn<float>("projLocalX", projLocalX,
         "RUNNING projection: track state as of this layer's visit, local x [cm]");
     hitTable->addColumn<float>("projLocalY", projLocalY, "RUNNING projection, local y [cm]");
@@ -261,9 +271,13 @@ public:
     hitTable->addColumn<int32_t>("selHitClass", selHitClass, "TRUTH-ONLY simlink class of selected hit: 0 sameTP, 1 otherTP, 2 noise, -1 none");
     hitTable->addColumn<float>("tpLocalCotAlpha", tpLocalCotAlpha, "TRUTH-ONLY unsmeared parent local cotAlpha of the selected hit (-999 if none)", /*mantissaBits=*/12);
     hitTable->addColumn<float>("tpLocalCotBeta", tpLocalCotBeta, "TRUTH-ONLY unsmeared parent local cotBeta of the selected hit (-999 if none)", /*mantissaBits=*/12);
-    hitTable->setDoc("SmartPixels refit per-crossing records for the " + trackTableName_ +
-                     " tracks (one row per layer crossing; trackIdx links to that track table)");
+    hitTable->setDoc(trackTableName_.empty()
+                         ? std::string("SmartPixels refit per-crossing records (one row per layer crossing)")
+                         : "SmartPixels refit per-crossing records for the " + trackTableName_ +
+                               " tracks (one row per layer crossing; trackIdx links to that track table)");
     iEvent.put(std::move(hitTable), "hit");
+    if (trackTableName_.empty())
+      return;
 
     // EXTENSION table on the variant track table (extension=true -> merged by name)
     auto trkTable = std::make_unique<nanoaod::FlatTable>(nTracks, trackTableName_, false, true);
@@ -305,7 +319,10 @@ public:
     desc.add<edm::InputTag>("sidecar", edm::InputTag("l1tSmartPixelsTrackProducer", "Level1TTTracks"));
     desc.add<edm::InputTag>("tpRowMap", edm::InputTag("l1tTrackingParticleTable"))
         ->setComment("L1TTP key -> row map from L1TrackingParticleTableProducer; spixMatchedTpIdx = -2 when absent");
-    desc.add<std::string>("trackTableName", "L1TSmartPixelsTrack");
+    desc.add<std::string>("trackTableName", "L1TSmartPixelsTrack")
+        ->setComment("track table the spix* extension and the hit trackIdx belong to; empty = neither is written");
+    desc.add<std::string>("clusterTableName", "L1TSmartPixelsCluster")
+        ->setComment("cluster table selClusterIdx indexes; empty = no selClusterIdx column");
     desc.add<std::string>("hitTableName", "L1TSmartPixelsRefitHit");
     descriptions.addWithDefaultLabel(desc);
   }
@@ -315,6 +332,7 @@ private:
   const edm::EDGetTokenT<smartpixels::SmartPixelsRefitSidecar> sidecarToken_;
   const edm::EDGetTokenT<edm::ValueMap<int>> tpRowMapToken_;
   const std::string trackTableName_;
+  const std::string clusterTableName_;
   const std::string hitTableName_;
 };
 

@@ -25,8 +25,8 @@ So configs are GENERATED here, from named axes, and are not kept.
     ./makeSpixConfig.py --pu 200 --tier trk-truth --variant digiRefit:1111 \
         --scan layerOrder=outsideIn,insideOut -o /work/spix_order
 
-    # the canonical single-view nano: ONE variant drives the L1 emulation
-    ./makeSpixConfig.py --pu 200 --tier clusters-truth --coopt --variant digiRefit:1111 \
+    # the canonical single-view nano (add-on flavours): ONE variant drives the L1 emulation
+    ./makeSpixConfig.py --pu 200 --tier study --coopt --variant digiRefit:1111 \
         --events 100 -o /work/spix_coopt.py
 
 No nano table is ever dropped: every table of the tier is produced (the L1
@@ -60,10 +60,9 @@ INPUTS = {
 #     (L1TTrack_genuine, L1TTrack_tp_*), WITHOUT WHICH no resolution-vs-truth
 #     or hit-purity study can run at all. That omission is exactly what made
 #     the first layer-order attempt unusable, so the tier names say it.
-#     (base L1 tier, SmartPix payload, withGen). --coopt runs the SmartPix flavor
-#     @<base>SmartPix<payload>[withGen]; coexist never writes its canonical unsuffixed
-#     track tables, so it runs the base flavor @<base>[withGen] and adds the payload
-#     tables with addPh3L1SmartPixels<payload>.
+#     (base L1 tier, payload, withGen). coexist runs the base flavor @<base>[withGen]
+#     and adds the payload tables with addPh3L1SmartPixels<payload>; --coopt composes the
+#     SmartPixels add-on flavours (COOPT_ADDONS) with the variant's mode and mask tags.
 TIERS = {
     "trk":         ("L1TrkNano",   "", False),
     "trk-truth":   ("L1TrkNano",   "", True),
@@ -73,18 +72,41 @@ TIERS = {
     "pf-truth":    ("L1PFNano",    "", True),
     # Payload tiers. "clusters" carries the UNTRUNCATED IT cluster table: ~26.5k
     # rows/event at PU200, measured 0.29 MB/event (88.6 stored bits/cluster).
-    # "reco" is RESERVED and raises until its content is defined.
     "clusters":       ("L1PFTrkNano", "Clusters", False),
     "clusters-truth": ("L1PFTrkNano", "Clusters", True),
-    "reco":           ("L1PFTrkNano", "Reco",     False),
-    "reco-truth":     ("L1PFTrkNano", "Reco",     True),
+    # --coopt only: the standard L1 SmartPixels study tier (L1TSPStudyNano)
+    "study":          (None, None, True),
 }
+COOPT_ADDONS = {
+    "L1TrkNano": ["@L1Trk", "@SPTrk"],
+    "L1PFNano": ["@L1PF", "@SPTrk"],
+    "L1PFTrkNano": ["@L1PF", "@L1Trk", "@SPTrk"],
+}
+
+
+def variant_tags(spec):
+    """--variant of a --coopt job -> its mode and mask tags."""
+    mode, _, activeSP = spec.partition(":")
+    if mode == "passthrough":
+        return ["@SPActiveLayersIIII"]
+    if mode == "digiRefit":
+        return ["@SPSeedlessRefit", "@SPActiveLayers" + activeSP.replace("1", "A").replace("0", "I")]
+    raise SystemExit(f"--coopt composes the nano flavours, whose tags select digiRefit:<mask> or "
+                     f"passthrough; {spec!r} runs only with coexist")
 
 
 def nano_step(args):
     base, payload, truth = TIERS[args.tier]
     gen = "withGen" if truth else ""
-    return f"NANO:@{base}SmartPix{payload}{gen}" if args.coopt else f"NANO:@{base}{gen}"
+    if not args.coopt:
+        if base is None:
+            raise SystemExit(f"--tier {args.tier} is a --coopt tier")
+        return f"NANO:@{base}{gen}"
+    if base is None:
+        flavours = ["@L1TSPStudyNano"]
+    else:
+        flavours = [f"@Phase2L1DPG{gen}"] + COOPT_ADDONS[base] + (["@SPClustersStubs"] if payload else [])
+    return "NANO:" + "+".join(flavours + variant_tags(args.variant[0]))
 
 
 GEOMETRY, ERA, CONDITIONS = "ExtendedRun4D121", "Phase2C22I13M9", "auto:phase2_realistic_T35"
@@ -109,8 +131,8 @@ DEFAULT_ANGLE_SET = "L1Trigger/Phase3SmartPixels/data/spix_angle_response_Conv1D
 
 
 def build_customise(args, overrides):
-    """The --customise_commands payload: smartPixelsCoexist (or smartPixelsCoopt with
-    --coopt), plus the in-job MINIAOD gen inputs for a truth tier."""
+    """The --customise_commands payload: smartPixelsCoexist (or, with --coopt, the nano
+    flavours' parameter block), plus the in-job MINIAOD gen inputs for a truth tier."""
     # --variant is repeatable. smartPixelsCoexist takes a LIST of variants and gives
     # each its own producers and its own nano tables, so N configurations cost one
     # pass over the input instead of N: the expensive upstream work (unpacking,
@@ -134,22 +156,27 @@ def build_customise(args, overrides):
         seen.add(key)
         variants.append(f'("{mode}", "{activeSP}")' if activeSP else f'("{mode}", None)')
 
-    refit = {"pixelavAngleSet": args.pixelav_angle_set}
+    # the nano flavours default to the emu angle source, coexist to the PixelAV payload
+    angle_source = args.angle_source or ("emu" if args.coopt else "payload")
+    refit = {"angleSource": angle_source}
+    if angle_source == "payload":
+        refit["pixelavAngleSet"] = args.pixelav_angle_set
     refit.update(overrides)
-    common = (f"trackInputMode='{args.track_input_mode}', extendedTracks={args.extended_tracks}, "
-              f"promptHnpar={args.prompt_hnpar}, digiRefitConfig={refit!r}")
+    posture = (f"trackInputMode='{args.track_input_mode}', extendedTracks={args.extended_tracks}, "
+               f"promptHnpar={args.prompt_hnpar}")
     _, payload, truth = TIERS[args.tier]
-    parts = [
-        "from L1Trigger.Phase3SmartPixels.customizeSmartPixels_cff import smartPixelsCoexist, smartPixelsCoopt",
-        "import DPGAnalysis.Phase3SmartPixelsNanoAOD.l1tPh3SmartPixelsNano_cff as p3nano",
-    ]
+    parts = ["import DPGAnalysis.Phase3SmartPixelsNanoAOD.l1tPh3SmartPixelsNano_cff as p3nano"]
     if args.coopt:
-        parts.append(f"process = smartPixelsCoopt(process, variant={variants[0]}, {common})")
+        # the tags in the NANO step wire the variant; the rest goes through the parameter block
+        params = ", ".join(f"{k}={v!r}" for k, v in sorted(refit.items()))
+        parts += ["from DPGAnalysis.Phase3SmartPixelsNanoAOD.l1tPh3SmartPixelsNanoFlavours_cff import smartPixelsNanoParams",
+                  f"smartPixelsNanoParams(process, {posture}, {params})"]
     else:
+        parts.append("from L1Trigger.Phase3SmartPixels.customizeSmartPixels_cff import smartPixelsCoexist")
         if payload:
             parts.append(f"process = p3nano.addPh3L1SmartPixels{payload}(process)")
         parts.append(f"process = smartPixelsCoexist(process, variants=[{', '.join(variants)}], "
-                     f"addNanoTables=True, {common})")
+                     f"addNanoTables=True, {posture}, digiRefitConfig={refit!r})")
     # withGen tiers read MINIAOD gen products (prunedGenParticles, slimmedGenJets, ...);
     # the GEN-SIM-DIGI-RAW RelVals carry only genParticles/ak4GenJetsNoNu, so make them.
     if truth:
@@ -211,10 +238,13 @@ def main():
                          "helixCovMat makes every extended seed unusable.")
     ap.add_argument("--prompt-hnpar", type=int, default=5, choices=[4, 5])
     ap.add_argument("--use-angles", default=None, choices=["none", "alpha", "alphaBeta"])
+    ap.add_argument("--angle-source", default=None, choices=["emu", "payload"],
+                    help="rec-hit angle source (default: emu with --coopt, the nano flavours' "
+                         "default; payload for coexist)")
     ap.add_argument("--pixelav-angle-set", default=DEFAULT_ANGLE_SET)
     ap.add_argument("--coopt", action="store_true",
-                    help="canonical single-view nano (smartPixelsCoopt): the one --variant "
-                         "replaces the tracklet tracks for the whole L1 emulation")
+                    help="canonical single-view nano (the SmartPixels nano flavours): the one "
+                         "--variant replaces the tracklet tracks for the whole L1 emulation")
     ap.add_argument("--filein", default=None)
     ap.add_argument("--fileout", default=None)
     ap.add_argument("--needs-truth", action="store_true",
