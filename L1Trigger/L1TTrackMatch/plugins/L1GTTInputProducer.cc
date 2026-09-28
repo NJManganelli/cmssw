@@ -154,7 +154,7 @@ L1GTTInputProducer::~L1GTTInputProducer() {}
 */
 void L1GTTInputProducer::generate_eta_lut() {
   // initialize lut array
-  eta_lut_.reserve(kEtaLutSize);
+  eta_lut_.resize(kEtaLutSize);
 
   // iterate through all values in the lut
   for (unsigned int i = 0; i < kEtaLutSize; i++) {
@@ -176,7 +176,7 @@ void L1GTTInputProducer::generate_eta_lut() {
 
 void L1GTTInputProducer::generate_pt_lut() {
   // initialize lut array
-  pt_lut_.reserve(kPtLutSize);  // generate lut
+  pt_lut_.resize(kPtLutSize);  // generate lut
 
   // iterate through all values in the lut
   for (unsigned int i = 0; i < kPtLutSize; i++) {
@@ -353,6 +353,8 @@ bool L1GTTInputProducer::getPtBits(const L1Track& track,
 
   // Shift the value so that the index changes when the LSB of the output changes
   value = value >> (kPTInputSize - 1 - (kPTOutputSize));
+  // The most negative 1/R word has magnitude 2^(kPTInputSize-1), one past the last LUT entry.
+  value = (value < kPtLutSize) ? value : in_pt_t(kPtLutSize - 1);
 
   // Get the pt from the LUT
   ptBits = pt_lut_[value];
