@@ -436,7 +436,7 @@ Until that exists the scattering term stays unquantified, and this document
 carries it as a bracket rather than a number.
 
 **Overlap with the `Q` process-noise work.** Same physics, different path. `Q` is
-calibrated for scattering along **OT seed → IT** (targets k = 167/121/114
+calibrated for scattering along **OT track → IT** (targets k = 167/121/114
 µm·GeV on L2/L3/L4), which crosses far more material than the **vertex → IT**
 path at issue here; **[derived]** the vertex→L2 displacement is ~3× smaller,
 consistent with the path difference rather than with either number being wrong.
@@ -686,8 +686,8 @@ Deliberately thin, because seeding is what this note analyses. What is settled:
   hit resolution, and multiple scattering dominates, giving roughly constant
   ~1% relative pT resolution. IT-only curvature measurement is physically sound;
   the difficulty is entirely in finding the right clusters, not in fitting them.
-- The existing `digiRefit` is **not** this fit: it refits *existing* OT-seeded
-  tracks and its layer order (`outsideIn`) is chosen for an OT-only seed
+- The existing `digiRefit` is **not** this fit: it refits *existing* OT
+  tracks and its layer order (`outsideIn`) is chosen for an OT-only track
   projecting inward. An IT-seeded fit inverts that geometry and must not inherit
   the ordering conclusion without re-deriving it.
 
@@ -748,7 +748,7 @@ within a ladder and the direction propagation did not account for it; both
    has not been looked at.
 5. **A single IT material model**, shared with the `Q` process-noise work.
    §4a's scattering estimate and `Q`'s k = 167/121/114 µm·GeV calibration are the
-   same physics integrated over different paths (vertex→IT vs OT seed→IT). Derive
+   same physics integrated over different paths (vertex→IT vs OT track→IT). Derive
    the material budget once and let both consume it, rather than each carrying
    its own assumption.
 6. **Per-layer pT spectrum of clusters.** The §4 angle-veto factors used

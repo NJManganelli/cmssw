@@ -79,9 +79,9 @@ public:
 
     // ---- EXTENSION table on the variant track table (extension=true, same name/length) ----
     std::vector<uint8_t> status, nCrossings, nAcceptedHits, nKFUpdates, layerHitMask, maxWindowMult;
-    std::vector<bool> refitPerformed, seedCovOK, anyWindowTruncated;
+    std::vector<bool> refitPerformed, otCovOK, anyWindowTruncated;
     std::vector<float> chi2IncXTot, chi2IncYTot, chi2IncAlphaTot, chi2IncBetaTot;
-    std::vector<float> chi2ITAtSeed, chi2ITAtRefit, shiftChi2, logDetRatio;
+    std::vector<float> chi2ITAtOT, chi2ITAtRefit, shiftChi2, logDetRatio;
     std::vector<int32_t> matchedTpIdx;
     std::vector<int32_t> compactWord;
     status.reserve(nTracks);
@@ -91,13 +91,13 @@ public:
     layerHitMask.reserve(nTracks);
     maxWindowMult.reserve(nTracks);
     refitPerformed.reserve(nTracks);
-    seedCovOK.reserve(nTracks);
+    otCovOK.reserve(nTracks);
     anyWindowTruncated.reserve(nTracks);
     chi2IncXTot.reserve(nTracks);
     chi2IncYTot.reserve(nTracks);
     chi2IncAlphaTot.reserve(nTracks);
     chi2IncBetaTot.reserve(nTracks);
-    chi2ITAtSeed.reserve(nTracks);
+    chi2ITAtOT.reserve(nTracks);
     chi2ITAtRefit.reserve(nTracks);
     shiftChi2.reserve(nTracks);
     logDetRatio.reserve(nTracks);
@@ -115,8 +115,8 @@ public:
     std::vector<int32_t> selClusterIdx;
     std::vector<float> projLocalX, projLocalY, projCotAlpha, projCotBeta,
         projSigX, projSigY,
-        projSeedLocalX, projSeedLocalY, projSeedSigX, projSeedSigY,
-        projSeedCotAlpha, projSeedCotBeta;
+        projOTLocalX, projOTLocalY, projOTSigX, projOTSigY,
+        projOTCotAlpha, projOTCotBeta;
     std::vector<uint8_t> recoSizeX, recoSizeY;
     std::vector<bool> clusterMerged;
     std::vector<float> tpChargeFrac;
@@ -134,14 +134,14 @@ public:
       layerHitMask.push_back(ti.layerHitMask);
       maxWindowMult.push_back(ti.maxWindowMult);
       refitPerformed.push_back(ti.status & smartpixels::trackstatus::kRefitPerformed);
-      seedCovOK.push_back(ti.status & smartpixels::trackstatus::kSeedCovOK);
+      otCovOK.push_back(ti.status & smartpixels::trackstatus::kOTCovOK);
       anyWindowTruncated.push_back(ti.status & smartpixels::trackstatus::kAnyWindowTruncated);
       chi2IncXTot.push_back(ti.chi2IncXTot);
       chi2IncYTot.push_back(ti.chi2IncYTot);
       chi2IncAlphaTot.push_back(ti.chi2IncAlphaTot);
       chi2IncBetaTot.push_back(ti.chi2IncBetaTot);
       matchedTpIdx.push_back(l1tnano::tpIdxOfKey(tpRowMap, tpId, ti.matchedTpIdx));
-      chi2ITAtSeed.push_back(ti.chi2ITAtSeed);
+      chi2ITAtOT.push_back(ti.chi2ITAtOT);
       chi2ITAtRefit.push_back(ti.chi2ITAtRefit);
       shiftChi2.push_back(ti.shiftChi2);
       logDetRatio.push_back(ti.logDetRatio);
@@ -162,14 +162,14 @@ public:
         projLocalY.push_back(hi.projLocalY);
         projCotAlpha.push_back(hi.projCotAlpha);
         projCotBeta.push_back(hi.projCotBeta);
-        projSeedLocalX.push_back(hi.projSeedLocalX);
-        projSeedLocalY.push_back(hi.projSeedLocalY);
+        projOTLocalX.push_back(hi.projOTLocalX);
+        projOTLocalY.push_back(hi.projOTLocalY);
         projSigX.push_back(hi.projSigX);
         projSigY.push_back(hi.projSigY);
-        projSeedSigX.push_back(hi.projSeedSigX);
-        projSeedSigY.push_back(hi.projSeedSigY);
-        projSeedCotAlpha.push_back(hi.projSeedCotAlpha);
-        projSeedCotBeta.push_back(hi.projSeedCotBeta);
+        projOTSigX.push_back(hi.projOTSigX);
+        projOTSigY.push_back(hi.projOTSigY);
+        projOTCotAlpha.push_back(hi.projOTCotAlpha);
+        projOTCotBeta.push_back(hi.projOTCotBeta);
         recoLocalX.push_back(hi.recoLocalX);
         recoLocalY.push_back(hi.recoLocalY);
         sigX.push_back(hi.sigX);
@@ -229,21 +229,21 @@ public:
     hitTable->addColumn<float>("projLocalY", projLocalY, "RUNNING projection, local y [cm]");
     hitTable->addColumn<float>("projCotAlpha", projCotAlpha, "RUNNING projection, expected cotAlpha", 12);
     hitTable->addColumn<float>("projCotBeta", projCotBeta, "RUNNING projection, expected cotBeta", 12);
-    hitTable->addColumn<float>("projSeedLocalX", projSeedLocalX,
-        "SEED-ONLY projection (no Kalman updates), local x [cm]");
-    hitTable->addColumn<float>("projSeedLocalY", projSeedLocalY, "SEED-ONLY projection, local y [cm]");
+    hitTable->addColumn<float>("projOTLocalX", projOTLocalX,
+        "OT-ONLY projection (the OT track, no Kalman updates), local x [cm]");
+    hitTable->addColumn<float>("projOTLocalY", projOTLocalY, "OT-ONLY projection, local y [cm]");
     hitTable->addColumn<float>("projSigX", projSigX,
         "sqrt((H C H^T)_xx) [cm]: REFIT-ORDER projection cone from the RUNNING covariance, "
         "recorded after multiple-scattering Q and before this layer's update, EXCLUDING the "
-        "measurement term. Compare against projSeedSigX to isolate what the refit buys. "
+        "measurement term. Compare against projOTSigX to isolate what the refit buys. "
         "Present on every crossing, including the ~10% whose window is empty");
     hitTable->addColumn<float>("projSigY", projSigY, "sqrt((H C H^T)_yy) [cm]");
-    hitTable->addColumn<float>("projSeedSigX", projSeedSigX,
-        "sqrt((H C_seed H^T)_xx) [cm]: single-shot projection cone from the OT covariance, "
+    hitTable->addColumn<float>("projOTSigX", projOTSigX,
+        "sqrt((H C_OT H^T)_xx) [cm]: single-shot projection cone from the OT covariance, "
         "EXCLUDING the measurement term");
-    hitTable->addColumn<float>("projSeedSigY", projSeedSigY, "sqrt((H C_seed H^T)_yy) [cm]");
-    hitTable->addColumn<float>("projSeedCotAlpha", projSeedCotAlpha, "SEED-ONLY expected cotAlpha", 12);
-    hitTable->addColumn<float>("projSeedCotBeta", projSeedCotBeta, "SEED-ONLY expected cotBeta", 12);
+    hitTable->addColumn<float>("projOTSigY", projOTSigY, "sqrt((H C_OT H^T)_yy) [cm]");
+    hitTable->addColumn<float>("projOTCotAlpha", projOTCotAlpha, "OT-ONLY expected cotAlpha", 12);
+    hitTable->addColumn<float>("projOTCotBeta", projOTCotBeta, "OT-ONLY expected cotBeta", 12);
     hitTable->addColumn<float>("recoLocalX", recoLocalX, "reco cluster local x [cm] (-999 if none)");
     hitTable->addColumn<float>("recoLocalY", recoLocalY, "reco cluster local y [cm] (-999 if none)");
     hitTable->addColumn<float>("sigX", sigX, "reco local-x uncertainty from the pixel CPE [cm] (-999 if none)");
@@ -281,9 +281,9 @@ public:
 
     // EXTENSION table on the variant track table (extension=true -> merged by name)
     auto trkTable = std::make_unique<nanoaod::FlatTable>(nTracks, trackTableName_, false, true);
-    trkTable->addColumn<uint8_t>("spixStatus", status, "packed refit status (bit0 refitPerformed, bit1 seedCovOK, bit2 RETIRED, bit3 anyWindowTruncated)");
+    trkTable->addColumn<uint8_t>("spixStatus", status, "packed refit status (bit0 refitPerformed, bit1 otCovOK, bit2 RETIRED, bit3 anyWindowTruncated)");
     trkTable->addColumn<bool>("spixRefitPerformed", refitPerformed, "refit performed (else passthrough copy of input track)");
-    trkTable->addColumn<bool>("spixSeedCovOK", seedCovOK, "seed covariance was usable");
+    trkTable->addColumn<bool>("spixOTCovOK", otCovOK, "the OT track covariance was usable");
     trkTable->addColumn<bool>("spixAnyWindowTruncated", anyWindowTruncated, "at least one crossing window hit maxHitsPerWindow");
     trkTable->addColumn<uint8_t>("spixNCrossings", nCrossings, "valid layer crossings attempted");
     trkTable->addColumn<uint8_t>("spixNAcceptedHits", nAcceptedHits, "hits accepted into the KF");
@@ -298,17 +298,17 @@ public:
         std::string("TRUTH-ONLY, TP this track is matched to (equal L1TSmartPixelsCluster_tpIdx finds every "
                     "cluster from its particle, including ones the search window never offered): ") +
             l1tnano::tpIdxDoc());
-    trkTable->addColumn<float>("spixChi2ITAtSeed", chi2ITAtSeed,
-        "chi2 of the ACCEPTED IT hits against the UNMODIFIED OT seed helix. Needs no stubs, so "
+    trkTable->addColumn<float>("spixChi2ITAtOT", chi2ITAtOT,
+        "chi2 of the ACCEPTED IT hits against the UNMODIFIED OT track helix. Needs no stubs, so "
         "it travels with the track. CAVEAT: the refit selected these hits by minimising this, so "
-        "a large seed-to-refit drop is equally the signature of chasing wrong hits");
+        "a large OT-to-refit drop is equally the signature of chasing wrong hits");
     trkTable->addColumn<float>("spixChi2ITAtRefit", chi2ITAtRefit,
         "same accepted IT hits against the FINAL refit helix");
     trkTable->addColumn<float>("spixShiftChi2", shiftChi2,
-        "da^T (C_seed - C_refit)^-1 da: how far the fit moved, in units of the information that "
+        "da^T (C_OT - C_refit)^-1 da: how far the fit moved, in units of the information that "
         "moving it required (-999 if the covariance difference is not invertible)");
     trkTable->addColumn<float>("spixLogDetRatio", logDetRatio,
-        "ln(det C_seed / det C_refit) >= 0: total information gained, parametrisation-independent");
+        "ln(det C_OT / det C_refit) >= 0: total information gained, parametrisation-independent");
     trkTable->addColumn<int32_t>("spixCompactWord", compactWord, "16-bit transmitted-subset compact word (packCompactWord; see SmartPixelsTransmittedSubset.h)");
     iEvent.put(std::move(trkTable), "trk");
   }

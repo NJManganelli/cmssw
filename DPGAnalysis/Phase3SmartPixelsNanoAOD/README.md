@@ -73,9 +73,9 @@ producer instance (prompt and extended cloned separately):
   `tpLocalCotAlpha`, `tpLocalCotBeta`.
 - **track EXTENSION table** (`extension=True`, SAME name+length as the variant track
   table `L1TSmartPixelsTrack<Suffix>` / `L1TSmartPixelsExtTrack<Suffix>`): `spixStatus`
-  + unpacked bools (`spixRefitPerformed`, `spixSeedCovOK`,
+  + unpacked bools (`spixRefitPerformed`, `spixOTCovOK`,
   `spixAnyWindowTruncated`; `spxParametrizedSeed` was REMOVED with the
-  `parametrized` seedCovMode, and status bit2 is retired, not reused), `spixNCrossings`, `spixNAcceptedHits`, `spixNKFUpdates`,
+  `parametrized` otCovMode, and status bit2 is retired, not reused), `spixNCrossings`, `spixNAcceptedHits`, `spixNKFUpdates`,
   `spixLayerHitMask`, `spixMaxWindowMult`, `spixChi2IncXTot`, `spixChi2IncYTot`,
   `spixChi2IncAlphaTot`, `spixChi2IncBetaTot`, and `spixCompactWord`
   (= `packCompactWord(trackInfo)`, the 16-bit transmitted-subset word). The r-phi and
@@ -185,7 +185,7 @@ Notes:
   candidate track truth uses the associator of the SmartPixels collection; `L1DispVertex`
   track indices are `L1TSmartPixelsExtTrack` rows; `L1TTrack` keeps its own GTT hardware
   columns from a GTT conversion of the OT tracks.
-- Every SmartPixels track table has `l1TrackIdx`: the row of the OT track it was seeded from.
+- Every SmartPixels track table has `l1TrackIdx`: the row of the OT track it was built from.
 - `produceMiniAODGenInputs` only for inputs without MINIAOD gen products (withGen tiers).
 - Loop `activeSP` over 0000..1111 (or modes) across jobs; comparisons are file-to-file.
 - For the full L1+HLT+Reco no-filter study, extend the steps per

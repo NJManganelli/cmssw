@@ -165,9 +165,9 @@ Two structural facts behind this:
   1.5 sigma for soft tracks and 6.6 sigma for stiff ones — tightest exactly
   where the prediction is worst.
 
-Note these per-layer S values are **order-dependent**: L1 shows seed-level
+Note these per-layer S values are **order-dependent**: L1 shows OT-level
 uncertainty only because it is processed first (the loop is hardcoded
-inside-out, `L1SmartPixelsTrackProducer.cc:1651`). Seed-level S at each layer
+inside-out, `L1SmartPixelsTrackProducer.cc:1651`). OT-level S at each layer
 requires single-layer runs; see 4b.
 
 ### 3c. Consequence, and the dominant failure mode
@@ -203,7 +203,7 @@ scattering term**, which the spec's Q1 table already flagged against TMTT
 CORRECTED 2026-09-03 — this section originally predicted that the missing MS
 term would inflate **L1** pulls while barely touching L2-L4, and claimed that
 was the observed pattern. Both halves were wrong. The per-layer measurement
-(trackCov seed, correct hits only) runs the other way:
+(trackCov OT track, correct hits only) runs the other way:
 
 | layer | correct-hit pullX |
 |---|---|
@@ -213,7 +213,7 @@ was the observed pattern. Both halves were wrong. The per-layer measurement
 | L4 | 7.8 |
 
 L1 is *fine* and the outer layers are catastrophic. The reason is that the
-covariance **never grows**: `C` is filled from the seed, shrunk by each update
+covariance **never grows**: `C` is filled from the OT track, shrunk by each update
 (`C -= K vᵗ`) and copied out, and there is no propagation step at all — the
 state is the 5 helix parameters and "propagating" is `crossLayer()` re-evaluating
 the same helix at another radius. So the first update collapses `C`, and every
@@ -242,7 +242,7 @@ Single-feature AUC for "every accepted IT hit came from the track's own TP":
 Beta 0.879, Y 0.768, X 0.753, Alpha 0.706, all-four-summed 0.941. Versus the
 deployed `genuine` objective: 0.717 / 0.768 / 0.617 / 0.649 / 0.728.
 
-The seed chi2 and the refit deltas are **complementary, not redundant**: seed
+The OT-track chi2 and the refit deltas are **complementary, not redundant**: OT-track
 chi2 adds +0.0434 on `genuine` over the deltas but +0.0001 on `clean`; the
 deltas add +0.0033 on `genuine` but **+0.3139** on `clean`. So the BDT wants
 both, and the deployed `genuine` label is nearly blind to the failure mode the
@@ -263,7 +263,7 @@ refit tracks with a genuine TP match. Population by number of wrong hits used:
 |---|---|---|---|---|---|
 | share | 46.7% | 35.4% | 12.3% | 4.1% | 1.5% |
 
-Median |param - truth|, seed -> refit, by category:
+Median |param - truth|, OT track -> refit, by category:
 
 | n_wrong | d0 [um] | z0 [um] | phi [mrad] | tanL [1e-3] | pt [GeV] |
 |---|---|---|---|---|---|
@@ -277,9 +277,9 @@ Median |param - truth|, seed -> refit, by category:
 and a single wrong hit annihilates the entire gain.** 91.9% / 94.7% of clean
 refits improve d0 / z0; that falls to 45.5% / 48.5% at one wrong hit.
 
-Note the categories are not random subsets: the seed error is itself ~2x worse
-for n_wrong >= 1 (d0 529 vs 247 um), i.e. poor seeds attract wrong hits. That is
-the expected consequence of 3b - a worse seed means larger S, hence a wider
+Note the categories are not random subsets: the OT track error is itself ~2x worse
+for n_wrong >= 1 (d0 529 vs 247 um), i.e. poor OT tracks attract wrong hits. That is
+the expected consequence of 3b - a worse OT track means larger S, hence a wider
 correct window, hence more candidates - and it means window sizing and hit
 purity are the same problem.
 
@@ -287,7 +287,7 @@ Population-level policy comparison (same tracks, three policies):
 
 | | d0 median | d0 q95 | phi median | phi q95 | pt median |
 |---|---|---|---|---|---|
-| always seed | 350 um | 1547 | 2.245 mrad | 16.9 | 0.0295 GeV |
+| always OT track | 350 um | 1547 | 2.245 mrad | 16.9 | 0.0295 GeV |
 | always refit | 132 um | **2365** | 2.329 | **46.5** | **0.0504** |
 | **oracle gate** | **118 um** | **1513** | **1.581** | 16.9 | 0.0286 |
 
@@ -298,8 +298,8 @@ all five parameters at every quantile** (d0 and z0 ~3x better median, phi and
 tanL ~30% better, pt neutral-to-better).
 
 **Design consequence.** The refit-quality classifier's highest-value job is not
-predicting seed genuineness — it is predicting HIT CLEANLINESS, so a consumer
-can take refit parameters per track when clean and fall back to the seed
+predicting OT track genuineness — it is predicting HIT CLEANLINESS, so a consumer
+can take refit parameters per track when clean and fall back to the OT track
 otherwise. And that is achievable: the `clean` label reaches AUC 0.94 from a
 single summed chi2 scalar and 0.996 from a BDT on the float 4-way chi2 (3e), so
 a realistic gate should recover much of the oracle column. This also explains
@@ -339,7 +339,7 @@ downstream chi2 encoding for the BDT.
 1. Add the MS inflation (TMTT-style `measTerm/pT`), re-measure pull widths per
    layer and per dimension; target robust sigma ~1.0 for correct hits.
 2. Single-layer runs (`smartPixelsActiveLayers = 1000/0100/0010/0001` — the knob
-   already exists, no code needed) to obtain **seed-level** S per layer. This is
+   already exists, no code needed) to obtain **OT-level** S per layer. This is
    the missing input for the layer-order question and costs four short jobs.
 3. Window policies, three arms:
    - static per-layer constants (today);
@@ -406,7 +406,7 @@ the layer that also has the worst contamination (47.7% wrong, unchanged in the
 cluster era at 48.4%). Outside-in has the opposite trade: least-extrapolated
 first projection, but the widest window and hence the most ambiguous match. Both
 arguments are real; the knob exists so they are measured rather than argued
-(`eval_refitq/ordering/layer_order_ab.py`, paired A/B on identical seed tracks).
+(`eval_refitq/ordering/layer_order_ab.py`, paired A/B on identical OT tracks).
 
 **The deeper caveat, and the test it implies.** A single 5-parameter helix
 **cannot represent a scattered trajectory**: the OT constrains the outer segment,
@@ -471,7 +471,7 @@ each category. The observational half needs no new production — see 5.
 - per-layer ambiguity and wrong-hit rates (3c);
 - pull widths by truth class (3d);
 - **4e's observational half in full**: the nano carries refit params
-  (`rInv/phi/tanL/z0/d0` on the variant table), seed params (reference table),
+  (`rInv/phi/tanL/z0/d0` on the variant table), OT track params (reference table),
   truth (`tp_pt/tp_d0/tp_z0/tp_eta/tp_phi/tp_tanL`) and per-hit `selHitClass`,
   so the n_wrong = 0..4+ categorization of parameter change vs truth can be done
   immediately. Only the ORACLE arm needs a producer knob.
@@ -486,7 +486,7 @@ cannot be separated); `sigX/sigY` and `sqrt(S)` per dimension as actually used
 truth-matched hit's residuals even when another hit was selected
 (`truthResX/Y`, `truthInWindow`) for 4e.
 
-Per-track float chi2 additions: `chi2StubsAtSeed`, `chi2StubsAtRefit`,
+Per-track float chi2 additions: `chi2StubsAtOT`, `chi2StubsAtRefit`,
 `chi2ITAtRefit`, `chi2JointAtRefit`. These are FINAL-STATE chi2 values, not the
 sequential KF increments (each of which is evaluated at its own predicted
 state); "the chi2 of the refit track over stubs and IT hits" means the former,
@@ -522,7 +522,7 @@ The two candidates that were weighed:
   matches what the L1 track finder already does, and is the form a firmware
   implementation would eventually need. More code, and it imports the OT error
   model with its own conventions.
-- **Float approximation**: reuse the seed's per-stub residuals and apply a linear
+- **Float approximation**: reuse the OT track's per-stub residuals and apply a linear
   correction from the parameter shift (`dchi2 ~ 2 r^T W H da + da^T H^T W H da`).
   Much less code, trivially re-derivable when the fit changes, and adequate for
   ranking/first-order studies — but it is only valid for small parameter shifts

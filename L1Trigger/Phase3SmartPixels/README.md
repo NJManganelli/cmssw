@@ -74,8 +74,8 @@ migrated, so they had become a second vocabulary rather than a migration path.
   straight from the file. Real PU everywhere, but the file's tracks are the old
   (pre-PR#51503) layout so `helixCovMat` is all-zero. Use for: PU studies against
   the file's *own* downstream objects (file L1 jets, etc.), and old-release track
-  studies. `digiRefit` **cannot** run on such a file: it always seeds from
-  `helixCovMat` and an all-zero one throws `SmartPixelsSeedCovMissing`.
+  studies. `digiRefit` **cannot** run on such a file: it always starts from the OT
+  track's `helixCovMat` and an all-zero one throws `SmartPixelsOTCovMissing`.
 - **`rebuildTracksFromStubs`** — rebuild NEW-layout tracks from the file's
   persisted stub tier (`ProducerDTC` → tracklet emulator(s) → re-run track
   associator vs the file's cluster/stub maps); remove only the cluster/stub
@@ -84,24 +84,24 @@ migrated, so they had become a second vocabulary rather than a migration path.
   rebuilds the displaced chain. Use for: the primary PU development mode and
   any refit production.
 
-digiRefit seeds from the track's own `helixCovMat`, always. There is no
+digiRefit starts from the OT track's own `helixCovMat`, always. There is no
 parametrized alternative: a fixed diagonal is not the OT fit's uncertainty, it
-substitutes silently for a missing one, and every seed-covariance-dependent
-measurement (window sizing, pull widths, layer ordering, the MS term) is
+substitutes silently for a missing one, and every measurement that depends on
+the OT covariance (window sizing, pull widths, layer ordering, the MS term) is
 meaningless under it. So digiRefit requires a track collection whose covariance
 is real:
 
 | trackInputMode | tracks | digiRefit usable? |
 |---|---|---|
 | `reemulateL1TrackFinding` | fresh, new layout | **yes** (PU retained) |
-| `useStoredTracks` | file, old layout | **no** — zero cov; `SmartPixelsSeedCovMissing` fires at `endStream` |
+| `useStoredTracks` | file, old layout | **no** — zero cov; `SmartPixelsOTCovMissing` fires at `endStream` |
 | `useStoredTracks` | file, post-#51503 | **yes** |
 | `rebuildTracksFromStubs` | fresh, new layout | **yes** (with PU) |
 
 **The ✅ rows are per REBUILT COLLECTION, not per job.** With
 `extendedTracks=False`, `rebuildTracksFromStubs` rebuilds only the prompt chain,
 so the Extended producer still reads old-layout stored tracks and every extended
-seed is unusable. This is not special-cased at config time; it fails loudly at
+OT track is unusable for the refit. This is not special-cased at config time; it fails loudly at
 runtime, by design.
 
 ## Refit modes (tier model)

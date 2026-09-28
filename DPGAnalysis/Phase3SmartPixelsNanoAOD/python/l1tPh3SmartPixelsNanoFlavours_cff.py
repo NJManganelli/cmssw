@@ -429,19 +429,19 @@ def _spLabels(variant):
 def _configureSmartPixelsTracks(process, st, variant, sched):
     """SmartPixels track tables read the wired variant; l1TrackIdx links each one to the OT
     track it was built from when that OT table is in the nano."""
-    from DPGAnalysis.Phase3SmartPixelsNanoAOD.l1tPh3SmartPixelsNano_cff import l1tPh3SmartPixelsSeedLinkTable
+    from DPGAnalysis.Phase3SmartPixelsNanoAOD.l1tPh3SmartPixelsNano_cff import l1tPh3SmartPixelsOTTrackLinkTable
     for side, (label, name) in _SP_TABLES.items():
         if label not in sched:
             continue
         if variant is not None:
             getattr(process, label).src = cms.InputTag(_spLabels(variant)[side], "Level1TTTracks")
-        linkLabel = f"l1tPh3{'Ext' if side == 'ext' else ''}SmartPixelsSeedLinkTable"
+        linkLabel = f"l1tPh3{'Ext' if side == 'ext' else ''}SmartPixelsOTTrackLinkTable"
         if _OT_TABLES[side][0] in sched and variant is not None and not hasattr(process, linkLabel):
-            setattr(process, linkLabel, l1tPh3SmartPixelsSeedLinkTable.clone(
+            setattr(process, linkLabel, l1tPh3SmartPixelsOTTrackLinkTable.clone(
                 src=cms.InputTag(_spLabels(variant)[side], "Level1TTTracks"),
-                seedTracks=cms.InputTag(_OT_TRACKS[side], "Level1TTTracks"),
+                otTracks=cms.InputTag(_OT_TRACKS[side], "Level1TTTracks"),
                 trackTableName=name,
-                seedTableName=_OT_TABLES[side][1]))
+                otTrackTableName=_OT_TABLES[side][1]))
             _addToNano(process, "p3L1SmartPixelsLinkTask", [linkLabel])
 
 
