@@ -359,7 +359,7 @@ def _reconcile(process):
     variant = _wiredVariant(st)
     _configureSmartPixelsTracks(process, st, variant, sched)
     _configureModeTables(process, variant, sched)
-    _configureStubLinks(process, sched)
+    _configureStubLinks(process, variant, sched)
     if _CLUSTER_TABLE in sched:
         _ensureRecHits(process, st)
     _configureCandidateLinks(process, st, variant, sched)
@@ -465,15 +465,37 @@ def _configureModeTables(process, variant, sched):
         module.clusterTableName = "L1TSmartPixelsCluster" if _CLUSTER_TABLE in sched else ""
 
 
-def _configureStubLinks(process, sched):
-    """OT track -> stub rows (L1TTrackStub / L1TExtTrackStub) when both the OT track table
-    and L1TOTStub are in the nano."""
-    if _OT_STUB_TABLE not in sched:
+def _configureStubLinks(process, variant, sched):
+    """Link-only track -> stub tables (<track table>Stub: trackIdx, otStubIdx -> L1TOTStub)
+    for the OT and the SmartPixels track tables, and SmartPixels track -> cluster tables
+    (<track table>Cluster: trackIdx, clusterIdx -> L1TSmartPixelsCluster; for digiRefit the
+    hits accepted into the refit), each when both of its tables are in the nano."""
+    from DPGAnalysis.Phase3SmartPixelsNanoAOD.l1tPh3SmartPixelsNano_cff import (
+        addPh3L1SmartPixelsStubTables, l1tPh3TrackStubLinkTable, l1tPh3SmartPixelsTrackClusterLinkTable)
+    if _OT_STUB_TABLE in sched:
+        doPrompt, doExtended = (_OT_TABLES[s][0] in sched for s in ("prompt", "ext"))
+        if doPrompt or doExtended:
+            addPh3L1SmartPixelsStubTables(process, doPrompt=doPrompt, doExtended=doExtended)
+    if variant is None:
         return
-    from DPGAnalysis.Phase3SmartPixelsNanoAOD.l1tPh3SmartPixelsNano_cff import addPh3L1SmartPixelsStubTables
-    doPrompt, doExtended = (_OT_TABLES[s][0] in sched for s in ("prompt", "ext"))
-    if doPrompt or doExtended:
-        addPh3L1SmartPixelsStubTables(process, doPrompt=doPrompt, doExtended=doExtended)
+    for side, (tableLabel, tableName) in _SP_TABLES.items():
+        if tableLabel not in sched:
+            continue
+        ext = "Ext" if side == "ext" else ""
+        tracks = cms.InputTag(_spLabels(variant)[side], "Level1TTTracks")
+        if _OT_STUB_TABLE in sched:
+            label = f"l1tPh3{ext}SmartPixelsTrackStubLinkTable"
+            if not hasattr(process, label):
+                setattr(process, label, l1tPh3TrackStubLinkTable.clone(
+                    tracks=tracks, linkTableName=f"{tableName}Stub", trackTableName=tableName))
+                _addToNano(process, "p3L1SmartPixelsLinkTask", [label])
+        if _CLUSTER_TABLE in sched:
+            label = f"l1tPh3{ext}SmartPixelsTrackClusterLinkTable"
+            if not hasattr(process, label):
+                setattr(process, label, l1tPh3SmartPixelsTrackClusterLinkTable.clone(
+                    tracks=tracks, linkTableName=f"{tableName}Cluster", trackTableName=tableName,
+                    sidecar=tracks if variant[0] == "digiRefit" else cms.InputTag("")))
+                _addToNano(process, "p3L1SmartPixelsLinkTask", [label])
 
 
 def _configureCandidateLinks(process, st, variant, sched):

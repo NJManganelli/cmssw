@@ -486,8 +486,8 @@ expect_raises(ValueError, lambda: attachStubRebuildChain(
     (lambda pp: (setattr(pp, "pdummy", cms.Path()) or pp))(cms.Process("TEST")), promptHnpar=6),
     "promptHnpar=6 raises ValueError", contains="promptHnpar must be one of")
 
-# --- (h) reference-track OT stub-position tables (Part B) --------------------
-print("[h] reference-track OT stub-position tables")
+# --- (h) OT track -> stub link tables ---------------------------------------
+print("[h] OT track -> stub link tables")
 from DPGAnalysis.Phase3SmartPixelsNanoAOD.l1tPh3SmartPixelsNano_cff import (
     addPh3L1SmartPixelsStubTables, addPh3L1SmartPixelsTracks)
 
@@ -498,57 +498,43 @@ def _proc_with_nanotask():
     return p
 
 
-# prompt + extended stub tables, keyed to the REFERENCE collections (not variants)
+# prompt + extended link tables, keyed to the REFERENCE collections (not variants)
 p_stub = _proc_with_nanotask()
 addPh3L1SmartPixelsStubTables(p_stub, doExtended=True)
-check(hasattr(p_stub, "l1tPh3SmartPixelsStubTable"),
-      "prompt stub table module exists (label ends in 'Table')")
-check(hasattr(p_stub, "l1tPh3ExtSmartPixelsStubTable"),
-      "extended stub table module exists (label ends in 'Table')")
-check(p_stub.l1tPh3SmartPixelsStubTable.label().endswith("Table")
-      and p_stub.l1tPh3ExtSmartPixelsStubTable.label().endswith("Table"),
-      "both stub table module labels end in 'Table' (keep-pattern gotcha)")
-# keyed to the reference tracklet collections (NOT the SmartPixels refit variants)
-check(p_stub.l1tPh3SmartPixelsStubTable.tracks
-      == cms.InputTag("l1tTTTracksFromTrackletEmulation", "Level1TTTracks"),
-      "prompt stub table keyed to the reference l1tTTTracksFromTrackletEmulation")
-check(p_stub.l1tPh3ExtSmartPixelsStubTable.tracks
+check(hasattr(p_stub, "l1tPh3TrackStubLinkTable") and hasattr(p_stub, "l1tPh3ExtTrackStubLinkTable"),
+      "prompt and extended track -> stub link modules exist (labels end in 'Table')")
+check(p_stub.l1tPh3TrackStubLinkTable.tracks
+      == cms.InputTag("l1tTTTracksFromTrackletEmulation", "Level1TTTracks")
+      and p_stub.l1tPh3ExtTrackStubLinkTable.tracks
       == cms.InputTag("l1tTTTracksFromExtendedTrackletEmulation", "Level1TTTracks"),
-      "extended stub table keyed to the reference l1tTTTracksFromExtendedTrackletEmulation")
-# trackIdx links into the reference L1TTrack / L1TExtTrack nano tables
-check(p_stub.l1tPh3SmartPixelsStubTable.trackTableName.value() == "L1TTrack",
-      "prompt stub trackIdx links to the L1TTrack reference table")
-check(p_stub.l1tPh3ExtSmartPixelsStubTable.trackTableName.value() == "L1TExtTrack",
-      "extended stub trackIdx links to the L1TExtTrack reference table")
-check(p_stub.l1tPh3SmartPixelsStubTable.stubTableName.value() == "L1TTrackStub"
-      and p_stub.l1tPh3ExtSmartPixelsStubTable.stubTableName.value() == "L1TExtTrackStub",
-      "stub table names are L1TTrackStub / L1TExtTrackStub")
-# added to the nano task (moduleNames flattens nested sub-tasks to leaf modules)
+      "link tables keyed to the reference tracklet collections")
+check(p_stub.l1tPh3TrackStubLinkTable.trackTableName.value() == "L1TTrack"
+      and p_stub.l1tPh3ExtTrackStubLinkTable.trackTableName.value() == "L1TExtTrack",
+      "trackIdx links to L1TTrack / L1TExtTrack")
+check(p_stub.l1tPh3TrackStubLinkTable.linkTableName.value() == "L1TTrackStub"
+      and p_stub.l1tPh3ExtTrackStubLinkTable.linkTableName.value() == "L1TExtTrackStub",
+      "link table names are L1TTrackStub / L1TExtTrackStub")
 _nano_mods = set(p_stub.l1tPh2NanoTask.moduleNames())
-check("l1tPh3SmartPixelsStubTable" in _nano_mods
-      and "l1tPh3ExtSmartPixelsStubTable" in _nano_mods,
-      "both stub tables added to l1tPh2NanoTask")
-# idempotent: a second call adds nothing new
+check({"l1tPh3TrackStubLinkTable", "l1tPh3ExtTrackStubLinkTable", "l1tPh3SmartPixelsAllStubTable"} <= _nano_mods,
+      "both link tables and L1TOTStub (their otStubIdx target) added to l1tPh2NanoTask")
 _n_before = len(p_stub.l1tPh2NanoTask.moduleNames())
 addPh3L1SmartPixelsStubTables(p_stub, doExtended=True)
 check(len(p_stub.l1tPh2NanoTask.moduleNames()) == _n_before,
       "addPh3L1SmartPixelsStubTables is idempotent (no duplicate modules)")
 
-# doExtended=False -> prompt stub table only
 p_stub_p = _proc_with_nanotask()
 addPh3L1SmartPixelsStubTables(p_stub_p, doExtended=False)
-check(hasattr(p_stub_p, "l1tPh3SmartPixelsStubTable")
-      and not hasattr(p_stub_p, "l1tPh3ExtSmartPixelsStubTable"),
-      "doExtended=False adds prompt stub table only")
+check(hasattr(p_stub_p, "l1tPh3TrackStubLinkTable") and not hasattr(p_stub_p, "l1tPh3ExtTrackStubLinkTable"),
+      "doExtended=False adds the prompt link table only")
 
-# coexist(addNanoTables=True) wires the stub tables alongside the track tables
+# coexist(addNanoTables=True) wires the link tables alongside the track tables
 p_cox = cms.Process("TEST")
 p_cox.pdummy = cms.Path()
 p_cox.l1tPh2NanoTask = cms.Task()
 smartPixelsCoexist(p_cox, variants=[("passthrough", None)], addNanoTables=True,
                    trackInputMode="reemulateL1TrackFinding")
-check(hasattr(p_cox, "l1tPh3SmartPixelsStubTable"),
-      "smartPixelsCoexist(addNanoTables=True) emits the reference stub table")
+check(hasattr(p_cox, "l1tPh3TrackStubLinkTable") and hasattr(p_cox, "l1tPh3SmartPixelsAllStubTable"),
+      "smartPixelsCoexist(addNanoTables=True) emits the track -> stub links and L1TOTStub")
 _cox_tables = {m.name.value() for m in p_cox.producers_().values()
                if isinstance(getattr(m, "name", None), cms.string)}
 check("L1TSmartPixelsTrackPassthrough" in _cox_tables
@@ -557,7 +543,7 @@ check("L1TSmartPixelsTrackPassthrough" in _cox_tables
 check(not hasattr(p_cox, "l1tPh3SmartPixelsSeedLinkTable"),
       "smartPixelsCoexist adds no unsuffixed seed-link table")
 
-# coexist on a SmartPix flavor (canonical tables already defined by the tier) raises
+# coexist with the canonical SmartPixels tables (@SPTrk) raises
 p_coxtier = cms.Process("TEST")
 p_coxtier.pdummy = cms.Path()
 p_coxtier.l1tPh2NanoTask = cms.Task()
@@ -627,10 +613,10 @@ check(not hasattr(_p3nano.l1tPh3SmartPixelsClusterTable, "subdetector"),
       "cluster table has no subdetector option")
 check(not hasattr(_p3nano.l1tPh3SmartPixelsAllStubTable, "barrelOnly"),
       "L1TOTStub is unfiltered (row == stub key), no barrelOnly option")
-check(p_stub.l1tPh3SmartPixelsStubTable.stubs
+check(p_stub.l1tPh3TrackStubLinkTable.stubs
       == cms.InputTag("TTStubsFromPhase2TrackerDigis", "StubAccepted")
-      and p_stub.l1tPh3SmartPixelsStubTable.stubs == _p3nano.l1tPh3SmartPixelsAllStubTable.stubs,
-      "on-track stub tables index the same stub collection L1TOTStub is built from")
+      and p_stub.l1tPh3TrackStubLinkTable.stubs == _p3nano.l1tPh3SmartPixelsAllStubTable.stubs,
+      "track -> stub link tables index the same stub collection L1TOTStub is built from")
 check(hasattr(l1tTrackingParticleTable, "minP") and not hasattr(l1tTrackingParticleTable, "minPt")
       and l1tTrackingParticleTable.minP.value() == 1.0,
       "L1TTP selects on 3-momentum |p| > 1 GeV")
