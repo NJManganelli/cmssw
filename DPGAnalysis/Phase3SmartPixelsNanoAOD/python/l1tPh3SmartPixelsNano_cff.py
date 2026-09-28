@@ -22,9 +22,14 @@ l1tPh3ExtSmartPixelsTracksTable = l1tTracksTable.clone(
     doc = cms.string("L1T Phase-3 SmartPixels Extended Tracks"),
 )
 
-p3L1SmartPixelsTracksTask = cms.Task(
-    l1tPh3SmartPixelsTracksTable,
-    l1tPh3ExtSmartPixelsTracksTable,
+# l1TrackIdx on a SmartPixels track table: the row of the OT track (L1TTrack /
+# L1TExtTrack) it was seeded from, read from the producer's explicit seed links.
+l1tPh3SmartPixelsSeedLinkTable = cms.EDProducer(
+    "L1SmartPixelsSeedLinkTableProducer",
+    src = cms.InputTag("l1tSmartPixelsTrackProducer", "Level1TTTracks"),
+    seedTracks = cms.InputTag("l1tTTTracksFromTrackletEmulation", "Level1TTTracks"),
+    trackTableName = cms.string("L1TSmartPixelsTrack"),
+    seedTableName = cms.string("L1TTrack"),
 )
 
 def addPh3L1SmartPixelsTracks(process,
@@ -39,6 +44,7 @@ def addPh3L1SmartPixelsTracks(process,
     disambiguates the table/branch names when several variants coexist in one
     job (WF1). Defaults reproduce the plain flavour reading the default
     producer labels; smartPixelsCoopt repoints the unsuffixed pair at its variant.
+    Each table carries l1TrackIdx -> L1TTrack / L1TExtTrack (the seed track row).
     """
     nameSuffix = tableSuffix[:1].upper() + tableSuffix[1:] if tableSuffix else ""
     # Module labels must END in "Table": the NANOAOD event content only keeps
@@ -58,7 +64,21 @@ def addPh3L1SmartPixelsTracks(process,
         doc = cms.string(f"L1T Phase-3 SmartPixels Extended Tracks ({srcExtendedLabel})"),
     ))
 
-    task = cms.Task(getattr(process, promptTableName), getattr(process, extendedTableName))
+    promptLinkName = f"l1tPh3SmartPixelsSeedLink{nameSuffix}Table"
+    extendedLinkName = f"l1tPh3ExtSmartPixelsSeedLink{nameSuffix}Table"
+    setattr(process, promptLinkName, l1tPh3SmartPixelsSeedLinkTable.clone(
+        src = cms.InputTag(srcLabel, "Level1TTTracks"),
+        trackTableName = cms.string(f"L1TSmartPixelsTrack{nameSuffix}"),
+    ))
+    setattr(process, extendedLinkName, l1tPh3SmartPixelsSeedLinkTable.clone(
+        src = cms.InputTag(srcExtendedLabel, "Level1TTTracks"),
+        seedTracks = cms.InputTag("l1tTTTracksFromExtendedTrackletEmulation", "Level1TTTracks"),
+        trackTableName = cms.string(f"L1TSmartPixelsExtTrack{nameSuffix}"),
+        seedTableName = cms.string("L1TExtTrack"),
+    ))
+
+    task = cms.Task(*[getattr(process, t) for t in (promptTableName, extendedTableName,
+                                                   promptLinkName, extendedLinkName)])
     setattr(process, f"p3L1SmartPixelsTracksTask{nameSuffix}", task)
     process.l1tPh2NanoTask.add(task)
     return process

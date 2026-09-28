@@ -12,8 +12,10 @@
          std::vector<TTTrack> - Each floating point TTTrack inside this collection inherits from
                                 a bit-accurate TTTrack_TrackWord, used for emulation purposes.
           TODO: Add more inputs
-     Outputs:
-         std::vector<TTTrackRef> - A collection of TTTracks
+     Outputs (all under the instance outputCollectionName):
+         std::vector<TTTrack> - the SmartPixels tracks
+         std::vector<TTTrackRef> - per output track, the input track it was seeded from (null if none)
+         smartpixels::SmartPixelsRefitSidecar - digiRefit mode only
 */
 //
 // Original Author:  Nick Manganelli
@@ -657,6 +659,9 @@ L1SmartPixelsTrackProducer::L1SmartPixelsTrackProducer(edm::ParameterSet const& 
   }
 
   produces<TTTrackCollection>(outputCollectionName_);
+  // Per output track, the input (OT) track it was seeded from; a null Ref marks a
+  // track with no OT seed. Explicit even while the 1:1 contract makes it the identity.
+  produces<std::vector<TTTrackRef>>(outputCollectionName_);
 
   // digiRefit sidecar: one product per refit track collection (spec §2), same
   // instance label as the tracks so downstream adapters resolve them together
@@ -2357,6 +2362,11 @@ void L1SmartPixelsTrackProducer::produce(edm::Event& iEvent, const edm::EventSet
     iEvent.put(std::move(sidecar), outputCollectionName_);
   }
 
+  auto seedLinks = std::make_unique<std::vector<TTTrackRef>>();
+  seedLinks->reserve(nInput);
+  for (size_t i = 0; i < nInput; ++i)
+    seedLinks->emplace_back(TTTrackHandle, i);
+  iEvent.put(std::move(seedLinks), outputCollectionName_);
   iEvent.put(std::move(outputTracks), outputCollectionName_);
 }  // end of produce()
 
