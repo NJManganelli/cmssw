@@ -351,6 +351,8 @@ def _applySeedlessRefitSettings(process, st):
 # Links and wiring, derived from the current content of the job
 # ---------------------------------------------------------------------------
 def _reconcile(process):
+    from DPGAnalysis.Phase3SmartPixelsNanoAOD.l1tPh3SmartPixelsNano_cff import useSmartPixelsNanoCompression
+    useSmartPixelsNanoCompression(process)
     st = _state(process)
     _checkRecoInputs(process, st)
     _wireVariant(process, st)

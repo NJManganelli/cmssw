@@ -153,9 +153,8 @@ process.configurationMetadata = cms.untracked.PSet(
 # ---------------------------------------------------------------------------
 # NANOAOD output (one Events tree; carries both unified and seedlessRefit tables)
 # ---------------------------------------------------------------------------
+# compression: set by smartPixelsCoexist (useSmartPixelsNanoCompression)
 process.NANOAODoutput = cms.OutputModule("NanoAODOutputModule",
-    compressionAlgorithm=cms.untracked.string('LZMA'),
-    compressionLevel=cms.untracked.int32(9),
     dataset=cms.untracked.PSet(
         dataTier=cms.untracked.string('NANOAOD'),
         filterName=cms.untracked.string(''),
