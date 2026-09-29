@@ -2089,28 +2089,30 @@ void L1SmartPixelsTrackProducer::produce(edm::Event& iEvent, const edm::EventSet
         ++nUpdates;
       }  // layer loop
 
-      // TRUTH-ONLY match: the TP owning a strict majority of the output track's CLUSTERS: the two
-      // clusters of each OT stub, plus its accepted IT clusters when the refit is kept. Each
-      // cluster has at most one owner, its dominant contributor (OT: TTClusterAssociationMap,
-      // dominantTrackingParticle; IT: charge); ownerless clusters count in the denominator.
+      // TRUTH-ONLY match: the TP owning a strict majority (> 50%) of the output track's weight,
+      // each OT stub cluster 1/2 point (a stub = 1 point) and each accepted IT cluster 1 point
+      // (IT clusters only when the refit is kept). A cluster's owner is its dominant contributor
+      // (OT: TTClusterAssociationMap, dominantTrackingParticle; IT: charge); ownerless clusters
+      // count in the denominator. Weights are counted in half points to stay integral.
       const auto drSetMajorityMatch = [&](smartpixels::SmartPixelsRefitTrackInfo& info,
                                           const std::vector<int>& itOwners) {
-        std::vector<int> owners = itOwners;
+        std::map<int, std::pair<unsigned, unsigned>> nOwned;  // key -> (OT clusters, IT clusters)
+        unsigned totalHalfPoints = 2 * itOwners.size();
+        for (const int k : itOwners)
+          if (k >= 0)
+            ++nOwned[k].second;
         for (const auto& stub : iterL1Track->getStubRefs())
           for (unsigned int member = 0; member < 2; ++member) {
+            ++totalHalfPoints;
             const auto tp = smartpixels::dominantTrackingParticle(*MCTruthTTClusterHandle, stub->clusterRef(member));
-            owners.push_back(tp.isNull() ? -1 : drTpKey(*tp));
+            if (tp.isNonnull())
+              ++nOwned[drTpKey(*tp)].first;
           }
-        std::map<int, unsigned> nOwned;
-        for (const int k : owners)
-          if (k >= 0)
-            ++nOwned[k];
         for (const auto& [key, n] : nOwned)
-          if (2 * n > owners.size()) {
+          if (2 * (n.first + 2 * n.second) > totalHalfPoints) {
             info.matchedTpIdx = key;
-            info.nClustersOwnedByMatchedTp = static_cast<uint8_t>(n);
-            info.nITClustersOwnedByMatchedTp =
-                static_cast<uint8_t>(std::count(itOwners.begin(), itOwners.end(), key));
+            info.nOTClustersOwnedByMatchedTp = static_cast<uint8_t>(n.first);
+            info.nITClustersOwnedByMatchedTp = static_cast<uint8_t>(n.second);
           }
       };
 

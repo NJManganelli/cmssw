@@ -78,7 +78,7 @@ public:
     }
 
     // ---- EXTENSION table on the variant track table (extension=true, same name/length) ----
-    std::vector<uint8_t> status, nCrossings, nAcceptedHits, nKFUpdates, layerHitMask, maxWindowMult, nClustersOwnedByMatchedTp,
+    std::vector<uint8_t> status, nCrossings, nAcceptedHits, nKFUpdates, layerHitMask, maxWindowMult, nOTClustersOwnedByMatchedTp,
         nITClustersOwnedByMatchedTp;
     std::vector<bool> refitPerformed, otCovOK, anyWindowTruncated;
     std::vector<float> chi2IncXTot, chi2IncYTot, chi2IncAlphaTot, chi2IncBetaTot;
@@ -90,7 +90,7 @@ public:
     nAcceptedHits.reserve(nTracks);
     nKFUpdates.reserve(nTracks);
     layerHitMask.reserve(nTracks);
-    nClustersOwnedByMatchedTp.reserve(nTracks);
+    nOTClustersOwnedByMatchedTp.reserve(nTracks);
     nITClustersOwnedByMatchedTp.reserve(nTracks);
     maxWindowMult.reserve(nTracks);
     refitPerformed.reserve(nTracks);
@@ -149,7 +149,7 @@ public:
       shiftChi2.push_back(ti.shiftChi2);
       logDetRatio.push_back(ti.logDetRatio);
       compactWord.push_back(static_cast<int32_t>(smartpixels::packCompactWord(ti)));
-      nClustersOwnedByMatchedTp.push_back(ti.nClustersOwnedByMatchedTp);
+      nOTClustersOwnedByMatchedTp.push_back(ti.nOTClustersOwnedByMatchedTp);
       nITClustersOwnedByMatchedTp.push_back(ti.nITClustersOwnedByMatchedTp);
 
       for (const auto& hi : sidecar.hitInfo[it]) {
@@ -301,20 +301,24 @@ public:
     trkTable->addColumn<float>("spixChi2IncAlphaTot", chi2IncAlphaTot, "sum of cotAlpha chi2 increments over crossings (r-phi total = X + Alpha)");
     trkTable->addColumn<float>("spixChi2IncBetaTot", chi2IncBetaTot, "sum of cotBeta chi2 increments over crossings (r-z total = Y + Beta)");
     trkTable->addColumn<int32_t>("tpIdx", matchedTpIdx,
-        std::string("TRUTH-ONLY, SmartPixels cluster-majority match: the TP owning a strict majority "
-                    "(> 50%) of this track's clusters, i.e. the 2 clusters of each OT stub (L1TOTStub_tpIdxInner, "
-                    "L1TOTStub_tpIdxOuter) plus, when refitted, its accepted IT clusters "
-                    "(L1TSmartPixelsCluster_tpIdx); passthrough tracks: the stub clusters only. A cluster's owner "
-                    "is its dominant contributor (OT: TTClusterAssociationMap; IT: charge); ownerless clusters "
-                    "count in the denominator. NOT the loosely-genuine TTTrackAssociator match of L1TTrack_tpIdx "
-                    "(same name, different definition; compare via l1TrackIdx): ") +
+        std::string("TRUTH-ONLY, SmartPixels weighted cluster-majority match: the TP owning a strict majority "
+                    "(> 50%) of this track's cluster weight, each of the 2 clusters of an OT stub "
+                    "(L1TOTStub_tpIdxInner, L1TOTStub_tpIdxOuter) weighing 1/2 (a stub = 1 point) and, when "
+                    "refitted, each accepted IT cluster (L1TSmartPixelsCluster_tpIdx) 1; passthrough tracks: "
+                    "the stub clusters only. Match iff 0.5 x tpNOTClusters + tpNITClusters > "
+                    "(L1TTrack_nStubs[l1TrackIdx] + spixNAcceptedHits) / 2. A cluster's owner is its dominant "
+                    "contributor (OT: TTClusterAssociationMap; IT: charge); ownerless clusters count in the "
+                    "denominator. NOT the loosely-genuine TTTrackAssociator match of L1TTrack_tpIdx (same "
+                    "name, different definition; compare via l1TrackIdx): ") +
             l1tnano::tpIdxDoc());
-    trkTable->addColumn<uint8_t>("tpNClusters", nClustersOwnedByMatchedTp,
-        "TRUTH-ONLY, clusters (OT stub clusters + accepted IT clusters) owned by the tpIdx TP; 0 if unmatched. "
-        "Cluster purity = this / (2 x L1TTrack_nStubs[l1TrackIdx] + spixNAcceptedHits)");
+    trkTable->addColumn<uint8_t>("tpNOTClusters", nOTClustersOwnedByMatchedTp,
+        "TRUTH-ONLY, OT stub clusters (0..2 x L1TTrack_nStubs[l1TrackIdx]) owned by the tpIdx TP; 0 if "
+        "unmatched. Weighted purity = (0.5 x tpNOTClusters + tpNITClusters) / (L1TTrack_nStubs[l1TrackIdx] "
+        "+ spixNAcceptedHits)");
     trkTable->addColumn<uint8_t>("tpNITClusters", nITClustersOwnedByMatchedTp,
-        "TRUTH-ONLY, accepted IT clusters owned by the tpIdx TP; 0 if unmatched. IT purity = this / "
-        "spixNAcceptedHits; OT stub clusters owned = tpNClusters - tpNITClusters");
+        "TRUTH-ONLY, accepted IT clusters (0..spixNAcceptedHits) owned by the tpIdx TP; 0 if unmatched. "
+        "Weighted purity = (0.5 x tpNOTClusters + tpNITClusters) / (L1TTrack_nStubs[l1TrackIdx] + "
+        "spixNAcceptedHits)");
     trkTable->addColumn<float>("spixChi2ITAtOT", chi2ITAtOT,
         "chi2 of the ACCEPTED IT hits against the UNMODIFIED OT track helix. Needs no stubs, so "
         "it travels with the track. CAVEAT: the refit selected these hits by minimising this, so "

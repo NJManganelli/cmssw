@@ -206,11 +206,12 @@ struct SmartPixelsRefitTrackInfo { // one entry per track (refit or passthrough)
   float chi2IncXTot, chi2IncYTot;        // per-dimension sums over crossings; the r-phi
   float chi2IncAlphaTot, chi2IncBetaTot; // and r-z totals are X+Alpha and Y+Beta
   int32_t matchedTpIdx;    // TRUTH-ONLY TrackingParticle key, -1 none: the TP owning a strict
-                           // majority of the output track's clusters (2 per OT stub + accepted
-                           // IT clusters); a cluster's owner is its dominant contributor (OT:
+                           // majority of the output track's cluster weight (1/2 per OT stub
+                           // cluster, 1 per accepted IT cluster; total nStubs + nAcceptedHits);
+                           // a cluster's owner is its dominant contributor (OT:
                            // TTClusterAssociationMap, dominantTrackingParticle; IT: charge);
                            // ownerless clusters count in the denominator. Nano: tpIdx
-  uint8_t  nClustersOwnedByMatchedTp, nITClustersOwnedByMatchedTp;  // TRUTH-ONLY, 0 if unmatched
+  uint8_t  nOTClustersOwnedByMatchedTp, nITClustersOwnedByMatchedTp;  // TRUTH-ONLY, 0 if unmatched
 };
 
 struct SmartPixelsRefitSidecar {
