@@ -189,13 +189,6 @@ producer instance (prompt and extended cloned separately):
 Sentinel floats pass through as `-999.f` (consumers test `> -900`); passthrough tracks
 have `spixRefitPerformed=false`, empty per-hit rows, and zeroed chi2 totals.
 
-`spixPtClamped` (`spixStatus` bit4): the refit moved 1/R outside the L1 track-word range
-(pT below ~1.9 GeV; the negative saturated word overflows the GTT 1/R->pT LUT), so the
-output track's |1/R| is clamped to 0.0059995/cm (the word's last in-LUT value, the LUT's
-lowest-pT entry for either charge), keeping its sign and all other parameters. The sidecar
-columns and the refit-BDT score describe the unclamped fit. The truth-driven modes
-(`trackingParticleTruth`, `correctionlibRegression`) clamp the same way but have no sidecar.
-
 `spixMatchedTpIdx` is the OT track's truth match and nothing else:
 `TTTrackAssociationMap::findTrackingParticlePtr` of the OT track the SmartPixels track was
 built from (non-null iff loosely genuine: one TP on every stub except at most one wrong stub,

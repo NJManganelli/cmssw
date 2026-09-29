@@ -196,8 +196,7 @@ struct SmartPixelsRefitHitInfo {   // one entry per LAYER CROSSING attempted (no
 struct SmartPixelsRefitTrackInfo { // one entry per track (refit or passthrough)
   uint8_t  status;         // bit0 refit performed (else passthrough); bit1 otCovOK;
                            // bit2 RETIRED (was the parametrized OT covariance); bit3 anyWindowTruncated;
-                           // bit4 ptClamped (output |1/R| clamped to the track-word range; the
-                           // sidecar describes the unclamped fit); bits5-7 reserved
+                           // bits4-7 reserved
   uint8_t  nCrossings;     // valid layer crossings attempted
   uint8_t  nAcceptedHits;  // hits accepted into the KF
   uint8_t  nKFUpdates;     // scalar-update groups applied (== layers updated)
