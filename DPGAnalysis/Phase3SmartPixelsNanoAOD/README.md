@@ -64,7 +64,7 @@ for inputs without them and jobs without PAT. `L1Trigger/Phase3SmartPixels/test/
 | `@Phase2L1DPG[withGen]` (base) | L1 objects, GT; gen objects | – |
 | `@L1Trk` | `L1TTrack`, `L1TExtTrack` (15 `cov_*`), GTT columns; with gen: track truth | `tpIdx` -> `L1TTP`; `L1DispVertex` track indices |
 | `@L1PF` | `L1PFCand`, `L1PuppiCand`, `L1ExtPuppiCand`, `L1HGCCluster`, SC4/SC8/SC4NG constituent links | candidate `l1TrackIdx` -> `L1TTrack`/`L1TExtTrack`, or -> `L1TSmartPixels(Ext)Track` when a variant is wired |
-| `@TrkStubs` | `L1TOTStub` (every OT stub, with truth) | track -> stub tables `<track table>Stub` (`trackIdx`, `otStubIdx`) for the OT and SmartPixels tracks; stub `tpIdx` |
+| `@TrkStubs` | `L1TOTStub` (every OT stub, with truth) | track -> stub tables `<track table>Stub` (`trackIdx`, `otStubIdx`) for the OT and SmartPixels tracks; stub `tpIdx`, `tpIdxInner`, `tpIdxOuter` |
 | `@SPTrk` | `L1TSmartPixelsTrack`, `L1TSmartPixelsExtTrack` (15 `cov_*`) of the wired variant | `l1TrackIdx` -> the OT track it was built from |
 | `@SPClustersStubs` | `L1TOTStub`, `L1TSmartPixelsCluster` (every IT cluster, TBPX + ID1-ID4) | track -> stub as above; SmartPixels track -> cluster `<track table>Cluster` (`trackIdx`, `clusterIdx`; seedlessRefit: the accepted IT hits, no rows for passthrough); cluster/stub `tpIdx` |
 | `@SPSeedlessRefit` | mode tag: the seedlessRefit variant; its `L1TSmartPixels[Ext]RefitHit` and `spix*` columns on the SmartPixels tables | hit -> SmartPixels track (`trackIdx`), hit -> cluster (`selClusterIdx`) |
@@ -113,11 +113,11 @@ Mutually exclusive; with none composed every `tpIdx` is -2.
 | flavour | `L1TTP` rows |
 |---|---|
 | `@TPTruth1GeV` | charged TrackingParticles with 3-momentum \|p\| > 1 GeV |
-| `@TPTruthLinked` | TrackingParticles linked by the truth associations to an object the nano writes: OT stubs (stub association), OT tracks and SmartPixels tracks (track associations), IT clusters (dominant charge contributor); neutral ones included if linked. Computed from the association products of the objects present |
+| `@TPTruthLinked` | TrackingParticles linked by the truth associations to an object the nano writes: OT stubs (stub association, and the owners of both stub clusters), OT tracks and SmartPixels tracks (track associations), IT clusters (dominant charge contributor); neutral ones included if linked. Computed from the association products of the objects present |
 | `@TPTruth1GeVLinked` | the union of the two above |
 | `@TPTruthAll` | every TrackingParticle of the input (after its own pruning), neutrals included; d0/z0 of a neutral are a straight line |
 
-`tpIdx` (and `spixMatchedTpIdx`): >= 0 row in `L1TTP`; -1 not truth-matched; -2 TrackingParticle
+`tpIdx` (every `tpIdx*` column, and `spixMatchedTpIdx`): >= 0 row in `L1TTP`; -1 not truth-matched; -2 TrackingParticle
 product or `L1TTP` unavailable; <= -3 matched TrackingParticle not selected into `L1TTP`,
 -3 - tpIdx is its index in the unwritten TrackingParticle collection (cannot occur with
 `@TPTruthAll`, nor for the linked objects with the linked selections). Two objects share a
@@ -197,6 +197,17 @@ contributor (`L1TSmartPixelsCluster_tpIdx`); unowned hits count in the denominat
 OT track's loosely-genuine match `L1TTrack_tpIdx[l1TrackIdx]` (all stubs but at most one from
 one TP), which is unchanged; `selHitClass` keeps that TP as its reference. For custom purity
 cuts: `spixNHitsOwnedByMatchedTp` (stubs + IT) and `spixNITHitsOwnedByMatchedTp` (IT only).
+
+### OT stub cluster truth
+
+`L1TOTStub_tpIdx` is the stub's principal TP, `TTStubAssociationMap::findTrackingParticlePtr`
+(non-null iff `tpGenuine`). `L1TOTStub_tpIdxInner` / `tpIdxOuter` are the owners of the stub's
+inner- and outer-sensor clusters (`TTStub::clusterRef(0)`, the lower sensor of the stack, and
+`clusterRef(1)`, the upper one). An OT cluster's owner is its dominant contributor in the
+`TTClusterAssociationMap` (`TTClusterAssociatorFromPixelDigis:ClusterAccepted`): the TP with the
+largest share of the map's own weight, TP pT summed over the cluster's strip x simlink entries
+(the weight `isGenuine` cuts on). It equals `findTrackingParticlePtr` for a genuine cluster and
+is also set for a combinatoric (merged) one.
 
 ## Truth index-reuse (withGen tiers)
 

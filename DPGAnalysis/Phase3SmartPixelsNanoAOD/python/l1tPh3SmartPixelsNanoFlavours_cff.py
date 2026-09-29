@@ -569,8 +569,9 @@ def _configureGTTColumns(process, variant, sched):
 def _configureTrackingParticles(process, st, variant, sched):
     """L1TTP selection of the TrackingParticle flavour. The linked selections take their
     TrackingParticles from the truth associations of the objects the nano writes: OT stubs
-    (L1TOTStub), OT tracks, SmartPixels tracks (the associator of the wired variant) and IT
-    clusters (their dominant TrackingParticle)."""
+    (L1TOTStub; stub association, and the owners of both clusters of each stub), OT tracks,
+    SmartPixels tracks (the associator of the wired variant) and IT clusters (their dominant
+    TrackingParticle)."""
     if _TP_TABLE not in sched or not st.tpTruth.value():
         return
     selection = _TP_TRUTH_TAGS[st.tpTruth.value()]
@@ -581,7 +582,15 @@ def _configureTrackingParticles(process, st, variant, sched):
     from L1Trigger.Phase3SmartPixels.customizeSmartPixels_cff import smartPixelsTrackAssociator
     stubs, tracks, tps = [], [], []
     if _OT_STUB_TABLE in sched:
-        stubs.append(getattr(process, _OT_STUB_TABLE).stubTruth)
+        stubTable = getattr(process, _OT_STUB_TABLE)
+        stubs.append(stubTable.stubTruth)
+        if not hasattr(process, "l1tPh3SmartPixelsStubClusterTPs"):
+            process.l1tPh3SmartPixelsStubClusterTPs = cms.EDProducer(
+                "L1SmartPixelsStubClusterTPLinkProducer",
+                stubs=stubTable.stubs, clusterTruth=stubTable.clusterTruth,
+                trackingParticles=module.trackingParticles)
+            _addToNano(process, "p3L1SmartPixelsStubTask", ["l1tPh3SmartPixelsStubClusterTPs"])
+        tps.append(cms.InputTag("l1tPh3SmartPixelsStubClusterTPs"))
     for side in ("prompt", "ext"):
         if _OT_TABLES[side][0] in sched:
             tracks.append(cms.InputTag(_OT_ASSOCIATORS[side], "Level1TTTracks"))

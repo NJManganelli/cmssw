@@ -55,6 +55,8 @@
 #include "DataFormats/L1TrackTrigger/interface/TTStub.h"
 #include "DataFormats/L1TrackTrigger/interface/TTTypes.h"
 #include "DataFormats/NanoAOD/interface/FlatTable.h"
+#include "L1Trigger/Phase3SmartPixels/interface/SmartPixelsOTClusterTruth.h"
+#include "SimDataFormats/Associations/interface/TTClusterAssociationMap.h"
 #include "SimDataFormats/Associations/interface/TTStubAssociationMap.h"
 #include "SimDataFormats/TrackingAnalysis/interface/TrackingParticle.h"
 
@@ -84,6 +86,8 @@ public:
     if (doTruth_) {
       truthToken_ = consumes<TTStubAssociationMap<Ref_Phase2TrackerDigi_>>(
           cfg.getParameter<edm::InputTag>("stubTruth"));
+      clusterTruthToken_ = consumes<TTClusterAssociationMap<Ref_Phase2TrackerDigi_>>(
+          cfg.getParameter<edm::InputTag>("clusterTruth"));
       tpRowMapToken_ = consumes<edm::ValueMap<int>>(cfg.getParameter<edm::InputTag>("tpRowMap"));
     }
     produces<nanoaod::FlatTable>();
@@ -99,9 +103,11 @@ public:
     const TrackerTopology& topo = iSetup.getData(topoToken_);
 
     edm::Handle<TTStubAssociationMap<Ref_Phase2TrackerDigi_>> truth;
+    edm::Handle<TTClusterAssociationMap<Ref_Phase2TrackerDigi_>> clusterTruth;
     edm::Handle<edm::ValueMap<int>> tpRowMapHandle;
     if (doTruth_) {
       iEvent.getByToken(truthToken_, truth);
+      iEvent.getByToken(clusterTruthToken_, clusterTruth);
       iEvent.getByToken(tpRowMapToken_, tpRowMapHandle);
     }
     const edm::ValueMap<int>* tpRowMap = tpRowMapHandle.isValid() ? tpRowMapHandle.product() : nullptr;
@@ -110,7 +116,7 @@ public:
     // an IT-vs-OT comparison can use the same quantities on both sides: tpIdx is
     // the L1TTP row, exactly as the cluster table derives it from dominantTp(). The
     // three quality flags have no IT analogue and come free from the association map.
-    std::vector<int32_t> tpIdx;
+    std::vector<int32_t> tpIdx, tpIdxInner, tpIdxOuter;
     std::vector<float> tpPt;
     std::vector<bool> tpGenuine, tpCombinatoric, tpUnknown;
 
@@ -149,6 +155,10 @@ public:
         if (doTruth_) {
           const edm::Ptr<TrackingParticle> tp = truth->findTrackingParticlePtr(ref);
           tpIdx.push_back(l1tnano::tpIdx(tpRowMap, tp));
+          tpIdxInner.push_back(
+              l1tnano::tpIdx(tpRowMap, smartpixels::dominantTrackingParticle(*clusterTruth, st->clusterRef(0))));
+          tpIdxOuter.push_back(
+              l1tnano::tpIdx(tpRowMap, smartpixels::dominantTrackingParticle(*clusterTruth, st->clusterRef(1))));
           tpPt.push_back(tp.isNull() ? -999.f : static_cast<float>(tp->pt()));
           tpGenuine.push_back(truth->isGenuine(ref));
           tpCombinatoric.push_back(truth->isCombinatoric(ref));
@@ -173,7 +183,20 @@ public:
                           /*mantissaBits=*/12);
     if (doTruth_) {
       tab->addColumn<int32_t>("tpIdx", tpIdx,
-                              std::string("TRUTH-ONLY, associated TP: ") + l1tnano::tpIdxDoc());
+                              std::string("TRUTH-ONLY, the stub's principal TP (TTStubAssociationMap::"
+                                          "findTrackingParticlePtr, non-null iff tpGenuine): ") +
+                                  l1tnano::tpIdxDoc());
+      tab->addColumn<int32_t>("tpIdxInner", tpIdxInner,
+                              std::string("TRUTH-ONLY, owner of the stub's INNER-sensor cluster (TTStub clusterRef(0), "
+                                          "the lower sensor of the stack): its dominant contributor in the "
+                                          "TTClusterAssociationMap (largest summed TP pT over its strip simlinks; "
+                                          "equals findTrackingParticlePtr for a genuine cluster, also set for a "
+                                          "combinatoric one). Same encoding: ") +
+                                  l1tnano::tpIdxDoc());
+      tab->addColumn<int32_t>("tpIdxOuter", tpIdxOuter,
+                              std::string("TRUTH-ONLY, owner of the stub's OUTER-sensor cluster (TTStub clusterRef(1), "
+                                          "the upper sensor), defined as tpIdxInner. Same encoding: ") +
+                                  l1tnano::tpIdxDoc());
       tab->addColumn<float>("tpPt", tpPt, "TRUTH-ONLY: pT [GeV] of the associated TP", 10);
       tab->addColumn<bool>("tpGenuine", tpGenuine,
                            "TRUTH-ONLY: both clusters from the same TP");
@@ -205,6 +228,10 @@ public:
                             edm::InputTag("TTStubAssociatorFromPixelDigis", "StubAccepted"))
         ->setComment("NO process name, so it resolves whether the associator ran in-job or its "
                      "output was persisted -- the same convention customizeSmartPixels_cff uses");
+    desc.add<edm::InputTag>("clusterTruth",
+                            edm::InputTag("TTClusterAssociatorFromPixelDigis", "ClusterAccepted"))
+        ->setComment("cluster association the stub association was built from (tpIdxInner/tpIdxOuter); "
+                     "NO process name, as stubTruth");
     desc.add<edm::InputTag>("tpRowMap", edm::InputTag("l1tTrackingParticleTable"))
         ->setComment("L1TTP key -> row map from L1TrackingParticleTableProducer; tpIdx = -2 when absent");
     descriptions.addWithDefaultLabel(desc);
@@ -215,6 +242,7 @@ private:
   const edm::ESGetToken<TrackerGeometry, TrackerDigiGeometryRecord> geomToken_;
   const edm::ESGetToken<TrackerTopology, TrackerTopologyRcd> topoToken_;
   edm::EDGetTokenT<TTStubAssociationMap<Ref_Phase2TrackerDigi_>> truthToken_;
+  edm::EDGetTokenT<TTClusterAssociationMap<Ref_Phase2TrackerDigi_>> clusterTruthToken_;
   edm::EDGetTokenT<edm::ValueMap<int>> tpRowMapToken_;
   const std::string tableName_;
   const bool doTruth_;
