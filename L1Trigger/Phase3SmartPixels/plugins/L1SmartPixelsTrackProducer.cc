@@ -182,20 +182,6 @@ namespace {
     return static_cast<double>(miss);
   }
 
-  // Largest |1/R| (cm^-1) a modified track may carry. The track word digitises 1/R as
-  // floor(rInv / stepRinv) saturated to [-2^14, 2^14 - 1], and the GTT 1/R -> pT LUT
-  // covers |word| <= 2^14 - 1 only (the saturated negative word is one past its end).
-  // Half a step inside |word| = 2^14 - 1 keeps both charges in the LUT's last (lowest-pT,
-  // ~1.9 GeV) entry, safe against rounding of the division: word +16382 / -16383.
-  constexpr double kMaxAbsRinvTrackWord =
-      ((1 << (TTTrack_TrackWord::TrackBitWidths::kRinvSize - 1)) - 1.5) * TTTrack_TrackWord::stepRinv;
-  // Clamps |rInv| to kMaxAbsRinvTrackWord, keeping its sign; true if it clamped.
-  inline bool clampRinvToTrackWord(double& rInv) {
-    if (std::abs(rInv) <= kMaxAbsRinvTrackWord)
-      return false;
-    rInv = std::copysign(kMaxAbsRinvTrackWord, rInv);
-    return true;
-  }
 }  // namespace
 
 //////////////////////////////
@@ -1318,8 +1304,7 @@ void L1SmartPixelsTrackProducer::produce(edm::Event& iEvent, const edm::EventSet
       }
       else {
         // double thePT = std::abs(MagConstant / theRInv_ * aBField / 100.0);  // Rinv is in cm-1
-        double tmp_matchtp_rInv = my_tp->charge() * MagConstant * b_field / (tmp_matchtp_pt * 100.0);
-        clampRinvToTrackWord(tmp_matchtp_rInv);
+        auto tmp_matchtp_rInv = my_tp->charge() * MagConstant * b_field / (tmp_matchtp_pt * 100.0);
         auto tmp_matchtp_tanL = my_tp->p4().pz() / tmp_matchtp_pt;
         L1Track track = L1Track(tmp_matchtp_rInv,
                                 tmp_matchtp_phi,
@@ -1428,8 +1413,7 @@ void L1SmartPixelsTrackProducer::produce(edm::Event& iEvent, const edm::EventSet
 
 	// auto tmp_pt = tmp_matchtp_pt; //cMap_pt->evaluate(inputs);
 	auto clib_pt = tmp_matchtp_pt + cMap_pt->evaluate(inputs);
-	double clib_rInv = my_tp->charge() * MagConstant * b_field / (clib_pt * 100.0);
-	clampRinvToTrackWord(clib_rInv);
+	auto clib_rInv = my_tp->charge() * MagConstant * b_field / (clib_pt * 100.0);
 
 	//FIXME: update to dedicated z0 estimate when not using swizzled d0_smear * z0_track_tp_difference
 	auto clib_z0 = tmp_matchtp_z0 + cMap_z0->evaluate(inputs);
@@ -2169,12 +2153,8 @@ void L1SmartPixelsTrackProducer::produce(edm::Event& iEvent, const edm::EventSet
         }
 
         // nFitPars kept from the input; the refit d0/covariance live in the
-        // float members either way (trackword packs d0 only for nPar=5). Only the
-        // output 1/R is clamped: the sidecar and BDT describe the unclamped fit.
-        double outRinv = a[0];
-        if (clampRinvToTrackWord(outRinv))
-          drTrackInfo.status |= smartpixels::trackstatus::kPtClamped;
-        L1Track track = L1Track(outRinv,
+        // float members either way (trackword packs d0 only for nPar=5).
+        L1Track track = L1Track(a[0],
                                 a[1],
                                 a[2],
                                 a[3],
