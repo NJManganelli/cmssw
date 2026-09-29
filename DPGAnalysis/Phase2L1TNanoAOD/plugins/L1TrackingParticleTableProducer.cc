@@ -15,7 +15,7 @@
 // TP LINKS. Alongside the table this puts an edm::ValueMap<int> over the TrackingParticle
 // collection: the L1TTP row of each TP, or -1 when the selection pruned it. It is the ONLY
 // place the selection lives; every table writing a tpIdx link (L1TTrack, L1TExtTrack,
-// L1TOTStub, L1TSmartPixelsCluster, spixMatchedTpIdx) consumes it and encodes
+// L1TOTStub, L1TSmartPixelsCluster, L1TSmartPixelsTrack) consumes it and encodes
 //   tpIdx >= 0   row in L1TTP
 //   tpIdx == -1  not truth-matched
 //   tpIdx == -2  TrackingParticle product (or this map) unavailable

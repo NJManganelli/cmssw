@@ -206,11 +206,11 @@ struct SmartPixelsRefitTrackInfo { // one entry per track (refit or passthrough)
   float chi2IncXTot, chi2IncYTot;        // per-dimension sums over crossings; the r-phi
   float chi2IncAlphaTot, chi2IncBetaTot; // and r-z totals are X+Alpha and Y+Beta
   int32_t matchedTpIdx;    // TRUTH-ONLY TrackingParticle key, -1 none: the TP owning a strict
-                           // majority of the output track's hits (OT stubs + accepted IT
-                           // clusters; a stub's owner is its TTStubAssociationMap TP, none if
-                           // unknown/combinatoric, a cluster's its dominant charge contributor;
-                           // unowned hits count in the denominator)
-  uint8_t  nHitsOwnedByMatchedTp, nITHitsOwnedByMatchedTp;  // TRUTH-ONLY, 0 if unmatched
+                           // majority of the output track's clusters (2 per OT stub + accepted
+                           // IT clusters); a cluster's owner is its dominant contributor (OT:
+                           // TTClusterAssociationMap, dominantTrackingParticle; IT: charge);
+                           // ownerless clusters count in the denominator. Nano: tpIdx
+  uint8_t  nClustersOwnedByMatchedTp, nITClustersOwnedByMatchedTp;  // TRUTH-ONLY, 0 if unmatched
 };
 
 struct SmartPixelsRefitSidecar {
@@ -222,7 +222,7 @@ struct SmartPixelsRefitSidecar {
 Rules:
 - Sentinel for any unavailable float is `-999.f`; consumers MUST test `> -900.f`.
 - Passthrough tracks have `status` bit0 unset, empty `hitInfo[i]`, zeros elsewhere
-  (except the truth match, over their stubs).
+  (except the truth match, over their stubs' clusters).
 - `hitInfo[i]` holds one entry per valid crossing, **in the order the Kalman loop
   visited the layers** — which is a config choice (`seedlessRefitLayerOrder`, default
   `outsideIn` = L4->L1), not ascending layer. The order is meaningful: it is the

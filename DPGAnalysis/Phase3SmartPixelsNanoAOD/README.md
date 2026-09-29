@@ -117,7 +117,7 @@ Mutually exclusive; with none composed every `tpIdx` is -2.
 | `@TPTruth1GeVLinked` | the union of the two above |
 | `@TPTruthAll` | every TrackingParticle of the input (after its own pruning), neutrals included; d0/z0 of a neutral are a straight line |
 
-`tpIdx` (every `tpIdx*` column, and `spixMatchedTpIdx`): >= 0 row in `L1TTP`; -1 not truth-matched; -2 TrackingParticle
+`tpIdx` (every `tpIdx*` column): >= 0 row in `L1TTP`; -1 not truth-matched; -2 TrackingParticle
 product or `L1TTP` unavailable; <= -3 matched TrackingParticle not selected into `L1TTP`,
 -3 - tpIdx is its index in the unwritten TrackingParticle collection (cannot occur with
 `@TPTruthAll`, nor for the linked objects with the linked selections). Two objects share a
@@ -183,31 +183,41 @@ producer instance (prompt and extended cloned separately):
   `parametrized` otCovMode, and status bit2 is retired, not reused), `spixNCrossings`, `spixNAcceptedHits`, `spixNKFUpdates`,
   `spixLayerHitMask`, `spixMaxWindowMult`, `spixChi2IncXTot`, `spixChi2IncYTot`,
   `spixChi2IncAlphaTot`, `spixChi2IncBetaTot`, and `spixCompactWord`
-  (= `packCompactWord(trackInfo)`, the 16-bit transmitted-subset word). The r-phi and
+  (= `packCompactWord(trackInfo)`, the 16-bit transmitted-subset word), and TRUTH-ONLY
+  `tpIdx`, `tpNClusters`, `tpNITClusters` (see "Truth links" below). The r-phi and
   r-z totals are `XTot + AlphaTot` and `YTot + BetaTot`.
 
 Sentinel floats pass through as `-999.f` (consumers test `> -900`); passthrough tracks
 have `spixRefitPerformed=false`, empty per-hit rows, and zeroed chi2 totals.
 
-`spixMatchedTpIdx` is the majority owner of the track's hits: the TP owning a strict majority
-(> 50%) of its OT stubs plus, for a refitted track, its accepted IT clusters (passthrough: stubs
-only). A hit has at most one owner: a stub the TP of `TTStubAssociationMap::findTrackingParticlePtr`
-(`L1TOTStub_tpIdx`; none if unknown or combinatoric), an IT cluster its dominant charge
-contributor (`L1TSmartPixelsCluster_tpIdx`); unowned hits count in the denominator. It is not the
-OT track's loosely-genuine match `L1TTrack_tpIdx[l1TrackIdx]` (all stubs but at most one from
-one TP), which is unchanged; `selHitClass` keeps that TP as its reference. For custom purity
-cuts: `spixNHitsOwnedByMatchedTp` (stubs + IT) and `spixNITHitsOwnedByMatchedTp` (IT only).
+### Truth links of the track and stub tables
 
-### OT stub cluster truth
+The same column name `tpIdx` carries each table's own documented definition:
 
-`L1TOTStub_tpIdx` is the stub's principal TP, `TTStubAssociationMap::findTrackingParticlePtr`
-(non-null iff `tpGenuine`). `L1TOTStub_tpIdxInner` / `tpIdxOuter` are the owners of the stub's
-inner- and outer-sensor clusters (`TTStub::clusterRef(0)`, the lower sensor of the stack, and
-`clusterRef(1)`, the upper one). An OT cluster's owner is its dominant contributor in the
-`TTClusterAssociationMap` (`TTClusterAssociatorFromPixelDigis:ClusterAccepted`): the TP with the
-largest share of the map's own weight, TP pT summed over the cluster's strip x simlink entries
-(the weight `isGenuine` cuts on). It equals `findTrackingParticlePtr` for a genuine cluster and
-is also set for a combinatoric (merged) one.
+- `L1TTrack_tpIdx`, `L1TExtTrack_tpIdx` (OT tracks): the TTTrackAssociator match,
+  `TTTrackAssociationMap::findTrackingParticlePtr`, non-null iff loosely genuine (one TP contributes
+  to every stub except at most one, PS or 2S).
+- `L1TSmartPixelsTrack_tpIdx`, `L1TSmartPixelsExtTrack_tpIdx` (extension columns): the
+  cluster-majority match, the TP owning a strict majority (> 50%) of the track's clusters: the
+  two clusters of each OT stub plus, for a refitted track, its accepted IT clusters (passthrough:
+  the stub clusters only). Each cluster has at most one owner, its dominant contributor (below);
+  ownerless clusters count in the denominator. Counts for purity cuts: `tpNClusters` (OT + IT
+  clusters owned by that TP) and `tpNITClusters` (IT only); the denominator is
+  `2 * L1TTrack_nStubs[l1TrackIdx] + spixNAcceptedHits`. Compare with the OT match through
+  `L1TTrack_tpIdx[l1TrackIdx]`; `selHitClass` keeps the OT match as its reference.
+- `L1TOTStub_tpIdx`: the stub's principal TP, `TTStubAssociationMap::findTrackingParticlePtr`
+  (non-null iff `tpGenuine`). `L1TOTStub_tpIdxInner` / `tpIdxOuter`: the owners of the stub's
+  inner- and outer-sensor clusters (`TTStub::clusterRef(0)`, the lower sensor of the stack, and
+  `clusterRef(1)`, the upper one).
+- `L1TSmartPixelsCluster_tpIdx`: the IT cluster's owner, its dominant charge contributor.
+
+An OT cluster's owner is its dominant contributor in the `TTClusterAssociationMap`
+(`TTClusterAssociatorFromPixelDigis:ClusterAccepted`): the TP with the largest share of the
+map's own weight, TP pT summed over the cluster's strip x simlink entries (the weight
+`isGenuine` cuts on). It equals `findTrackingParticlePtr` for a genuine cluster and is also set
+for a combinatoric (merged) one. From the nano, the SmartPixels match is reproduced by the
+majority over `L1TOTStub_tpIdxInner/Outer[otStubIdx]` (track -> stub links) and
+`L1TSmartPixelsCluster_tpIdx[clusterIdx]` (track -> cluster links).
 
 ## Truth index-reuse (withGen tiers)
 
