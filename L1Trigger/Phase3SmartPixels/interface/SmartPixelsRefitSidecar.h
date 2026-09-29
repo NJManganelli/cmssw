@@ -153,15 +153,15 @@ namespace smartpixels {
     // parametrisation-independent and insensitive to WHICH direction shrank.
     float logDetRatio = -999.f;
     // TRUTH-ONLY. TrackingParticle collection KEY this track is truth-matched to, or -1: the
-    // TP owning a strict majority (> 50%) of the output track's clusters, i.e. the two clusters
-    // of each OT stub plus, for a refitted track, its accepted IT clusters. A cluster has at
-    // most one owner, its dominant contributor (OT: dominantTrackingParticle over the
-    // TTClusterAssociationMap; IT: dominant charge contributor); ownerless clusters count in
-    // the denominator. The nano publishes it as tpIdx, the L1TTP row (L1TPRowLink.h encoding).
+    // TP owning a strict majority (> 50%) of the output track's cluster weight: each of the two
+    // clusters of an OT stub weighs 1/2 (a stub = 1 point), each accepted IT cluster of a
+    // refitted track 1. A cluster has at most one owner, its dominant contributor (OT:
+    // dominantTrackingParticle over the TTClusterAssociationMap; IT: dominant charge
+    // contributor); ownerless clusters count in the denominator (nStubs + nAcceptedHits). The
+    // nano publishes it as tpIdx, the L1TTP row (L1TPRowLink.h encoding).
     int32_t matchedTpIdx = -1;
-    // Clusters (OT + accepted IT) and accepted IT clusters owned by matchedTpIdx; 0 if
-    // unmatched. TRUTH-ONLY.
-    uint8_t nClustersOwnedByMatchedTp = 0;
+    // OT stub clusters and accepted IT clusters owned by matchedTpIdx; 0 if unmatched. TRUTH-ONLY.
+    uint8_t nOTClustersOwnedByMatchedTp = 0;
     uint8_t nITClustersOwnedByMatchedTp = 0;
   };
 
