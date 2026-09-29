@@ -323,6 +323,7 @@ l1tPh3SmartPixelsAllStubTable = cms.EDProducer(
     "L1SmartPixelsAllStubTableProducer",
     stubs = cms.InputTag("TTStubsFromPhase2TrackerDigis", "StubAccepted"),
     stubTruth = cms.InputTag("TTStubAssociatorFromPixelDigis", "StubAccepted"),
+    clusterTruth = cms.InputTag("TTClusterAssociatorFromPixelDigis", "ClusterAccepted"),
     tableName = cms.string("L1TOTStub"),
     doTruth = cms.bool(True),
 )
