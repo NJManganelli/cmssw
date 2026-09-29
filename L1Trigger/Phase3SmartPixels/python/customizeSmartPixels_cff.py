@@ -1045,7 +1045,8 @@ def smartPixelsCoexist(process, variants=None, correctionSet=DEFAULT_CORRECTION_
   if addNanoTables:
     from DPGAnalysis.Phase3SmartPixelsNanoAOD.l1tPh3SmartPixelsNano_cff import (
         addPh3L1SmartPixelsTracks, addPh3L1SmartPixelsRefitTables,
-        addPh3L1SmartPixelsStubTables)
+        addPh3L1SmartPixelsStubTables, useSmartPixelsNanoCompression)
+    useSmartPixelsNanoCompression(process)
     for mode, activeSP in variants:
       prompt, extended = smartPixelsVariantLabels(mode, activeSP)
       suffix = smartPixelsVariantSuffix(mode, activeSP)

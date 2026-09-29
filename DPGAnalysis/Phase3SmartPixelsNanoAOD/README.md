@@ -152,6 +152,13 @@ nearest kept ancestor is GenPart row -3 - genPartIdx.
   SmartPixels track was built from). "Seed" means a real seed (tracklet seed type, IT/OT seeds).
 - Coexist (several variants side by side, suffixed tables) stays a `--customise_commands` call
   (`smartPixelsCoexist`), never a canonical tier.
+- **Output compression: ZSTD level 5.** Every SmartPixels nano recipe (any add-on flavour,
+  `smartPixelsCoexist`, `smartPixelsCoopt`, hence `makeSpixConfig.py` and the CRAB pset
+  `runUnifiedNano_cfg.py`) sets it on each `NanoAODOutputModule` through
+  `useSmartPixelsNanoCompression` (`l1tPh3SmartPixelsNano_cff`), overriding the cmsDriver
+  default LZMA 9. PU200 L1TSPStudyNano: 2.9 vs 3.8 s/event, file 1.18x larger, read ~13x
+  faster (LZMA 9 output compression is serial and dominated the event time). Check a file with
+  `ROOT.TFile(path).GetCompressionSettings()` (505 = ZSTD 5, 209 = LZMA 9).
 
 ## seedlessRefit sidecar tables (spec §4.4)
 

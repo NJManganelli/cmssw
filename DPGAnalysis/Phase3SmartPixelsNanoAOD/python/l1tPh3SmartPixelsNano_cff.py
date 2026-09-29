@@ -238,6 +238,24 @@ def assertTrackTablesUncut(process):
     return process
 
 
+# Output compression of every SmartPixels nano (the add-on flavours, smartPixelsCoexist,
+# smartPixelsCoopt). ZSTD 5 instead of the cmsDriver default LZMA 9, whose serial output
+# compression dominated the event time (PU200: 2.9 vs 3.8 s/event, file 1.18x larger,
+# reads ~13x faster).
+NANO_COMPRESSION_ALGORITHM = "ZSTD"
+NANO_COMPRESSION_LEVEL = 5
+
+
+def useSmartPixelsNanoCompression(process):
+    """Set NANO_COMPRESSION_ALGORITHM/LEVEL on every NanoAODOutputModule defined so far
+    (cmsDriver defines the output before the customisations run). Idempotent."""
+    for out in process.outputModules_().values():
+        if out.type_() == "NanoAODOutputModule":
+            out.compressionAlgorithm = cms.untracked.string(NANO_COMPRESSION_ALGORITHM)
+            out.compressionLevel = cms.untracked.int32(NANO_COMPRESSION_LEVEL)
+    return process
+
+
 def produceMiniAODGenInputs(process):
     """withGen tiers on a GEN-SIM(-DIGI-RAW) input: produce the MINIAOD gen products
     the stock gen tables read (prunedGenParticles, packedGenParticles, slimmedGenJets,
