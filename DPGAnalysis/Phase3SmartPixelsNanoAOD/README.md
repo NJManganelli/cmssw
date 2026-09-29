@@ -182,6 +182,14 @@ producer instance (prompt and extended cloned separately):
 Sentinel floats pass through as `-999.f` (consumers test `> -900`); passthrough tracks
 have `spixRefitPerformed=false`, empty per-hit rows, and zeroed chi2 totals.
 
+`spixMatchedTpIdx` is the OT track's truth match and nothing else:
+`TTTrackAssociationMap::findTrackingParticlePtr` of the OT track the SmartPixels track was
+built from (non-null iff loosely genuine: one TP on every stub except at most one wrong stub,
+PS or 2S), so it equals `L1TTrack_tpIdx[l1TrackIdx]` for refitted and passthrough tracks.
+IT hits are not used: the one-wrong-stub tolerance is an OT-stub-count rule. IT-hit purity is
+`spixNITHitsFromOTTp / spixNAcceptedHits` (accepted IT hits whose dominant charge contributor
+is that TP).
+
 ## Truth index-reuse (withGen tiers)
 
 There is NO refit-specific truth table, by design. The 1:1 output-sync invariant

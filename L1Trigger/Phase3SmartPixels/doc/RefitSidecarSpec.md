@@ -205,10 +205,10 @@ struct SmartPixelsRefitTrackInfo { // one entry per track (refit or passthrough)
   uint16_t maxWindowMult;  // max windowMult over this track's crossings
   float chi2IncXTot, chi2IncYTot;        // per-dimension sums over crossings; the r-phi
   float chi2IncAlphaTot, chi2IncBetaTot; // and r-z totals are X+Alpha and Y+Beta
-  int32_t matchedTpIdx;    // TRUTH-ONLY TrackingParticle key, -1 none: the unique TP owning all
-                           // but at most one of the output track's hits (OT stubs + accepted IT
-                           // clusters; TTTrackAssociator's loosely-genuine rule, stubs only for
-                           // a passthrough track, where it equals the OT track's match)
+  int32_t matchedTpIdx;    // TRUTH-ONLY TrackingParticle key, -1 none: the OT track's
+                           // TTTrackAssociationMap::findTrackingParticlePtr (loosely genuine:
+                           // one TP on every stub but at most one wrong stub), refit and
+                           // passthrough alike; IT hits are not used
 };
 
 struct SmartPixelsRefitSidecar {
