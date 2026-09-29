@@ -144,7 +144,11 @@ public:
     table->addColumn<float>("tpPt", tpPt, "matched TrackingParticle pt (-1 if none)");
     table->addColumn<float>("tpEta", tpEta, "matched TrackingParticle eta");
     table->addColumn<int32_t>("tpPdgId", tpPdgId, "matched TrackingParticle pdgId");
-    table->addColumn<int32_t>("tpIdx", tpIdx, l1tnano::tpIdxDoc());
+    table->addColumn<int32_t>("tpIdx",
+                              tpIdx,
+                              std::string("TP of TTTrackAssociationMap::findTrackingParticlePtr, non-null iff "
+                                          "looselyGenuine (one TP contributes to every stub except at most one, PS or 2S): ") +
+                                  l1tnano::tpIdxDoc());
     table->addColumn<bool>(
         "tpFromHardInteraction", tpFromHardInteraction, "matched TrackingParticle from the hard interaction");
     // Matched-TP full helix params for resolution-vs-truth (displaced/b-tracks).
