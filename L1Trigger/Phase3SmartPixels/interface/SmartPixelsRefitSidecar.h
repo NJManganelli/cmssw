@@ -152,11 +152,11 @@ namespace smartpixels {
     // logDetRatio = ln(det C_OT / det C_refit) >= 0: total information gained,
     // parametrisation-independent and insensitive to WHICH direction shrank.
     float logDetRatio = -999.f;
-    // TrackingParticle collection KEY this track is truth-matched to, or -1: the unique TP
-    // owning all but at most one of the OUTPUT track's hits, i.e. its OT stubs plus, for a
-    // refit track, its accepted IT clusters (TTTrackAssociator's loosely-genuine rule; a
-    // passthrough track gets exactly its OT track's match). The nano publishes it as
-    // spixMatchedTpIdx, the L1TTP row (L1TPRowLink.h encoding). TRUTH-ONLY.
+    // TrackingParticle collection KEY this track is truth-matched to, or -1: the OT track's
+    // TTTrackAssociationMap::findTrackingParticlePtr (non-null iff loosely genuine: one TP on
+    // every stub but at most one wrong stub), for refit and passthrough tracks alike. IT hits
+    // are not used. The nano publishes it as spixMatchedTpIdx, the L1TTP row (L1TPRowLink.h
+    // encoding). TRUTH-ONLY.
     int32_t matchedTpIdx = -1;
   };
 

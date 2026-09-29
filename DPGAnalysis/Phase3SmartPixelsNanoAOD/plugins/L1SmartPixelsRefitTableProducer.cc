@@ -300,16 +300,18 @@ public:
     trkTable->addColumn<float>("spixChi2IncAlphaTot", chi2IncAlphaTot, "sum of cotAlpha chi2 increments over crossings (r-phi total = X + Alpha)");
     trkTable->addColumn<float>("spixChi2IncBetaTot", chi2IncBetaTot, "sum of cotBeta chi2 increments over crossings (r-z total = Y + Beta)");
     trkTable->addColumn<int32_t>("spixMatchedTpIdx", matchedTpIdx,
-        std::string("TRUTH-ONLY, TP this track is matched to: the unique TP owning all but at most one of "
-                    "its hits, i.e. its OT stubs plus, when refitted, its accepted IT clusters (the "
-                    "TTTrackAssociator loosely-genuine rule; a stub belongs to every TP in its two clusters, "
-                    "an IT cluster to its dominant charge contributor). A passthrough track carries exactly "
-                    "its OT track's match (L1TTrack_tpIdx via l1TrackIdx). Equal L1TSmartPixelsCluster_tpIdx "
-                    "finds every cluster from its particle, including ones the search window never offered: ") +
+        std::string("TRUTH-ONLY, TP this track is matched to, by the OT stub association of the OT track "
+                    "it was built from (l1TrackIdx) and nothing else: TTTrackAssociationMap::"
+                    "findTrackingParticlePtr, non-null iff the OT track is loosely genuine (one TP on every "
+                    "stub except at most one wrong stub, PS or 2S). Identical to L1TTrack_tpIdx[l1TrackIdx] "
+                    "for refitted and passthrough tracks alike; IT hits are NOT used (their agreement is in "
+                    "spixNITHitsFromOTTp vs spixNAcceptedHits). Equal L1TSmartPixelsCluster_tpIdx finds every "
+                    "cluster from its particle, including ones the search window never offered: ") +
             l1tnano::tpIdxDoc());
     trkTable->addColumn<uint8_t>("spixNITHitsFromOTTp", nITHitsFromOTTp,
-        "TRUTH-ONLY, accepted IT hits whose dominant charge contributor is the OT track's matched TP "
-        "(per-track count of L1TSmartPixelsRefitHit_selHitClass == 0; 0 if the OT track is unmatched)");
+        "TRUTH-ONLY, accepted IT hits whose dominant charge contributor is spixMatchedTpIdx, the OT "
+        "track's TP (per-track count of L1TSmartPixelsRefitHit_selHitClass == 0; 0 if unmatched or "
+        "passthrough). IT-hit purity = this / spixNAcceptedHits");
     trkTable->addColumn<float>("spixChi2ITAtOT", chi2ITAtOT,
         "chi2 of the ACCEPTED IT hits against the UNMODIFIED OT track helix. Needs no stubs, so "
         "it travels with the track. CAVEAT: the refit selected these hits by minimising this, so "
