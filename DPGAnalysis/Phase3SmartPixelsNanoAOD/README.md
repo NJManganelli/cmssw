@@ -189,13 +189,14 @@ producer instance (prompt and extended cloned separately):
 Sentinel floats pass through as `-999.f` (consumers test `> -900`); passthrough tracks
 have `spixRefitPerformed=false`, empty per-hit rows, and zeroed chi2 totals.
 
-`spixMatchedTpIdx` is the OT track's truth match and nothing else:
-`TTTrackAssociationMap::findTrackingParticlePtr` of the OT track the SmartPixels track was
-built from (non-null iff loosely genuine: one TP on every stub except at most one wrong stub,
-PS or 2S), so it equals `L1TTrack_tpIdx[l1TrackIdx]` for refitted and passthrough tracks.
-IT hits are not used: the one-wrong-stub tolerance is an OT-stub-count rule. IT-hit purity is
-`spixNITHitsFromOTTp / spixNAcceptedHits` (accepted IT hits whose dominant charge contributor
-is that TP).
+`spixMatchedTpIdx` is the majority owner of the track's hits: the TP owning a strict majority
+(> 50%) of its OT stubs plus, for a refitted track, its accepted IT clusters (passthrough: stubs
+only). A hit has at most one owner: a stub the TP of `TTStubAssociationMap::findTrackingParticlePtr`
+(`L1TOTStub_tpIdx`; none if unknown or combinatoric), an IT cluster its dominant charge
+contributor (`L1TSmartPixelsCluster_tpIdx`); unowned hits count in the denominator. It is not the
+OT track's loosely-genuine match `L1TTrack_tpIdx[l1TrackIdx]` (all stubs but at most one from
+one TP), which is unchanged; `selHitClass` keeps that TP as its reference. For custom purity
+cuts: `spixNHitsOwnedByMatchedTp` (stubs + IT) and `spixNITHitsOwnedByMatchedTp` (IT only).
 
 ## Truth index-reuse (withGen tiers)
 
