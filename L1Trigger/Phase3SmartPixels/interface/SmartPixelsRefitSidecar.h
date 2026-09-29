@@ -152,12 +152,17 @@ namespace smartpixels {
     // logDetRatio = ln(det C_OT / det C_refit) >= 0: total information gained,
     // parametrisation-independent and insensitive to WHICH direction shrank.
     float logDetRatio = -999.f;
-    // TrackingParticle collection KEY this track is truth-matched to, or -1: the OT track's
-    // TTTrackAssociationMap::findTrackingParticlePtr (non-null iff loosely genuine: one TP on
-    // every stub but at most one wrong stub), for refit and passthrough tracks alike. IT hits
-    // are not used. The nano publishes it as spixMatchedTpIdx, the L1TTP row (L1TPRowLink.h
-    // encoding). TRUTH-ONLY.
+    // TRUTH-ONLY. TrackingParticle collection KEY this track is truth-matched to, or -1: the
+    // TP owning a strict majority (> 50%) of the output track's hits, i.e. its OT stubs plus,
+    // for a refitted track, its accepted IT clusters. A hit has at most one owner: a stub its
+    // TTStubAssociationMap::findTrackingParticlePtr TP (none if unknown/combinatoric), an IT
+    // cluster its dominant charge contributor; unowned hits count in the denominator. The
+    // nano publishes it as spixMatchedTpIdx, the L1TTP row (L1TPRowLink.h encoding).
     int32_t matchedTpIdx = -1;
+    // Hits (stubs + accepted IT clusters) and accepted IT clusters owned by matchedTpIdx;
+    // 0 if unmatched. TRUTH-ONLY.
+    uint8_t nHitsOwnedByMatchedTp = 0;
+    uint8_t nITHitsOwnedByMatchedTp = 0;
   };
 
   struct SmartPixelsRefitSidecar {
