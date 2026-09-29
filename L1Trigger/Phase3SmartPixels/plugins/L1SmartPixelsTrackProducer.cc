@@ -44,6 +44,7 @@
 // code-path-ordered (see doc/Phase2Acceptance.md §1, doc/RefitSidecarSpec.md).
 // The RandomNumberGeneratorService stream engine is deliberately NOT used.
 #include "L1Trigger/Phase3SmartPixels/interface/SmartPixelsHelixProjector.h"
+#include "L1Trigger/Phase3SmartPixels/interface/SmartPixelsOTClusterTruth.h"
 #include "L1Trigger/Phase3SmartPixels/interface/SmartPixelsParentMap.h"
 #include "L1Trigger/Phase3SmartPixels/interface/SmartPixelsRefitSidecar.h"
 #include "L1Trigger/Phase3SmartPixels/interface/SmartPixelsSurface.h"
@@ -2088,18 +2089,18 @@ void L1SmartPixelsTrackProducer::produce(edm::Event& iEvent, const edm::EventSet
         ++nUpdates;
       }  // layer loop
 
-      // TRUTH-ONLY match: the TP owning a strict majority of the output track's hits (its OT
-      // stubs, plus its accepted IT clusters when the refit is kept). Each hit has at most one
-      // owner: a stub its TTStubAssociationMap::findTrackingParticlePtr TP (none if unknown or
-      // combinatoric), an IT cluster its dominant charge contributor. Unowned hits count in
-      // the denominator.
+      // TRUTH-ONLY match: the TP owning a strict majority of the output track's CLUSTERS: the two
+      // clusters of each OT stub, plus its accepted IT clusters when the refit is kept. Each
+      // cluster has at most one owner, its dominant contributor (OT: TTClusterAssociationMap,
+      // dominantTrackingParticle; IT: charge); ownerless clusters count in the denominator.
       const auto drSetMajorityMatch = [&](smartpixels::SmartPixelsRefitTrackInfo& info,
                                           const std::vector<int>& itOwners) {
         std::vector<int> owners = itOwners;
-        for (const auto& stub : iterL1Track->getStubRefs()) {
-          const auto tp = MCTruthTTStubHandle->findTrackingParticlePtr(stub);
-          owners.push_back(tp.isNull() ? -1 : drTpKey(*tp));
-        }
+        for (const auto& stub : iterL1Track->getStubRefs())
+          for (unsigned int member = 0; member < 2; ++member) {
+            const auto tp = smartpixels::dominantTrackingParticle(*MCTruthTTClusterHandle, stub->clusterRef(member));
+            owners.push_back(tp.isNull() ? -1 : drTpKey(*tp));
+          }
         std::map<int, unsigned> nOwned;
         for (const int k : owners)
           if (k >= 0)
@@ -2107,8 +2108,8 @@ void L1SmartPixelsTrackProducer::produce(edm::Event& iEvent, const edm::EventSet
         for (const auto& [key, n] : nOwned)
           if (2 * n > owners.size()) {
             info.matchedTpIdx = key;
-            info.nHitsOwnedByMatchedTp = static_cast<uint8_t>(n);
-            info.nITHitsOwnedByMatchedTp =
+            info.nClustersOwnedByMatchedTp = static_cast<uint8_t>(n);
+            info.nITClustersOwnedByMatchedTp =
                 static_cast<uint8_t>(std::count(itOwners.begin(), itOwners.end(), key));
           }
       };
