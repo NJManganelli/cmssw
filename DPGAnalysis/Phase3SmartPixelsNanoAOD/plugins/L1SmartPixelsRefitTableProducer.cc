@@ -80,7 +80,7 @@ public:
 
     // ---- EXTENSION table on the variant track table (extension=true, same name/length) ----
     std::vector<uint8_t> status, nCrossings, nAcceptedHits, nKFUpdates, layerHitMask, maxWindowMult, nITHitsFromOTTp;
-    std::vector<bool> refitPerformed, otCovOK, anyWindowTruncated;
+    std::vector<bool> refitPerformed, otCovOK, anyWindowTruncated, ptClamped;
     std::vector<float> chi2IncXTot, chi2IncYTot, chi2IncAlphaTot, chi2IncBetaTot;
     std::vector<float> chi2ITAtOT, chi2ITAtRefit, shiftChi2, logDetRatio;
     std::vector<int32_t> matchedTpIdx;
@@ -95,6 +95,7 @@ public:
     refitPerformed.reserve(nTracks);
     otCovOK.reserve(nTracks);
     anyWindowTruncated.reserve(nTracks);
+    ptClamped.reserve(nTracks);
     chi2IncXTot.reserve(nTracks);
     chi2IncYTot.reserve(nTracks);
     chi2IncAlphaTot.reserve(nTracks);
@@ -138,6 +139,7 @@ public:
       refitPerformed.push_back(ti.status & smartpixels::trackstatus::kRefitPerformed);
       otCovOK.push_back(ti.status & smartpixels::trackstatus::kOTCovOK);
       anyWindowTruncated.push_back(ti.status & smartpixels::trackstatus::kAnyWindowTruncated);
+      ptClamped.push_back(ti.status & smartpixels::trackstatus::kPtClamped);
       chi2IncXTot.push_back(ti.chi2IncXTot);
       chi2IncYTot.push_back(ti.chi2IncYTot);
       chi2IncAlphaTot.push_back(ti.chi2IncAlphaTot);
@@ -286,10 +288,15 @@ public:
 
     // EXTENSION table on the variant track table (extension=true -> merged by name)
     auto trkTable = std::make_unique<nanoaod::FlatTable>(nTracks, trackTableName_, false, true);
-    trkTable->addColumn<uint8_t>("spixStatus", status, "packed refit status (bit0 refitPerformed, bit1 otCovOK, bit2 RETIRED, bit3 anyWindowTruncated)");
+    trkTable->addColumn<uint8_t>("spixStatus", status, "packed refit status (bit0 refitPerformed, bit1 otCovOK, bit2 RETIRED, bit3 anyWindowTruncated, "
+        "bit4 ptClamped)");
     trkTable->addColumn<bool>("spixRefitPerformed", refitPerformed, "refit performed (else passthrough copy of input track)");
     trkTable->addColumn<bool>("spixOTCovOK", otCovOK, "the OT track covariance was usable");
     trkTable->addColumn<bool>("spixAnyWindowTruncated", anyWindowTruncated, "at least one crossing window hit maxHitsPerWindow");
+    trkTable->addColumn<bool>("spixPtClamped", ptClamped,
+        "the refit 1/R left the L1 track-word range (pT below ~1.9 GeV); the track's |1/R| is clamped "
+        "to the range edge (0.0059995/cm, charge kept, other parameters unclamped). The refit "
+        "diagnostics (spixShiftChi2, spixChi2ITAtRefit, trkMVA1 score) describe the unclamped fit");
     trkTable->addColumn<uint8_t>("spixNCrossings", nCrossings, "valid layer crossings attempted");
     trkTable->addColumn<uint8_t>("spixNAcceptedHits", nAcceptedHits, "hits accepted into the KF");
     trkTable->addColumn<uint8_t>("spixNKFUpdates", nKFUpdates, "scalar-update groups applied (layers updated)");

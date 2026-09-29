@@ -121,7 +121,7 @@ namespace smartpixels {
   struct SmartPixelsRefitTrackInfo {
     uint8_t status = 0;         // bit0 refit performed (else passthrough); bit1 otCovOK;
                                 // bit2 RETIRED (was otCovMode==parametrized, mode removed);
-                                // bit3 anyWindowTruncated; bits4-7 reserved
+                                // bit3 anyWindowTruncated; bit4 ptClamped; bits5-7 reserved
     uint8_t nCrossings = 0;     // valid layer crossings attempted
     uint8_t nAcceptedHits = 0;  // hits accepted into the KF
     uint8_t nKFUpdates = 0;     // scalar-update groups applied (== layers updated)
@@ -183,6 +183,9 @@ namespace smartpixels {
     // Do not reuse it -- pre-removal files may have it set, and a new meaning
     // would silently mis-read them.
     inline constexpr uint8_t kAnyWindowTruncated = 0x8; // bit3
+    // bit4: the refit 1/R left the track-word range (pT below ~1.9 GeV) and the output
+    // track's |1/R| was clamped to its edge; the sidecar describes the unclamped fit.
+    inline constexpr uint8_t kPtClamped = 0x10;
   }  // namespace trackstatus
 
 }  // namespace smartpixels
