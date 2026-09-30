@@ -970,7 +970,9 @@ def smartPixelsCoexist(process, variants=None, correctionSet=DEFAULT_CORRECTION_
                        allowSignalOnlyRedigitization=False):
   """Add SmartPixels track collections (default: one passthrough variant)
   alongside the standard tracks, plus one pair of SUFFIXED L1Nano track tables per
-  variant (multi-variant track studies). Nothing downstream is rewired: the L1
+  variant (multi-variant track studies), each with its track -> stub and track -> cluster
+  link tables whenever L1TOTStub / L1TSmartPixelsCluster are in the nano, whichever comes
+  first (the add-on flavours' link machinery). Nothing downstream is rewired: the L1
   emulation (attachL1EmulationOnDemand) runs from the standard tracklet tracks, so
   every other L1 object is coherent with L1TTrack/L1TExtTrack.
 
@@ -1058,6 +1060,8 @@ def smartPixelsCoexist(process, variants=None, correctionSet=DEFAULT_CORRECTION_
     # L1TOTStub and the link-only track -> stub tables of the reference L1TTrack /
     # L1TExtTrack collections (the refit reuses the same stub refs). Idempotent.
     addPh3L1SmartPixelsStubTables(process, doExtended=extendedTracks)
+    from DPGAnalysis.Phase3SmartPixelsNanoAOD.l1tPh3SmartPixelsNanoFlavours_cff import addCoexistNanoTables
+    addCoexistNanoTables(process, variants, trackInputMode, seedlessRefitConfig)
   return process
 
 
