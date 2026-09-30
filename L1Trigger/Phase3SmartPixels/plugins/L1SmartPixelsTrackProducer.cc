@@ -149,6 +149,11 @@ using namespace std;
 using namespace edm;
 
 namespace {
+  // A surface counts as traversed (scattering material between two constraints) when the OT
+  // helix meets it within its module extent widened by this margin [cm]: the updated state
+  // may land on a module the OT helix just misses.
+  constexpr double kTraversedMargin = 1.0;
+
   // Deterministic per-event seed for the seedlessRefit local RNG. FNV-1a 64-bit hash
   // over the module label chars, then run/lumi/event folded in the SAME 1a step
   // (xor-then-multiply) so the result depends on (label, run, lumi, event) only.
@@ -351,11 +356,15 @@ private:
   // bulge between origin anchor and OT stubs; PSimHit-verified), z shrinks.
   std::vector<double> seedlessRefitWindowRPhi_;  // module-local x
   std::vector<double> seedlessRefitWindowZ_;     // module-local y
+  // Per-disc half-widths [cm] ([disk-1], ID1-ID4): module-local x (r-phi) and y (radius).
+  std::vector<double> seedlessRefitWindowDiscRPhi_;
+  std::vector<double> seedlessRefitWindowDiscR_;
+  int seedlessRefitNDiscs_ = 4;             // discs visited: ID1..ID<n>, from seedlessRefitDiscScope
   int seedlessRefitMinHits_ = 1;            // min attached IT hits to emit a refit track
   std::string seedlessRefitUseAngles_ = "alphaBeta";  // "none" | "alpha" | "alphaBeta"
   int seedlessRefitMaxHitsPerWindow_ = 8;   // combinatorics truncation
   double seedlessRefitClusterMergeFrac_ = 0.1;  // runner-up charge share that flags a merged cluster
-  int seedlessRefitMaxKFUpdates_ = 4;       // KF update / layer cap
+  int seedlessRefitMaxKFUpdates_ = 8;       // KF update / surface cap
   std::string seedlessRefitGainMode_ = "full";     // "full" | "lut" (RESERVED -> throws)
   // KF numerical guards (spec §6b, FPGA-fidelity handles). Defaults chosen from
   // the PU chi2-tail investigation: physical |H| tops out ~200 and the physical
@@ -549,6 +558,14 @@ L1SmartPixelsTrackProducer::L1SmartPixelsTrackProducer(edm::ParameterSet const& 
       throw cms::Exception("Configuration")
           << "seedlessRefitWindowRPhi/seedlessRefitWindowZ must each have exactly 4 per-layer entries, got "
           << seedlessRefitWindowRPhi_.size() << "/" << seedlessRefitWindowZ_.size() << ".";
+    seedlessRefitWindowDiscRPhi_ = iConfig.getParameter<std::vector<double>>("seedlessRefitWindowDiscRPhi");
+    seedlessRefitWindowDiscR_ = iConfig.getParameter<std::vector<double>>("seedlessRefitWindowDiscR");
+    if (seedlessRefitWindowDiscRPhi_.size() != 4 || seedlessRefitWindowDiscR_.size() != 4)
+      throw cms::Exception("Configuration")
+          << "seedlessRefitWindowDiscRPhi/seedlessRefitWindowDiscR must each have exactly 4 per-disc entries, got "
+          << seedlessRefitWindowDiscRPhi_.size() << "/" << seedlessRefitWindowDiscR_.size() << ".";
+    seedlessRefitNDiscs_ = std::min<unsigned>(
+        4, smartpixels::discScopeMaxDisk(iConfig.getParameter<std::string>("seedlessRefitDiscScope")));
     seedlessRefitMinHits_ = iConfig.getParameter<int>("seedlessRefitMinHits");
     seedlessRefitUseAngles_ = iConfig.getParameter<std::string>("seedlessRefitUseAngles");
     seedlessRefitMaxHitsPerWindow_ = iConfig.getParameter<int>("seedlessRefitMaxHitsPerWindow");
@@ -812,14 +829,13 @@ void L1SmartPixelsTrackProducer::produce(edm::Event& iEvent, const edm::EventSet
     // SAME helper the table uses. The table refuses to run unless it emits every rec
     // hit, so taking every rec-hit module here (no scope cut) gives its row order.
     drClusterBaseIdx = smartpixels::clusterRowBase(*drRecHits, *tTopo, 4, smartpixels::discScopeMaxDisk("all"));
-    // Mask character k switches ILk AND IDk. Only barrel surfaces are visited below
-    // (the projector has no disc surfaces yet), so the ID entries take no effect.
+    // Mask character k switches ILk AND IDk.
     drActiveSurface = smartpixels::activeSurfaces(smartPixelsActiveLayers_);
     if (std::none_of(drActiveSurface.begin(), drActiveSurface.end(), [](bool b) { return b; }))
       throw cms::Exception("Configuration")
           << "seedlessRefit requires at least one active layer (smartPixelsActiveLayers='"
           << smartPixelsActiveLayers_ << "').";
-    projector_.build(*theTrackerGeom, *tTopo, 4);
+    projector_.build(*theTrackerGeom, *tTopo, 4, seedlessRefitNDiscs_);
     // No RNG here any more. Angle synthesis moved to SmartPixelsRecHitProducer,
     // and its stochastic part is payload-side HashPRNG, deterministic in the
     // cluster inputs. The old local engine existed only for the noise-angle
@@ -1612,24 +1628,71 @@ void L1SmartPixelsTrackProducer::produce(edm::Event& iEvent, const edm::EventSet
 
       int nAcceptedHits = 0;
       int nUpdates = 0;
-      // Last layer that actually constrained the state, and its radius: the
-      // process-noise lever arm is measured from there, not from the previous
-      // loop iteration (layers can be skipped, inactive, or yield no hit).
-      int drPrevLayer = 0;
+      // Last surface that actually constrained the state (its index in drPath), and its
+      // radius: the process-noise lever arm is measured from there, not from the previous
+      // loop iteration (surfaces can be skipped, inactive, or yield no hit).
+      int drPrevPath = -1;
       double drPrevLayerR = -1.;
 
-      // Visit order per seedlessRefitLayerOrder_. Sidecar hitInfo records are pushed
-      // in VISIT order, so their sequence documents how the fit actually
+      // The IT surfaces in PATH ORDER along the OT track (transverse arc length from the
+      // POCA): every TBPX layer, and each disc in scope whose plane the OT helix meets within
+      // the disc's radial extent. A layer the OT helix does not reach keeps its radial place
+      // (inside |d0|: first; beyond the turning radius: last), since the updated state may
+      // reach it. For a track that meets no disc this is L1..L4, the barrel-only order.
+      // nTraversed counts the surfaces up to and including this one that the scattering
+      // material between two constraints is charged for. With a disc on the path, a surface
+      // counts when the OT helix meets it within its module extent (barrel |z|, disc radius;
+      // widened by kTraversedMargin): at |eta| > ~1.7 the helix passes the outer layers'
+      // cylinders beyond the barrel, between the discs. Without one, every layer counts, the
+      // barrel-only convention (which also charges a layer inside |d0| or beyond the barrel).
+      struct DrSurface {
+        unsigned code;
+        double s;
+        int nTraversed;
+      };
+      std::vector<DrSurface> drPath;
+      {
+        const smartpixels::HelixParams hOT = makeHelix(a);
+        std::vector<std::pair<DrSurface, bool>> surfaces;
+        for (int layer = 1; layer <= projector_.nLayers(); ++layer) {
+          bool traversed = false;
+          const double s = projector_.pathToSurface(hOT, layer, kTraversedMargin, traversed);
+          const double key =
+              s >= 0. ? s : (projector_.layerRadius(layer) < std::abs(a[4]) ? -1e9 : 1e9) + layer;
+          surfaces.push_back({{static_cast<unsigned>(layer), key, 0}, traversed});
+        }
+        for (int disk = 1; disk <= projector_.nDiscs(); ++disk) {
+          const unsigned code = smartpixels::kDiscSurfaceOffset + disk;
+          bool traversed = false;
+          const double s = projector_.pathToSurface(hOT, code, kTraversedMargin, traversed);
+          if (s >= 0. && traversed)
+            surfaces.push_back({{code, s, 0}, true});
+        }
+        std::stable_sort(surfaces.begin(), surfaces.end(),
+                         [](const auto& p, const auto& q) { return p.first.s < q.first.s; });
+        const bool anyDisc = static_cast<int>(surfaces.size()) > projector_.nLayers();
+        int nTraversed = 0;
+        for (auto& [surf, traversed] : surfaces) {
+          nTraversed += traversed || !anyDisc;
+          surf.nTraversed = nTraversed;
+          drPath.push_back(surf);
+        }
+      }
+
+      // Visit order per seedlessRefitLayerOrder_ along drPath. Sidecar hitInfo records are
+      // pushed in VISIT order, so their sequence documents how the fit actually
       // proceeded; every consumer selects on hitInfo.layer, never on position.
-      const int drNLayers = projector_.nLayers();
+      const int drNPath = drPath.size();
       const bool drOutsideIn = (seedlessRefitLayerOrder_ == "outsideIn");
-      for (int step = 0; step < drNLayers; ++step) {
-        const int layer = drOutsideIn ? (drNLayers - step) : (step + 1);
+      for (int step = 0; step < drNPath; ++step) {
+        const int ip = drOutsideIn ? (drNPath - 1 - step) : step;
         if (!otCovOK || nUpdates >= seedlessRefitMaxKFUpdates_)
           break;
-        const unsigned surface = static_cast<unsigned>(layer);  // projector surfaces are TBPX layers
+        const unsigned surface = drPath[ip].code;
         if (!drActiveSurface[surface])
           continue;
+        const bool isDisc = smartpixels::isDiscSurface(surface);
+        const unsigned surfIdx = isDisc ? surface - smartpixels::kDiscSurfaceOffset - 1 : surface - 1;
 
         // ---- MULTIPLE-SCATTERING PROCESS NOISE -------------------------------
         // Inflate C for the material traversed since the last constraint, BEFORE
@@ -1645,9 +1708,10 @@ void L1SmartPixelsTrackProducer::produce(edm::Event& iEvent, const edm::EventSet
         // 5.4, 7.8 under the old inside-out order).
         //
         // MATERIAL IS KEYED TO GEOMETRY, NOT TO MEASUREMENTS. The particle scatters
-        // in every layer it crosses, including uninstrumented ones and ones that
-        // happened to yield no hit, so the budget is accrued over the layers
-        // TRAVERSED between the two constraint points rather than per update.
+        // in every surface it crosses, including uninstrumented ones and ones that
+        // happened to yield no hit, so the budget is accrued over the surfaces
+        // TRAVERSED between the two constraint points rather than per update. A disc
+        // is charged the same theta0 as a layer (see the disc note below).
         //
         // STRUCTURE FROM PHYSICS, SCALE FROM DATA. A kink of projected SPACE angle
         // theta at radius r_s leaves the momentum magnitude alone, so rInv is
@@ -1658,7 +1722,13 @@ void L1SmartPixelsTrackProducer::produce(edm::Event& iEvent, const edm::EventSet
         //     dip:          d(tanL) = theta sec^2(lam),   d(z0) = -r_s * d(tanL)
         // (the transverse momentum is p cos(lam), so an azimuthal kink theta turns
         // phi by theta / cos(lam); d(tanL) = sec^2 d(lam)). Q = theta^2 (J_T J_T^T +
-        // J_L J_L^T), rank 2, with theta = multScattTerm / p per traversed layer.
+        // J_L J_L^T), rank 2, with theta = multScattTerm / p per traversed surface.
+        // The kink Jacobian depends only on the transverse radius r_s of the kink point
+        // (d(d0) = r_s d(phi0), d(z0) = -s d(tanL) with s ~ r_s), so it holds unchanged
+        // for a kink on a disc. DISCS: one theta0 per disc as per layer. The layer term
+        // has no incidence (path-length) factor, and the disc keeps that convention. Not
+        // tuned for discs: the reconstruction geometry gives a TFPX module 1.34% X0 at
+        // normal incidence against 1.48-1.85% for the TBPX layers.
         // multScattTerm keeps TMTT's KalmanMultiScattTerm value (0.00075 rad*GeV):
         // TMTT uses it as the TRANSVERSE deflection per pT, and multScattTerm / p *
         // sec(lam) is exactly that, so the azimuthal term is unchanged in magnitude.
@@ -1673,7 +1743,7 @@ void L1SmartPixelsTrackProducer::produce(edm::Event& iEvent, const edm::EventSet
         // sec^2, overstating the dip term by sec(lam).
         if (seedlessRefitApplyProcessNoise_ && nUpdates > 0 && drPrevLayerR > 0.) {
           const double ptNow = std::abs(MagConstant * b_field / (a[0] * 100.0));
-          const int nCross = std::max(1, std::abs(layer - drPrevLayer));
+          const int nCross = std::max(1, std::abs(drPath[ip].nTraversed - drPath[drPrevPath].nTraversed));
           if (ptNow > 1e-3) {
             const double sec2 = 1.0 + a[2] * a[2];
             const double sec = std::sqrt(sec2);
@@ -1681,8 +1751,8 @@ void L1SmartPixelsTrackProducer::produce(edm::Event& iEvent, const edm::EventSet
             const double theta0 = seedlessRefitMultScattTerm_ / pNow;  // projected space angle
             const double var = theta0 * theta0 * static_cast<double>(nCross);
             const double rs = drPrevLayerR;  // kink sits at the material, i.e. the
-                                             // last layer crossed, giving the lever
-                                             // arm to the layer now being predicted
+                                             // last surface crossed, giving the lever
+                                             // arm to the surface now being predicted
             ROOT::Math::SVector<double, 5> jT, jL;
             jT[0] = 0.; jT[1] = sec; jT[2] = 0.; jT[3] = 0.; jT[4] = +rs * sec;
             jL[0] = 0.; jL[1] = 0.; jL[2] = sec2; jL[3] = -rs * sec2; jL[4] = 0.;
@@ -1694,13 +1764,13 @@ void L1SmartPixelsTrackProducer::produce(edm::Event& iEvent, const edm::EventSet
         }
 
         const smartpixels::Crossing cx =
-            projector_.crossLayer(makeHelix(a), layer, drField, seedlessRefitPredAngleMaxAbs_);
+            projector_.crossSurface(makeHelix(a), surface, drField, seedlessRefitPredAngleMaxAbs_);
         if (!cx.valid) {
           // Predicted-angle clamp (spec §6b hygiene) or genuine off-acceptance.
           // Count the clamp activations for the endStream report (attribute a
           // rejected crossing to the clamp when the unclamped projection WOULD have
           // been valid but exceeded the predicted-angle bound).
-          const smartpixels::Crossing cxUnclamped = projector_.crossLayer(makeHelix(a), layer, drField, 0.);
+          const smartpixels::Crossing cxUnclamped = projector_.crossSurface(makeHelix(a), surface, drField, 0.);
           if (cxUnclamped.valid &&
               (std::abs(cxUnclamped.cotAlpha) > seedlessRefitPredAngleMaxAbs_ ||
                std::abs(cxUnclamped.cotBeta) > seedlessRefitPredAngleMaxAbs_))
@@ -1730,7 +1800,7 @@ void L1SmartPixelsTrackProducer::produce(edm::Event& iEvent, const edm::EventSet
         // every band count derived from it.
         if (seedlessRefitStoreOTProjection_) {
           const smartpixels::Crossing cs =
-              projector_.crossLayer(makeHelix(aOT), layer, drField, seedlessRefitPredAngleMaxAbs_);
+              projector_.crossSurface(makeHelix(aOT), surface, drField, seedlessRefitPredAngleMaxAbs_);
           if (cs.valid && cs.detId == cx.detId) {
             hi.projOTLocalX = static_cast<float>(cs.local.x());
             hi.projOTLocalY = static_cast<float>(cs.local.y());
@@ -1747,7 +1817,7 @@ void L1SmartPixelsTrackProducer::produce(edm::Event& iEvent, const edm::EventSet
                 ROOT::Math::SVector<double, 5> ap = aOT;
                 ap[j] += sgn * kEpsS[j];
                 const smartpixels::Crossing cp =
-                    projector_.crossLayer(makeHelix(ap), layer, drField, seedlessRefitPredAngleMaxAbs_);
+                    projector_.crossSurface(makeHelix(ap), surface, drField, seedlessRefitPredAngleMaxAbs_);
                 if (!cp.valid || cp.detId != cs.detId)
                   continue;
                 const double inv = 1.0 / (sgn * kEpsS[j]);
@@ -1798,7 +1868,7 @@ void L1SmartPixelsTrackProducer::produce(edm::Event& iEvent, const edm::EventSet
             ROOT::Math::SVector<double, 5> ap = a;
             ap[j] += sgn * kEps[j];
             const smartpixels::Crossing cp =
-                projector_.crossLayer(makeHelix(ap), layer, drField, seedlessRefitPredAngleMaxAbs_);
+                projector_.crossSurface(makeHelix(ap), surface, drField, seedlessRefitPredAngleMaxAbs_);
             if (!cp.valid || cp.detId != cx.detId)
               continue;
             const double inv = 1.0 / (sgn * kEps[j]);
@@ -1895,8 +1965,10 @@ void L1SmartPixelsTrackProducer::produce(edm::Event& iEvent, const edm::EventSet
               break;
             }
             const LocalPoint dlp = rh.localPosition();
-            if (std::abs(dlp.x() - cx.local.x()) > seedlessRefitWindowRPhi_[layer - 1] ||
-                std::abs(dlp.y() - cx.local.y()) > seedlessRefitWindowZ_[layer - 1])
+            // module-local windows: x = r-phi on both; y = z on a layer, radius on a disc
+            if (std::abs(dlp.x() - cx.local.x()) >
+                    (isDisc ? seedlessRefitWindowDiscRPhi_ : seedlessRefitWindowRPhi_)[surfIdx] ||
+                std::abs(dlp.y() - cx.local.y()) > (isDisc ? seedlessRefitWindowDiscR_ : seedlessRefitWindowZ_)[surfIdx])
               continue;
 
             const auto& tr = (*trSet)[rhPos];
@@ -2017,7 +2089,7 @@ void L1SmartPixelsTrackProducer::produce(edm::Event& iEvent, const edm::EventSet
             for (int j = 0; j <= i; ++j)
               C(i, j) -= K[i] * v[j];  // K = v/S -> K_i v_j symmetric
         };
-        drPrevLayer = layer;
+        drPrevPath = ip;
         drPrevLayerR = std::hypot(cx.global.x(), cx.global.y());
         scalarUpdate(0, best.x, best.ex);
         scalarUpdate(1, best.y, best.ey);
@@ -2087,7 +2159,7 @@ void L1SmartPixelsTrackProducer::produce(edm::Event& iEvent, const edm::EventSet
         drAcceptedTpKeys.push_back(best.tpKey);
         ++nAcceptedHits;
         ++nUpdates;
-      }  // layer loop
+      }  // surface loop
 
       // TRUTH-ONLY match: the TP owning a strict majority (> 50%) of the output track's weight,
       // each OT stub cluster 1/2 point (a stub = 1 point) and each accepted IT cluster 1 point
@@ -2236,7 +2308,7 @@ void L1SmartPixelsTrackProducer::produce(edm::Event& iEvent, const edm::EventSet
               otOK = false;
             }
             const smartpixels::Crossing cr =
-                projector_.crossLayer(makeHelix(a), hrec.layer, drField, seedlessRefitPredAngleMaxAbs_);
+                projector_.crossSurface(makeHelix(a), hrec.layer, drField, seedlessRefitPredAngleMaxAbs_);
             if (cr.valid && cr.detId == hrec.detId) {
               const double dx = hrec.recoLocalX - cr.local.x();
               const double dy = hrec.recoLocalY - cr.local.y();
@@ -2412,13 +2484,20 @@ void L1SmartPixelsTrackProducer::fillDescriptions(edm::ConfigurationDescriptions
   desc.add<edm::InputTag>("TrackingParticleInputTag", edm::InputTag("mix", "MergedTrackTruth"));
   desc.add<std::string>("outputCollectionName", "Level1TTTracksEmulation");
   desc.add<std::string>("smartPixelsEmulatorMode", "passthrough")->setComment("passthrough, passthroughFloat, passthroughHW, trackingParticleTruth, correctionlibRegression, correctionlibTPToySmear");
-  desc.add<std::string>("smartPixelsActiveLayers", "0000")->setComment("Active SmartPixels surfaces: character k switches barrel layer ILk AND disc IDk, '0000' is none active, '1111' is all active, '0110' has IL2+IL3 and ID2+ID3 active. seedlessRefit skips inactive surfaces; it visits TBPX layers only so far");
+  desc.add<std::string>("smartPixelsActiveLayers", "0000")->setComment("Active SmartPixels surfaces: character k switches barrel layer ILk AND disc IDk, '0000' is none active, '1111' is all active, '0110' has IL2+IL3 and ID2+ID3 active. seedlessRefit skips inactive surfaces");
   desc.add<edm::FileInPath>("smartPixelsCorrectionSet")->setComment("Name of json file containing the correctionlib set used for smartPixelsEmulatorMode (correctionlibRegression | correctionlibTPToySmear )");
   // --- seedlessRefit (Tier 2) ---
   desc.add<std::vector<double>>("seedlessRefitWindowRPhi", std::vector<double>{0.05, 0.17, 0.5, 0.9})
       ->setComment("per-layer r-phi search-window half-widths [cm] (TBPX L1-L4; ~q68 of the 2-5 GeV extrapolation spread)");
   desc.add<std::vector<double>>("seedlessRefitWindowZ", std::vector<double>{0.45, 0.35, 0.25, 0.2})
       ->setComment("per-layer z search-window half-widths [cm] (TBPX L1-L4)");
+  desc.add<std::vector<double>>("seedlessRefitWindowDiscRPhi", std::vector<double>{0.2, 0.2, 0.2, 0.2})
+      ->setComment("per-disc r-phi (module-local x) search-window half-widths [cm] (ID1-ID4)");
+  desc.add<std::vector<double>>("seedlessRefitWindowDiscR", std::vector<double>{0.3, 0.3, 0.3, 0.3})
+      ->setComment("per-disc radial (module-local y) search-window half-widths [cm] (ID1-ID4)");
+  desc.add<std::string>("seedlessRefitDiscScope", "sp")
+      ->setComment("discs the refit visits, as the rec-hit discScope: none (barrel only) | sp (ID1-ID4); "
+                   "tfpx/all visit ID1-ID4 too (TFPX 5-8 and TEPX are not SmartPixels surfaces)");
   desc.add<int>("seedlessRefitMinHits", 1)->setComment("min attached IT hits to emit a refit track (else passthrough copy)");
   desc.add<std::string>("seedlessRefitUseAngles", "alphaBeta")
       ->setComment("which synthesized angles enter the refit: none | alpha | alphaBeta (alphaBeta = the intended "
@@ -2430,7 +2509,7 @@ void L1SmartPixelsTrackProducer::fillDescriptions(edm::ConfigurationDescriptions
   desc.add<double>("seedlessRefitClusterMergeFrac", 0.1)
       ->setComment("TRUTH-ONLY diagnostic: runner-up charge share above which a cluster is flagged merged "
                    "(hitflag::kClusterMerged). Such a cluster has a biased position and an ill-defined angle.");
-  desc.add<int>("seedlessRefitMaxKFUpdates", 4)->setComment("max Kalman layer updates applied");
+  desc.add<int>("seedlessRefitMaxKFUpdates", 8)->setComment("max Kalman surface updates applied (8 = every IT surface)");
   desc.add<std::string>("seedlessRefitGainMode", "full")->setComment("full (exact gains) | lut (RESERVED table-driven placeholder)");
   desc.add<double>("seedlessRefitJacobianMaxAbs", 1.0e4)
       ->setComment("FPGA-fidelity KF guard: any |H[k][j]| above this bound (or non-finite) zeroes that "

@@ -184,6 +184,16 @@ _m_bdt = getattr(
     _dr_prompt)
 check(_m_bdt.seedlessRefitBdtModel.value() == "L1Trigger/Phase3SmartPixels/data/refitq_model.json",
       "bdtModel override flows onto the module")
+# disc surfaces: per-disc windows and the disc scope reach the module, bad windows raise
+check(tuple(_m.seedlessRefitWindowDiscRPhi) == SEEDLESSREFIT_DEFAULTS["windowDiscRPhi"]
+      and tuple(_m.seedlessRefitWindowDiscR) == SEEDLESSREFIT_DEFAULTS["windowDiscR"]
+      and _m.seedlessRefitDiscScope.value() == SEEDLESSREFIT_DEFAULTS["discScope"] == "sp",
+      "disc windows and discScope (sp: the refit visits ID1-ID4) are carried onto the module")
+check(_m.seedlessRefitMaxKFUpdates.value() == 8, "maxKFUpdates default 8 (every IT surface) is carried onto the module")
+expect_raises(ValueError, lambda: _resolveSeedlessRefitConfig({"windowDiscR": (0.3, 0.3)}),
+              "a disc window with the wrong length raises ValueError", contains="windowDiscR")
+check(_resolveSeedlessRefitConfig({"windowDiscRPhi": 0.1})["windowDiscRPhi"] == (0.1,) * 4,
+      "a scalar disc window is broadcast to ID1-ID4")
 # smarthitTrueSet is RESERVED: NOT consumed by Tier-2 but kept as a
 # validated key for a future ASIC-efficiency model. Shipped/default recipes must
 # pass NO real path (empty), and setting one must still validate + wire cleanly
