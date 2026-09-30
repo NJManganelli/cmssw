@@ -116,6 +116,13 @@ The modes are named as their nano mode tags (see `DPGAnalysis/Phase3SmartPixelsN
   emulator or the PixelAV payload), with active-layer masks `A`/`I` per ILk+IDk
   (`@SPActiveLayers<mask>`, `smartPixelsActiveLayers`). Configured by
   `SEEDLESSREFIT_DEFAULTS` / `seedlessRefitConfig=`; it emits the refit sidecar below.
+  Surfaces: the TBPX layers IL1-IL4 and, unless `discScope="none"`, the discs ID1-ID4 (TFPX
+  disks 1-4, the side the track heads to), visited in path order along the OT track
+  (`layerOrder`, default outside-in); a disc is on the path when the OT helix meets its plane
+  within its radial extent. Disc windows are `windowDiscRPhi` (module-local x) and
+  `windowDiscR` (module-local y = radius); disc measurements are the same local x/y plus the
+  angles in the module frame; each traversed disc is charged the same scattering angle
+  (`multScattTerm / p`) as a layer.
 - **ParallelSeedRefit** (`@SPParallelSeedRefit`, reserved: raises `NotImplementedError`): IT
   seeds are built and fitted purely from IT clusters, in parallel to the OT L1TrackFinder's
   processing, followed by a track-track refit (IT track + OT track).
@@ -131,7 +138,7 @@ simultaneously.
 FPGA-fidelity handles live in `SEEDLESSREFIT_DEFAULTS` (float implementation, every
 truncation switchable to chart resolution-vs-fidelity curves): `useAngles`
 (`none`/`alpha`/`alphaBeta`, default `alphaBeta`), `maxHitsPerWindow` (combinatorics
-truncation, default 8), `maxKFUpdates` (Kalman-update cap, default 4), and `gainMode`
+truncation, default 8), `maxKFUpdates` (Kalman-update cap, default 8 = every IT surface), and `gainMode`
 (`full` default / `lut` table-driven placeholder).
 
 ### seedlessRefit sidecar product and RNG scheme

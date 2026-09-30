@@ -102,6 +102,11 @@ SEEDLESSREFIT_DEFAULTS = {
     # A scalar is accepted and broadcast to all four layers.
     "windowRPhi": (0.05, 0.17, 0.5, 0.9),  # r-phi half-widths [cm]
     "windowZ": (0.45, 0.35, 0.25, 0.2),    # z half-widths [cm]
+    # --- search windows on the discs ID1-ID4 (module-local x = r-phi, y = radius) ---
+    # ~98% joint containment of the OT track's own cluster at a disc visited first (the
+    # widest cone), PU200 TTbar file 2, 20 events (the barrel L4 window holds ~97%).
+    "windowDiscRPhi": (0.2, 0.2, 0.2, 0.2),  # r-phi half-widths [cm]
+    "windowDiscR": (0.3, 0.3, 0.3, 0.3),     # radial half-widths [cm]
     # --- track emission ---
     "minHits": 1,             # min attached IT hits required to emit a refit track
     # --- fidelity handle: which synthesized angle(s) enter the refit ---
@@ -109,7 +114,7 @@ SEEDLESSREFIT_DEFAULTS = {
     "useAngles": "alphaBeta",  # "none" | "alpha" | "alphaBeta"
     # --- FPGA-fidelity / truncation handles (float impl, switchable) ---
     "maxHitsPerWindow": 8,    # combinatorics truncation: max in-window digis kept per layer
-    "maxKFUpdates": 4,        # max Kalman updates applied (layer/update cap)
+    "maxKFUpdates": 8,        # max Kalman updates applied (surface/update cap; 8 = every IT surface)
     "gainMode": "full",       # "full" (exact gain) | "lut" (RESERVED table-driven placeholder)
     # KF numerical guards (spec §6b, FPGA-fidelity handles). Defaults from the PU
     # chi2-tail investigation: physical |H|<~200 and the physical (incl. wrong-hit)
@@ -156,7 +161,8 @@ SEEDLESSREFIT_DEFAULTS = {
     # dump response, x1.5 spread), every cluster, discs included. Takes no
     # pixelavAngleSet/smarthitFakeSet; discScope none|sp only.
     "angleSource": "payload",
-    # Disc clusters in the rec hits and in L1TSmartPixelsCluster (DISCSCOPE_CHOICES).
+    # Disc clusters in the rec hits and in L1TSmartPixelsCluster (DISCSCOPE_CHOICES), and
+    # the discs the refit visits (none = barrel only; otherwise ID1-ID4).
     # The payload source gives disc clusters no angle; the emu source does.
     "discScope": "sp",
     # --- optional refit-aware TkQuality BDT ---
@@ -214,15 +220,15 @@ def _resolveSeedlessRefitConfig(seedlessRefitConfig=None):
   if resolved["otNPar"] not in (4, 5):
     raise ValueError(
         f"seedlessRefitConfig['otNPar']={resolved['otNPar']!r} invalid; must be 4 or 5")
-  for wk in ("windowRPhi", "windowZ"):
+  for wk in ("windowRPhi", "windowZ", "windowDiscRPhi", "windowDiscR"):
     wv = resolved[wk]
     if isinstance(wv, (int, float)):
-      wv = (float(wv),) * 4  # scalar convenience: broadcast to all layers
+      wv = (float(wv),) * 4  # scalar convenience: broadcast to all layers / discs
     wv = tuple(float(x) for x in wv)
     if len(wv) != 4 or any(x <= 0 for x in wv):
       raise ValueError(
-          f"seedlessRefitConfig['{wk}'] must be a positive scalar or 4 per-layer "
-          f"positive values (TBPX L1-L4), got {resolved[wk]!r}")
+          f"seedlessRefitConfig['{wk}'] must be a positive scalar or 4 per-surface "
+          f"positive values (TBPX L1-L4 or ID1-ID4), got {resolved[wk]!r}")
     resolved[wk] = wv
   # KF numerical guards + grazing-angle clamps must be positive doubles (spec §6b).
   for gk in ("jacobianMaxAbs", "chi2UpdateGate", "measAngleMaxAbs", "predAngleMaxAbs"):
@@ -298,6 +304,9 @@ def _applySeedlessRefitConfig(module, resolved):
   """Push a resolved (validated) seedlessRefit config dict onto a producer module."""
   module.seedlessRefitWindowRPhi = cms.vdouble(*resolved["windowRPhi"])
   module.seedlessRefitWindowZ = cms.vdouble(*resolved["windowZ"])
+  module.seedlessRefitWindowDiscRPhi = cms.vdouble(*resolved["windowDiscRPhi"])
+  module.seedlessRefitWindowDiscR = cms.vdouble(*resolved["windowDiscR"])
+  module.seedlessRefitDiscScope = cms.string(resolved["discScope"])
   module.seedlessRefitMinHits = cms.int32(resolved["minHits"])
   module.seedlessRefitUseAngles = cms.string(resolved["useAngles"])
   module.seedlessRefitMaxHitsPerWindow = cms.int32(resolved["maxHitsPerWindow"])
