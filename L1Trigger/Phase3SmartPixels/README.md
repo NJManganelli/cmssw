@@ -121,8 +121,8 @@ The modes are named as their nano mode tags (see `DPGAnalysis/Phase3SmartPixelsN
   (`layerOrder`, default outside-in); a disc is on the path when the OT helix meets its plane
   within its radial extent. Disc windows are `windowDiscRPhi` (module-local x) and
   `windowDiscR` (module-local y = radius); disc measurements are the same local x/y plus the
-  angles in the module frame; each traversed disc is charged the same scattering angle
-  (`multScattTerm / p`) as a layer.
+  angles in the module frame. Multiple scattering (`multScattTerm / p` per surface, disc or
+  layer) is charged for each surface the OT helix traverses within its module extent.
 - **ParallelSeedRefit** (`@SPParallelSeedRefit`, reserved: raises `NotImplementedError`): IT
   seeds are built and fitted purely from IT clusters, in parallel to the OT L1TrackFinder's
   processing, followed by a track-track refit (IT track + OT track).

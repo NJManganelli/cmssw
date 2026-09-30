@@ -1640,11 +1640,10 @@ void L1SmartPixelsTrackProducer::produce(edm::Event& iEvent, const edm::EventSet
       // (inside |d0|: first; beyond the turning radius: last), since the updated state may
       // reach it. For a track that meets no disc this is L1..L4, the barrel-only order.
       // nTraversed counts the surfaces up to and including this one that the scattering
-      // material between two constraints is charged for. With a disc on the path, a surface
-      // counts when the OT helix meets it within its module extent (barrel |z|, disc radius;
-      // widened by kTraversedMargin): at |eta| > ~1.7 the helix passes the outer layers'
-      // cylinders beyond the barrel, between the discs. Without one, every layer counts, the
-      // barrel-only convention (which also charges a layer inside |d0| or beyond the barrel).
+      // material between two constraints is charged for: a surface counts when the OT helix
+      // meets it within its module extent (barrel |z|, disc radius; widened by
+      // kTraversedMargin), so a layer inside |d0|, beyond the turning radius or passed beyond
+      // the barrel's ends (between the discs, at |eta| > ~1.7) is not charged.
       struct DrSurface {
         unsigned code;
         double s;
@@ -1670,10 +1669,9 @@ void L1SmartPixelsTrackProducer::produce(edm::Event& iEvent, const edm::EventSet
         }
         std::stable_sort(surfaces.begin(), surfaces.end(),
                          [](const auto& p, const auto& q) { return p.first.s < q.first.s; });
-        const bool anyDisc = static_cast<int>(surfaces.size()) > projector_.nLayers();
         int nTraversed = 0;
         for (auto& [surf, traversed] : surfaces) {
-          nTraversed += traversed || !anyDisc;
+          nTraversed += traversed;
           surf.nTraversed = nTraversed;
           drPath.push_back(surf);
         }
