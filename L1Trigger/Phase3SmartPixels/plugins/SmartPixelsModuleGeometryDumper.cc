@@ -16,6 +16,7 @@
 // involved. ez is the plane normal. halfWidth is along ex, halfLength along ey.
 #include "DataFormats/DetId/interface/DetId.h"
 #include "DataFormats/GeometrySurface/interface/Bounds.h"
+#include "DataFormats/GeometrySurface/interface/MediumProperties.h"
 #include "DataFormats/GeometryVector/interface/GlobalPoint.h"
 #include "DataFormats/GeometryVector/interface/GlobalVector.h"
 #include "DataFormats/GeometryVector/interface/LocalPoint.h"
@@ -63,7 +64,8 @@ public:
     out << std::setprecision(10);
     out << "{\n \"convention\": \"global = origin + lx*ex + ly*ey + lz*ez; local components of a global "
            "direction d are (d.ex, d.ey, d.ez) == GeomDet::toLocal. cotAlpha = d.ex/d.ez, cotBeta = d.ey/d.ez. "
-           "halfWidth along ex, halfLength along ey, units cm.\",\n \"modules\": [\n";
+           "halfWidth along ex, halfLength along ey, units cm. radLen, xi: reconstruction material of the module "
+           "(x/X0, xi) at normal incidence.\",\n \"modules\": [\n";
 
     auto vec = [&out](const char* key, double x, double y, double z) {
       out << "\"" << key << "\": [" << x << ", " << y << ", " << z << "]";
@@ -111,7 +113,11 @@ public:
       vec("ez", ez.x(), ez.y(), ez.z());
       out << ", \"halfWidth\": " << 0.5 * b.width() << ", \"halfLength\": " << 0.5 * b.length()
           << ", \"thickness\": " << b.thickness() << ", \"pitchX\": " << pitch.first << ", \"pitchY\": " << pitch.second
-          << ", \"nrows\": " << t.nrows() << ", \"ncolumns\": " << t.ncolumns() << "}";
+          << ", \"nrows\": " << t.nrows() << ", \"ncolumns\": " << t.ncolumns();
+      // reconstruction material (x/X0 and xi at normal incidence), -1 when the geometry sets none
+      const MediumProperties& mp = det->surface().mediumProperties();
+      out << ", \"radLen\": " << (mp.isValid() ? mp.radLen() : -1.f) << ", \"xi\": " << (mp.isValid() ? mp.xi() : -1.f)
+          << "}";
       ++n;
     }
     out << "\n ],\n \"n_modules\": " << n << ",\n \"max_frame_orthonormality_violation\": " << worstOrtho << "\n}\n";
