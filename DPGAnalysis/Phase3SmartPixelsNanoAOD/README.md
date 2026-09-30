@@ -297,6 +297,10 @@ Notes:
 - Each variant also gets the links the add-on flavours give the canonical tables,
   `L1TSmartPixels[Ext]Track<Suffix>Stub` (-> `L1TOTStub`) and `...Cluster`
   (-> `L1TSmartPixelsCluster`), whenever those tables are in the nano, in either order.
+- The multi-variant omnibus nano (all 15 non-trivial seedlessRefit masks) is one cmsDriver line:
+  `makeSpixConfig.py --tier coexist --variant seedlessRefit:all` composes
+  `NANO:@Phase2L1DPGwithGen+@L1Trk+@SPClustersStubs+@TPTruth1GeVLinked` with a single
+  `smartPixelsCoexist(...)` call (+ `produceMiniAODGenInputs`).
 - Downstream objects (vertices, PF/Puppi, jets, MET, GT) reflect the STANDARD tracks; in a
   NANO-only job they are re-emulated on demand from them (standard L1 tasks).
 
