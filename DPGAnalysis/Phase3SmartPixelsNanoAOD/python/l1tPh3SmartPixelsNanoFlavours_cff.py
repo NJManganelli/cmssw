@@ -68,6 +68,7 @@ def _state(process):
             mask=cms.string(""),
             tpTruth=cms.string(""),
             variant=cms.string(""),
+            coexistVariants=cms.vstring(),
             trackInputMode=cms.string("reemulateL1TrackFinding"),
             trackInputModeApplied=cms.string(""),
             extendedTracks=cms.bool(True),
@@ -105,6 +106,25 @@ def addCooptNanoTables(process, variant):
     st.variant = _variantString(variant)
     _addSPTrackTables(process)
     _addOTStubTable(process)
+    return _reconcile(process)
+
+
+def addCoexistNanoTables(process, variants, trackInputMode, seedlessRefitConfig):
+    """smartPixelsCoexist(addNanoTables=True), after it made the suffixed variant tables: records
+    the variants, their posture and refit settings, so that every reconcile, now or by a later
+    add-on, gives each variant the links the add-on flavours give the canonical tables
+    (<track table>Stub, <track table>Cluster)."""
+    st = _state(process)
+    applied = st.trackInputModeApplied.value()
+    if applied and applied != trackInputMode:
+        raise RuntimeError(f"smartPixelsCoexist: trackInputMode {trackInputMode!r}, but this job already "
+                           f"applied {applied!r}")
+    st.trackInputMode = trackInputMode
+    st.trackInputModeApplied = trackInputMode
+    st.seedlessRefitConfig = json.dumps(seedlessRefitConfig or {}, sort_keys=True)
+    for variant in variants:
+        if _variantString(variant) not in st.coexistVariants:
+            st.coexistVariants.append(_variantString(variant))
     return _reconcile(process)
 
 
@@ -361,7 +381,7 @@ def _reconcile(process):
     variant = _wiredVariant(st)
     _configureSmartPixelsTracks(process, st, variant, sched)
     _configureModeTables(process, variant, sched)
-    _configureStubLinks(process, variant, sched)
+    _configureStubLinks(process, st, variant, sched)
     if _CLUSTER_TABLE in sched:
         _ensureRecHits(process, st)
     _configureCandidateLinks(process, st, variant, sched)
@@ -428,6 +448,25 @@ def _spLabels(variant):
     return {"prompt": prompt, "ext": extended}
 
 
+def _spTrackTables(st, variant, sched):
+    """(variant, side, table label suffix, track table name) of every SmartPixels track table in
+    the nano: the canonical pair of the wired variant and the suffixed pairs of coexist variants."""
+    from L1Trigger.Phase3SmartPixels.customizeSmartPixels_cff import smartPixelsVariantSuffix
+    tables = []
+    if variant is not None:
+        tables += [(variant, side, "", name) for side, (label, name) in _SP_TABLES.items() if label in sched]
+    for spec in st.coexistVariants:
+        mode, _, activeSP = spec.partition(":")
+        coexist = (mode, activeSP or None)
+        suffix = smartPixelsVariantSuffix(*coexist)
+        suffix = suffix[:1].upper() + suffix[1:]
+        for side, (label, name) in _SP_TABLES.items():
+            ext = "Ext" if side == "ext" else ""
+            if f"l1tPh3{ext}SmartPixelsTracks{suffix}Table" in sched:
+                tables.append((coexist, side, suffix, f"{name}{suffix}"))
+    return tables
+
+
 def _configureSmartPixelsTracks(process, st, variant, sched):
     """SmartPixels track tables read the wired variant; l1TrackIdx links each one to the OT
     track it was built from when that OT table is in the nano."""
@@ -468,36 +507,33 @@ def _configureModeTables(process, variant, sched):
         module.clusterTableName = "L1TSmartPixelsCluster" if _CLUSTER_TABLE in sched else ""
 
 
-def _configureStubLinks(process, variant, sched):
+def _configureStubLinks(process, st, variant, sched):
     """Link-only track -> stub tables (<track table>Stub: trackIdx, otStubIdx -> L1TOTStub)
-    for the OT and the SmartPixels track tables, and SmartPixels track -> cluster tables
-    (<track table>Cluster: trackIdx, clusterIdx -> L1TSmartPixelsCluster; for seedlessRefit the
-    hits accepted into the refit), each when both of its tables are in the nano."""
+    for the OT and the SmartPixels track tables (canonical and coexist), and SmartPixels
+    track -> cluster tables (<track table>Cluster: trackIdx, clusterIdx -> L1TSmartPixelsCluster;
+    for seedlessRefit the hits accepted into the refit), each when both of its tables are in
+    the nano."""
     from DPGAnalysis.Phase3SmartPixelsNanoAOD.l1tPh3SmartPixelsNano_cff import (
         addPh3L1SmartPixelsStubTables, l1tPh3TrackStubLinkTable, l1tPh3SmartPixelsTrackClusterLinkTable)
     if _OT_STUB_TABLE in sched:
         doPrompt, doExtended = (_OT_TABLES[s][0] in sched for s in ("prompt", "ext"))
         if doPrompt or doExtended:
             addPh3L1SmartPixelsStubTables(process, doPrompt=doPrompt, doExtended=doExtended)
-    if variant is None:
-        return
-    for side, (tableLabel, tableName) in _SP_TABLES.items():
-        if tableLabel not in sched:
-            continue
+    for spVariant, side, suffix, tableName in _spTrackTables(st, variant, sched):
         ext = "Ext" if side == "ext" else ""
-        tracks = cms.InputTag(_spLabels(variant)[side], "Level1TTTracks")
+        tracks = cms.InputTag(_spLabels(spVariant)[side], "Level1TTTracks")
         if _OT_STUB_TABLE in sched:
-            label = f"l1tPh3{ext}SmartPixelsTrackStubLinkTable"
+            label = f"l1tPh3{ext}SmartPixelsTrackStubLink{suffix}Table"
             if not hasattr(process, label):
                 setattr(process, label, l1tPh3TrackStubLinkTable.clone(
                     tracks=tracks, linkTableName=f"{tableName}Stub", trackTableName=tableName))
                 _addToNano(process, "p3L1SmartPixelsLinkTask", [label])
         if _CLUSTER_TABLE in sched:
-            label = f"l1tPh3{ext}SmartPixelsTrackClusterLinkTable"
+            label = f"l1tPh3{ext}SmartPixelsTrackClusterLink{suffix}Table"
             if not hasattr(process, label):
                 setattr(process, label, l1tPh3SmartPixelsTrackClusterLinkTable.clone(
                     tracks=tracks, linkTableName=f"{tableName}Cluster", trackTableName=tableName,
-                    sidecar=tracks if variant[0] == "seedlessRefit" else cms.InputTag("")))
+                    sidecar=tracks if spVariant[0] == "seedlessRefit" else cms.InputTag("")))
                 _addToNano(process, "p3L1SmartPixelsLinkTask", [label])
 
 

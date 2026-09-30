@@ -289,11 +289,14 @@ cmsDriver.py stepWF1 -s RAW2DIGI,L1TrackTrigger,L1,L1P2GT,NANO:@L1PFTrkNanowithG
 ```
 
 Notes:
-- Coexist runs on a BASE flavour (`@L1TrkNano*`/`@L1PFNano*`/`@L1PFTrkNano*`) and adds one
-  SUFFIXED table pair per requested variant; it never writes the unsuffixed
-  `L1TSmartPixelsTrack`/`L1TSmartPixelsExtTrack`. Those belong to `@SPTrk`, so coexist
-  raises when it is composed. For the cluster tables add
+- Coexist runs on a BASE flavour (`@L1TrkNano*`/`@L1PFNano*`/`@L1PFTrkNano*`) or on the add-on
+  flavours without `@SPTrk`, and adds one SUFFIXED table pair per requested variant; it never
+  writes the unsuffixed `L1TSmartPixelsTrack`/`L1TSmartPixelsExtTrack`. Those belong to
+  `@SPTrk`, so coexist raises when it is composed. For the cluster tables on a base flavour add
   `addPh3L1SmartPixelsClusters` in `--customise_commands`.
+- Each variant also gets the links the add-on flavours give the canonical tables,
+  `L1TSmartPixels[Ext]Track<Suffix>Stub` (-> `L1TOTStub`) and `...Cluster`
+  (-> `L1TSmartPixelsCluster`), whenever those tables are in the nano, in either order.
 - Downstream objects (vertices, PF/Puppi, jets, MET, GT) reflect the STANDARD tracks; in a
   NANO-only job they are re-emulated on demand from them (standard L1 tasks).
 

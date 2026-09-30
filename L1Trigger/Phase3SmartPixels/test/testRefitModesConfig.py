@@ -17,7 +17,8 @@ L1Trigger/Phase3SmartPixels/python/customizeSmartPixels_cff.py:
  (i) one cluster table for barrel + discs: discScope validated, rec hits and
      table agree in either customise order, no separate disc table; stub tables
      carry the OT stub collection for otStubIdx; L1TTP cuts on |p|; a cut on a
-     row-aligned track table is refused.
+     row-aligned track table is refused;
+ (k) coexist variants get their track -> stub / cluster link tables in either order.
 
 Run inside the container:
   source /cvmfs/cms.cern.ch/cmsset_default.sh
@@ -667,6 +668,45 @@ expect_raises(RuntimeError, lambda: _flav._checkRecoInputs(_phys_job(False), _fl
               "@PHYS without RECO+PAT and without an input to check is refused", contains="MINIAOD")
 _flav._checkRecoInputs(_phys_job(True), _flav._state(_phys_job(True)))
 check(True, "@PHYS with RECO+PAT in the job passes the guard")
+
+# coexist variants get the canonical tables' links, whichever of coexist and the tables comes first
+print("[k] coexist variant track -> stub / cluster links, either order")
+
+
+def _coexist_links(tablesFirst):
+    p = cms.Process("TEST")
+    p.pdummy = cms.Path()
+    p.l1tDummyTable = cms.EDProducer("X")
+    p.p2L1TablesTask = cms.Task(p.l1tDummyTable)
+    p.l1tPh2NanoTask = cms.Task(p.p2L1TablesTask)
+    if tablesFirst:
+        _flav.addSPClusterStubTables(p)
+    smartPixelsCoexist(p, variants=[("seedlessRefit", "1111"), ("seedlessRefit", "1100")], addNanoTables=True,
+                       trackInputMode="rebuildTracksFromStubs", seedlessRefitConfig={"angleSource": "emu"})
+    if not tablesFirst:
+        _flav.addSPClusterStubTables(p)
+    return p
+
+
+_links = {}
+for tablesFirst in (True, False):
+    pl = _coexist_links(tablesFirst)
+    for sfx in ("SeedlessRefitAAAA", "SeedlessRefitAAII"):
+        for ext in ("", "Ext"):
+            for kind, target in (("Stub", "L1TOTStub"), ("Cluster", "L1TSmartPixelsCluster")):
+                label = f"l1tPh3{ext}SmartPixelsTrack{kind}Link{sfx}Table"
+                mod = getattr(pl, label, None)
+                track = f"L1TSmartPixels{ext}Track{sfx}"
+                check(mod is not None and label in pl.l1tPh2NanoTask.moduleNames()
+                      and mod.linkTableName.value() == f"{track}{kind}" and mod.trackTableName.value() == track
+                      and mod.tracks == cms.InputTag(smartPixelsVariantLabels(
+                          "seedlessRefit", "1111" if sfx.endswith("AAAA") else "1100")[ext == "Ext"], "Level1TTTracks"),
+                      f"{track}{kind} -> {target} (tables {'before' if tablesFirst else 'after'} coexist)")
+                if mod is not None:
+                    _links.setdefault(label, set()).add(mod.dumpPython())
+    check(pl.smartPixelsNano.trackInputModeApplied.value() == "rebuildTracksFromStubs",
+          "coexist records its trackInputMode for later reconciles")
+check(all(len(v) == 1 for v in _links.values()), "the link modules do not depend on the order")
 
 # --- summary ---------------------------------------------------------------
 print()
