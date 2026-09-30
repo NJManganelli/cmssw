@@ -3,7 +3,7 @@
 
 // -*- C++ -*-
 //
-// Shared helix-propagation + Inner-Tracker BARREL (TBPX) module lookup used by
+// Shared helix-propagation + Inner-Tracker module lookup (TBPX layers, TFPX discs) used by
 // BOTH the SmartPixelsPayloadAnalyzer (Phase 1) and the L1SmartPixelsTrackProducer
 // seedlessRefit mode (Phase 2). ONE implementation, no drift.
 //
@@ -16,12 +16,12 @@
 //      TRANSVERSE (local x,y) bounds ONLY (ignore thickness/local-z) — the
 //      correct test for a thin sensor.
 //
-// Propagation is intentionally LIGHT: analytic helix -> mean-radius cylinder
-// intersection in the transverse plane, then module lookup + local-frame
-// transform. No reco propagators, no material effects (documented, adequate for
-// barrel window sizing / interim refit). v1 upgrades (k=2-nearest modules, plane
-// re-propagation, endcap TEPX/TFPX) land HERE once, for both consumers.
+// Propagation is intentionally LIGHT: analytic helix -> mean-radius cylinder (barrel) or
+// mean-|z| plane (disc) intersection, then module lookup (plane re-propagation onto the
+// candidate modules) + local-frame transform. No reco propagators, no material effects.
 
+#include <array>
+#include <utility>
 #include <vector>
 
 #include "DataFormats/GeometryVector/interface/GlobalPoint.h"
@@ -55,10 +55,10 @@ namespace smartpixels {
     double pt = 1.;
   };
 
-  // Result of propagating a helix to one TBPX layer and landing it on a module.
+  // Result of propagating a helix to one IT surface and landing it on a module.
   struct Crossing {
     bool valid = false;
-    int layer = 0;                       // 1-based TBPX layer
+    int layer = 0;                       // IT surface code (SmartPixelsSurface.h): 1-4 TBPX, 11-14 ID1-ID4
     const PixelGeomDetUnit* det = nullptr;
     unsigned int detId = 0;
     GlobalPoint global;                  // crossing point (global) [cm]
@@ -74,14 +74,27 @@ namespace smartpixels {
   public:
     HelixProjector() = default;
 
-    // Build the per-layer module cache from geometry. Idempotent for a fixed
-    // (geometry pointer, nLayers): rebuilds only if those change. Safe to call
-    // every event. nLayers clamps to [1,4] (TBPX barrel layers).
-    void build(const TrackerGeometry& geom, const TrackerTopology& topo, int nLayers);
+    // Build the per-layer (and per-disc) module cache from geometry. Idempotent for a
+    // fixed (geometry pointer, nLayers, nDiscs): rebuilds only if those change. Safe to
+    // call every event. nLayers clamps to [1,4] (TBPX barrel layers), nDiscs to [0,4]
+    // (TFPX disks 1..nDiscs, both sides = ID1-ID4).
+    void build(const TrackerGeometry& geom, const TrackerTopology& topo, int nLayers, int nDiscs = 0);
 
     bool ready() const { return built_ && geomTag_ != nullptr; }
     int nLayers() const { return static_cast<int>(layerModules_.size()); }
+    int nDiscs() const { return static_cast<int>(discZ_.size()); }
     double layerRadius(int layer1based) const { return layerRadius_.at(layer1based - 1); }
+
+    // Transverse arc length from the POCA at which the helix meets the nominal surface
+    // (layer cylinder at the mean radius; disc plane at the mean |z| on the side the track
+    // heads to), or -1 if it does not within half a turn. crossed is set when that point
+    // lies within the surface's module extent (barrel |z|, disc radius) widened by
+    // `margin` [cm]: the surfaces the particle traverses, for path ordering and material.
+    double pathToSurface(const HelixParams& helix, unsigned surface, double margin, bool& crossed) const;
+
+    // crossLayer for a TBPX surface code (1-4), the disc equivalent for 11-14.
+    Crossing crossSurface(const HelixParams& helix, unsigned surface, const MagneticField& field,
+                          double predAngleMaxAbs = 0.) const;
 
     // Propagate the helix to TBPX layer `layer1based` (1..nLayers) and find the
     // module it lands on. Returns Crossing{valid=false} if the helix does not
@@ -97,12 +110,32 @@ namespace smartpixels {
     Crossing crossLayer(const HelixParams& helix, int layer1based, const MagneticField& field,
                         double predAngleMaxAbs = 0.) const;
 
+    // Propagate the helix to disc `disk` (1..nDiscs) on the side it heads to and land it
+    // on a module, as crossLayer does for a layer.
+    Crossing crossDisc(const HelixParams& helix, int disk, const MagneticField& field,
+                       double predAngleMaxAbs = 0.) const;
+
   private:
+    // Newton re-propagation of the helix onto each candidate module plane (starting at
+    // transverse arc length sTransverse), containment test, nearest accepted centre.
+    Crossing land(const HelixParams& helix,
+                  double sTransverse,
+                  const std::vector<std::pair<double, const GeomDet*>>& candidates,
+                  int surface,
+                  const MagneticField& field,
+                  double predAngleMaxAbs) const;
+
     bool built_ = false;
     const TrackerGeometry* geomTag_ = nullptr;  // identity of the cached geometry
     int nLayersReq_ = 0;
+    int nDiscsReq_ = 0;
     std::vector<std::vector<const GeomDet*>> layerModules_;  // [layer-1] -> units (GeomDetUnit)
     std::vector<double> layerRadius_;                            // [layer-1] mean r [cm]
+    std::vector<double> layerHalfZ_;                             // [layer-1] max |z| of the modules [cm]
+    std::vector<std::array<std::vector<const GeomDet*>, 2>> discModules_;  // [disk-1][z < 0, z > 0]
+    std::vector<double> discZ_;                                  // [disk-1] mean |z| [cm]
+    std::vector<std::pair<double, double>> discR_;               // [disk-1] module radial extent [cm]
+    std::vector<double> discMaxHalfDiag_;                        // [disk-1] largest module half-diagonal [cm]
   };
 
 }  // namespace smartpixels
