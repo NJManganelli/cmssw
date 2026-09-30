@@ -29,6 +29,10 @@ So configs are GENERATED here, from named axes, and are not kept.
     ./makeSpixConfig.py --pu 200 --tier study --coopt --variant seedlessRefit:1111 \
         --events 100 -o /work/spix_coopt.py
 
+    # the multi-variant omnibus nano: all 15 non-trivial seedlessRefit masks side by side
+    ./makeSpixConfig.py --pu 200 --tier coexist --variant seedlessRefit:all \
+        --events 100 -o /work/coexist15.py
+
     # SPStudyNano: the study tier plus the regular nano (@PHYS). The input is inspected:
     # with MINIAOD products the job is NANO only, else it also runs RAW2DIGI,RECO,RECOSIM,PAT
     # with the step-3 options of the RelVal workflow (runTheMatrix --dryRun)
@@ -83,12 +87,25 @@ TIERS = {
     # plus the regular nano (SPStudyNano, --reco)
     "study":          (None, None, True),
     "reco":           (None, "PHYS", True),
+    # coexist only: every --variant as suffixed tables next to the OT tracks, on the add-on
+    # flavours (COEXIST_ADDONS); the L1 emulation stays on the OT tracks
+    "coexist":        (None, None, True),
 }
+COEXIST_ADDONS = ["@Phase2L1DPGwithGen", "@L1Trk", "@SPClustersStubs", "@TPTruth1GeVLinked"]
 COOPT_ADDONS = {
     "L1TrkNano": ["@L1Trk", "@SPTrk"],
     "L1PFNano": ["@L1PF", "@SPTrk"],
     "L1PFTrkNano": ["@L1PF", "@L1Trk", "@SPTrk"],
 }
+
+
+# seedlessRefit:all = the 15 non-trivial masks (IIII, the passthrough, has no refit)
+ALL_SEEDLESSREFIT_MASKS = [a + b + c + d for a in "01" for b in "01" for c in "01" for d in "01"
+                           if "1" in a + b + c + d]
+
+
+def expand_variants(specs):
+    return [f"seedlessRefit:{m}" for m in ALL_SEEDLESSREFIT_MASKS] if specs == ["seedlessRefit:all"] else specs
 
 
 def variant_tags(spec):
@@ -105,6 +122,10 @@ def variant_tags(spec):
 def nano_step(args):
     base, payload, truth = TIERS[args.tier]
     gen = "withGen" if truth else ""
+    if args.tier == "coexist":
+        if args.coopt:
+            raise SystemExit("--tier coexist runs without --coopt")
+        return "NANO:" + "+".join(COEXIST_ADDONS)
     if not args.coopt:
         if base is None:
             raise SystemExit(f"--tier {args.tier} is a --coopt tier")
@@ -167,7 +188,7 @@ def build_customise(args, overrides):
         variants.append(f'("{mode}", "{activeSP}")' if activeSP else f'("{mode}", None)')
 
     # the nano flavours default to the emu angle source, coexist to the PixelAV payload
-    angle_source = args.angle_source or ("emu" if args.coopt else "payload")
+    angle_source = args.angle_source or ("emu" if args.coopt or args.tier == "coexist" else "payload")
     refit = {"angleSource": angle_source}
     if angle_source == "payload":
         refit["pixelavAngleSet"] = args.pixelav_angle_set
@@ -300,7 +321,8 @@ def main():
     ap.add_argument("--variant", action="append", default=None,
                     help="mode[:activeSP], e.g. seedlessRefit:1111, passthrough. REPEATABLE: give it "
                          "several times to emit one table set per variant from a single pass over "
-                         "the input, which is how the activeSP sweep avoids 15 reconstructions")
+                         "the input, which is how the activeSP sweep avoids 15 reconstructions; "
+                         "seedlessRefit:all = the 15 non-trivial masks")
     ap.add_argument("--events", type=int, default=100)
     ap.add_argument("--threads", type=int, default=4,
                     help="NOTE multi-threaded runs write events in COMPLETION order, so two "
@@ -316,8 +338,8 @@ def main():
     ap.add_argument("--prompt-hnpar", type=int, default=5, choices=[4, 5])
     ap.add_argument("--use-angles", default=None, choices=["none", "alpha", "alphaBeta"])
     ap.add_argument("--angle-source", default=None, choices=["emu", "payload"],
-                    help="rec-hit angle source (default: emu with --coopt, the nano flavours' "
-                         "default; payload for coexist)")
+                    help="rec-hit angle source (default: emu with the nano flavours, i.e. --coopt "
+                         "or --tier coexist; payload otherwise)")
     ap.add_argument("--pixelav-angle-set", default=DEFAULT_ANGLE_SET)
     ap.add_argument("--reco", action="store_true",
                     help="SPStudyNano (--tier reco --coopt): the study tier plus the regular nano; "
@@ -342,6 +364,7 @@ def main():
     args = ap.parse_args()
     if not args.variant:
         args.variant = ["seedlessRefit:1111"]
+    args.variant = expand_variants(args.variant)
     if args.reco:
         args.tier, args.coopt = "reco", True
 
