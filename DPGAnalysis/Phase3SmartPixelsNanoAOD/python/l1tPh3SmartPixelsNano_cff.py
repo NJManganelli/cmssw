@@ -276,11 +276,18 @@ def produceMiniAODGenInputs(process, assumeNoMiniAOD=False):
     """withGen tiers on a GEN-SIM-DIGI-RAW input (no MINIAOD, no PAT in the job), run with
     --procModifiers nano_l1_hlt: rebuild the MINIAOD gen products the stock gen tables read
     from the persisted GEN-SIM products, with the stock MINIAOD slimming modules and their
-    stock parameters (PhysicsTools/PatAlgos slimming + miniAOD_customizeMC):
+    stock parameters (PhysicsTools/PatAlgos slimming + miniAOD_customizeMC), and put back the
+    stock gen tables nano_l1_hlt excludes for lack of PAT inputs:
       prunedGenParticles(WithStatusOne), packedGenParticles <- genParticles
-      slimmedGenJets <- ak4GenJetsNoNu
+      slimmedGenJets <- ak4GenJetsNoNu;  slimmedGenJetsAK8 <- ak8GenJetsNoNu
       slimmedGenJetsFlavourInfos (selectedHadronsAndPartonsForGenJetsFlavourInfos,
         ak4GenJetFlavourInfos)
+      GenJetAK8 (+ flavour): the stock genJetAK8Table / genJetAK8FlavourAssociation /
+        genJetAK8FlavourTable, unchanged.
+      GenMET: the stock table reads pat::MET (slimmedMETs, needs RECO); genMetTrueTable is
+        the stock NANOGEN construction (customizeNanoGEN: singleton candidate table on
+        genMetTrue) with the stock GenMET columns and precision. slimmedMETs carries a copy
+        of genMetTrue as its genMET, so the values are the same.
     Refused when the input carries any of these products (they would shadow the persisted
     ones; there the stock tables read them directly), when the job already defines them
     (PAT in the job), on a tier without the gen tables, or without nano_l1_hlt.
@@ -290,20 +297,22 @@ def produceMiniAODGenInputs(process, assumeNoMiniAOD=False):
     """
     from PhysicsTools.PatAlgos.slimming.genParticles_cff import (
         prunedGenParticlesWithStatusOne, prunedGenParticles, packedGenParticles)
-    from PhysicsTools.PatAlgos.slimming.slimmedGenJets_cfi import slimmedGenJets
+    from PhysicsTools.PatAlgos.slimming.slimmedGenJets_cfi import slimmedGenJets, slimmedGenJetsAK8
     from PhysicsTools.PatAlgos.slimming.slimmedGenJetsFlavourInfos_cfi import slimmedGenJetsFlavourInfos
     from PhysicsTools.JetMCAlgos.HadronAndPartonSelector_cfi import selectedHadronsAndPartonsForGenJetsFlavourInfos
     from PhysicsTools.JetMCAlgos.AK4GenJetFlavourInfos_cfi import ak4GenJetFlavourInfos
+    from PhysicsTools.NanoAOD.simpleSingletonCandidateFlatTableProducer_cfi import (
+        simpleSingletonCandidateFlatTableProducer)
     producers = {"prunedGenParticlesWithStatusOne": prunedGenParticlesWithStatusOne,
                  "prunedGenParticles": prunedGenParticles,
                  "packedGenParticles": packedGenParticles,
                  "slimmedGenJets": slimmedGenJets,
+                 "slimmedGenJetsAK8": slimmedGenJetsAK8,
                  "selectedHadronsAndPartonsForGenJetsFlavourInfos": selectedHadronsAndPartonsForGenJetsFlavourInfos,
                  "ak4GenJetFlavourInfos": ak4GenJetFlavourInfos,
                  "slimmedGenJetsFlavourInfos": slimmedGenJetsFlavourInfos}
     # products whose presence marks a MINIAOD-carrying input, beyond the ones made here
-    miniAODMarkers = set(producers) | {"slimmedGenJetsAK8", "slimmedAddPileupInfo", "slimmedMETs",
-                                       "offlineSlimmedPrimaryVertices"}
+    miniAODMarkers = set(producers) | {"slimmedAddPileupInfo", "slimmedMETs", "offlineSlimmedPrimaryVertices"}
 
     if not hasattr(process, "genNanoTask"):
         raise RuntimeError("produceMiniAODGenInputs: the job has no gen tables (a withGen tier)")
@@ -328,7 +337,16 @@ def produceMiniAODGenInputs(process, assumeNoMiniAOD=False):
 
     for label, module in producers.items():
         setattr(process, label, module.clone())
-    process.smartPixelsMiniAODGenTask = cms.Task(*[getattr(process, label) for label in producers])
+    process.genMetTrueTable = simpleSingletonCandidateFlatTableProducer.clone(
+        src="genMetTrue",
+        name=process.metMCTable.name,
+        doc=process.metMCTable.doc,
+        variables=cms.PSet(pt=process.metMCTable.variables.pt.clone(expr="pt"),
+                           phi=process.metMCTable.variables.phi.clone(expr="phi")))
+    process.smartPixelsMiniAODGenTask = cms.Task(
+        *[getattr(process, label) for label in producers],
+        process.genJetAK8Table, process.genJetAK8FlavourAssociation, process.genJetAK8FlavourTable,
+        process.genMetTrueTable)
     process.l1tPh2NanoTask.add(process.smartPixelsMiniAODGenTask)
     return process
 
