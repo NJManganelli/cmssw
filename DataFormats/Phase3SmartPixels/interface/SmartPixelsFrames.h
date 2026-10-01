@@ -134,9 +134,18 @@ namespace smartpixels {
   // orientation is now asserted SEPARATELY and FIRST. General lesson: "the inverse
   // transform reproduces the input" is evidence that the transform is invertible,
   // never that the convention is correct.
+  //
+  // The orientation assertion needs a tie band. A direction perpendicular to the
+  // module's radius vector (on a disc: reported cotBeta ~ 0; on a tilted TBPX module:
+  // cotAlpha ~ cot(tilt)) has radial component ~0, where the outward rule has no
+  // preferred sense and the float rotation plus the float storage of dirPhi decide
+  // it (half an ulp of phi ~ 1.2e-7 rad). Seen once in production: an ID2 cluster
+  // with cotBeta = -8.8e-10, radial cosine +2.6e-9 at the forward map and -1.25e-8
+  // after storing dirPhi. Both senses are equally valid there, so only a radial
+  // cosine below -senseTol counts as a reversal.
   template <typename Det>
   inline bool closesBackToModule(const Det& det, const GlobalDirection& g,
-                                 double cotAlpha, double cotBeta, double tol = 1e-3) {
+                                 double cotAlpha, double cotBeta, double tol = 1e-3, double senseTol = 1e-5) {
     if (!g.valid)
       return true;
     const double st = 1.0 / std::hypot(1.0, static_cast<double>(g.dirCotTheta));
@@ -144,7 +153,7 @@ namespace smartpixels {
                           std::sin(g.dirPhi) * st,
                           g.dirCotTheta * st);
     const auto pos = det.position();
-    if (gv.x() * pos.x() + gv.y() * pos.y() < 0.)
+    if (gv.x() * pos.x() + gv.y() * pos.y() < -senseTol * std::hypot(pos.x(), pos.y()))
       return false;  // reversed: invisible to the ratio test below, so checked here
     const LocalVector lv = det.toLocal(gv);
     if (!(std::abs(lv.z()) > 1e-12))
