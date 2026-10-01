@@ -52,10 +52,51 @@ cmsDriver.py spx -s RAW2DIGI,RECO,RECOSIM,PAT,NANO:@SPStudyNano+@SPActiveLayersA
 ```
 
 `produceMiniAODGenInputs` makes the MINIAOD gen products the withGen tables read; it is only
-for inputs without them and jobs without PAT. `L1Trigger/Phase3SmartPixels/test/makeSpixConfig.py
+for inputs without them and jobs without PAT (see "Gen content without MINIAOD" below). `L1Trigger/Phase3SmartPixels/test/makeSpixConfig.py
 --tier study --coopt` / `--reco` emit these commands. `@Phase2L1DPG` labels its L1 jet template and L1 PUPPI MET table
 `l1jetTable` / `l1puppiMetTable` (as in cms-sw/cmssw#49477), so it composes with `@PHYS`, whose
 `jetTable` / `puppiMetTable` would otherwise clash at configuration time.
+
+### Gen content without MINIAOD (`produceMiniAODGenInputs`)
+
+`--procModifiers nano_l1_hlt` (cms-sw/cmssw#51004) lets the L1 nano run without RECO and PAT. In
+the flavours used here it changes two things: it removes the stock gen tables that read PAT
+products (`puTable`, `metMCTable`, `genJetAK8Table` + flavour), and it removes `hpsTauTable`,
+whose input `l1tHPSPFTauProducerPuppi` is no longer in the L1 menu. On a GEN-SIM-DIGI-RAW input
+(today's RelVals), `produceMiniAODGenInputs` rebuilds the MINIAOD gen products from the
+persisted GEN-SIM products. It uses the stock MINIAOD modules with stock parameters and puts the
+removed gen tables back. The reference is the same flavours run without `nano_l1_hlt` on an input
+WITH MINIAOD. Their configurations differ only in the rows below; the column tables and all
+other modules match.
+
+| nano content | MINIAOD input (reference) | GEN-SIM-DIGI-RAW + `produceMiniAODGenInputs` | match |
+|---|---|---|---|
+| `GenPart` (`finalGenParticles` <- `prunedGenParticles`) | from the input | stock `prunedGenParticles(WithStatusOne)` on `genParticles` | faithful |
+| `GenPart_iso` (`genIso` <- `packedGenParticles`) | from the input | stock `packedGenParticles` | faithful |
+| `GenJet` | `slimmedGenJets` from the input | stock `slimmedGenJets` on the persisted `ak4GenJetsNoNu` | faithful |
+| `GenJet` flavour | `slimmedGenJetsFlavourInfos` from the input | stock chain: `selectedHadronsAndPartonsForGenJetsFlavourInfos` (on `prunedGenParticles`), `ak4GenJetFlavourInfos`, `slimmedGenJetsFlavourInfos` | faithful |
+| `GenJetAK8` + flavour | `slimmedGenJetsAK8` from the input, stock tables | stock `slimmedGenJetsAK8` on the persisted `ak8GenJetsNoNu`, the same stock tables | faithful |
+| `GenMET` | stock `metMCTable`: `slimmedMETs.genMET` (a copy of `genMetTrue`) | `genMetTrueTable`: the NANOGEN construction (singleton candidate table on the persisted `genMetTrue`), stock name, columns and precision | same values, different table module |
+| `Pileup` | stock `puTable` on `slimmedAddPileupInfo` + `offlineSlimmedPrimaryVertices` | `genPileupTable` = stock `puTable` with `savePUDensityVars=False`, on the stock `slimmedAddPileupInfo` (from `addPileupInfo`) | approximate: `nTrueInt`, `nPU`, `sumEOOT`, `sumLOOT`, `pthatmax` as in the reference; `pudensity`, `gpudensity` ABSENT (counted around the offline primary vertex, which needs RECO) |
+| `GenVisTau`, `GenVtx` | same modules on the same inputs | same | identical |
+| `L1hpsTau` | `hpsTauTable` reads `l1tHPSPFTauProducerPuppi` | not written (`nano_l1_hlt`) | missing in both on CMSSW_20 inputs: the producer is not in the L1 menu (cms-sw/cmssw#51803 removes the table) |
+
+`SPStudyNano` on a GEN-SIM-DIGI-RAW input runs RECO and PAT in the job, so `@PHYS` writes
+`GenMET`, `GenJetAK8` and `Pileup` with the stock modules. Against the MINIAOD-input reference,
+only `L1hpsTau` differs. `produceMiniAODGenInputs` refuses that job, because PAT already defines
+the products.
+
+`produceMiniAODGenInputs` refuses at configuration time when:
+- the first input file carries any of these products or `slimmedMETs` /
+  `offlineSlimmedPrimaryVertices` (the in-job copies would shadow the persisted ones);
+- the job defines them already (PAT in the job);
+- the tier has no gen tables;
+- `nano_l1_hlt` is off.
+
+`assumeNoMiniAOD=True` skips only the input check. It is meant for the CRAB pset, whose input
+cannot be read when the pset is loaded. Consequence on an input WITH MINIAOD under `nano_l1_hlt`:
+`L1TSPStudyNano` has no `GenMET`, `GenJetAK8` or `Pileup`, because the modifier removes the
+stock tables and the helper refuses to run.
 
 ### Flavours
 
@@ -271,10 +312,12 @@ is a within-event index into the same-producer, length-checked, 1:1-row-synced r
 track collection (spec §1; a broken sync throws `SmartPixelsSyncBroken`). It has no
 product-availability or no-match failure mode and therefore uses NO -1/-2 sentinel.
 
-Both workflows keep `--procModifiers nano_l1_hlt` in the recipes: it removes the
-HLT-side `dstTriggerAcceptFilter` and the nano-output `SelectEvents`, so ALL events
-are stored (the denominator for trigger-rate/efficiency studies). L1-only and
-L1+Reco chains are filter-free by construction.
+Both workflows keep `--procModifiers nano_l1_hlt` in the recipes. In these flavours it removes
+`hpsTauTable` (its input is not in the L1 menu) and the PAT-reading gen tables, which
+`produceMiniAODGenInputs` puts back (see "Gen content without MINIAOD"). With `@NGTScoutingVal`
+it also removes the HLT-side `dstTriggerAcceptFilter` and the nano-output `SelectEvents`, so ALL
+events are stored (the denominator for trigger-rate and efficiency studies). L1-only and L1+Reco
+chains are filter-free by construction.
 
 ## WF1 — coexist (in-file track-to-track comparison)
 
