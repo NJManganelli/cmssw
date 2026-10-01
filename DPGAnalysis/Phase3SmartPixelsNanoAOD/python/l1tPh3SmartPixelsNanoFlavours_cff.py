@@ -653,20 +653,13 @@ def _configureTrackingParticles(process, st, variant, sched):
 _MINIAOD_BRANCHES = ("patPackedCandidates_packedPFCandidates__", "patJets_slimmedJets__",
                      "patMuons_slimmedMuons__", "recoGenParticles_prunedGenParticles__")
 _RECO_STEPS = "RAW2DIGI,RECO,RECOSIM,PAT"
-_inputMiniAOD = {}
 
 
 def inputHasMiniAOD(fileName):
     """True if the first file of the input carries the MINIAOD products @PHYS reads."""
-    if fileName not in _inputMiniAOD:
-        import uproot  # reads the branch list without the EDM dictionaries
-        try:
-            with uproot.open(fileName[len("file:"):] if fileName.startswith("file:") else fileName) as f:
-                branches = f["Events"].keys(recursive=False)
-        except Exception as e:
-            raise RuntimeError(f"SmartPixels nano: cannot read {fileName} to check it for MINIAOD products: {e}")
-        _inputMiniAOD[fileName] = all(any(b.startswith(p) for b in branches) for p in _MINIAOD_BRANCHES)
-    return _inputMiniAOD[fileName]
+    from DPGAnalysis.Phase3SmartPixelsNanoAOD.l1tPh3SmartPixelsNano_cff import inputEventBranches
+    branches = inputEventBranches(fileName)
+    return all(any(b.startswith(p) for b in branches) for p in _MINIAOD_BRANCHES)
 
 
 def _pathLabels(path):

@@ -295,9 +295,11 @@ for _m in ["TTClusterAssociatorFromPixelDigis"]:
 
 # withGen on a GEN-SIM-DIGI-RAW input: make the MINIAOD gen products the stock gen
 # tables read (prunedGenParticles, packedGenParticles, slimmedGenJets, ...) in-job.
+# hasMiniAOD=False is the operator's statement about the dataset: CRAB replaces
+# fileNames after this pset is loaded, so the input cannot be inspected here.
 if not options.hasMiniAOD:
   from DPGAnalysis.Phase3SmartPixelsNanoAOD.l1tPh3SmartPixelsNano_cff import produceMiniAODGenInputs
-  process = produceMiniAODGenInputs(process)
+  process = produceMiniAODGenInputs(process, assumeNoMiniAOD=True)
 
 # Add early deletion of temporary data products to reduce peak memory need
 from Configuration.StandardSequences.earlyDeleteSettings_cff import customiseEarlyDelete

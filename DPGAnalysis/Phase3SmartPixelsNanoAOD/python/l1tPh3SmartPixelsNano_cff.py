@@ -256,12 +256,37 @@ def useSmartPixelsNanoCompression(process):
     return process
 
 
-def produceMiniAODGenInputs(process):
-    """withGen tiers on a GEN-SIM(-DIGI-RAW) input: produce the MINIAOD gen products
-    the stock gen tables read (prunedGenParticles, packedGenParticles, slimmedGenJets,
-    slimmedGenJetsFlavourInfos) from the persisted genParticles / ak4GenJetsNoNu with
-    the stock PAT slimming modules, on demand. Only for inputs WITHOUT those products:
-    on a MINIAOD-carrying input they would shadow the persisted ones.
+_inputBranches = {}
+
+
+def inputEventBranches(fileName):
+    """Names of the Events branches of an EDM file (read with uproot, so no EDM dictionaries
+    are needed); cached per file."""
+    if fileName not in _inputBranches:
+        import uproot
+        try:
+            with uproot.open(fileName[len("file:"):] if fileName.startswith("file:") else fileName) as f:
+                _inputBranches[fileName] = f["Events"].keys(recursive=False)
+        except Exception as e:
+            raise RuntimeError(f"SmartPixels nano: cannot read {fileName} to inspect its products: {e}")
+    return _inputBranches[fileName]
+
+
+def produceMiniAODGenInputs(process, assumeNoMiniAOD=False):
+    """withGen tiers on a GEN-SIM-DIGI-RAW input (no MINIAOD, no PAT in the job), run with
+    --procModifiers nano_l1_hlt: rebuild the MINIAOD gen products the stock gen tables read
+    from the persisted GEN-SIM products, with the stock MINIAOD slimming modules and their
+    stock parameters (PhysicsTools/PatAlgos slimming + miniAOD_customizeMC):
+      prunedGenParticles(WithStatusOne), packedGenParticles <- genParticles
+      slimmedGenJets <- ak4GenJetsNoNu
+      slimmedGenJetsFlavourInfos (selectedHadronsAndPartonsForGenJetsFlavourInfos,
+        ak4GenJetFlavourInfos)
+    Refused when the input carries any of these products (they would shadow the persisted
+    ones; there the stock tables read them directly), when the job already defines them
+    (PAT in the job), on a tier without the gen tables, or without nano_l1_hlt.
+    assumeNoMiniAOD: skip the input inspection, for jobs whose input cannot be read at
+    configuration time (CRAB replaces fileNames after loading the pset); the caller then
+    vouches for an input without MINIAOD products.
     """
     from PhysicsTools.PatAlgos.slimming.genParticles_cff import (
         prunedGenParticlesWithStatusOne, prunedGenParticles, packedGenParticles)
@@ -269,19 +294,41 @@ def produceMiniAODGenInputs(process):
     from PhysicsTools.PatAlgos.slimming.slimmedGenJetsFlavourInfos_cfi import slimmedGenJetsFlavourInfos
     from PhysicsTools.JetMCAlgos.HadronAndPartonSelector_cfi import selectedHadronsAndPartonsForGenJetsFlavourInfos
     from PhysicsTools.JetMCAlgos.AK4GenJetFlavourInfos_cfi import ak4GenJetFlavourInfos
-    modules = (("prunedGenParticlesWithStatusOne", prunedGenParticlesWithStatusOne.clone()),
-               ("prunedGenParticles", prunedGenParticles.clone()),
-               ("packedGenParticles", packedGenParticles.clone()),
-               ("slimmedGenJets", slimmedGenJets.clone()),
-               ("selectedHadronsAndPartonsForGenJetsFlavourInfos",
-                selectedHadronsAndPartonsForGenJetsFlavourInfos.clone()),
-               ("ak4GenJetFlavourInfos", ak4GenJetFlavourInfos.clone()),
-               ("slimmedGenJetsFlavourInfos", slimmedGenJetsFlavourInfos.clone()))
-    for label, module in modules:
-        if hasattr(process, label):
-            raise RuntimeError(f"produceMiniAODGenInputs: '{label}' is already defined in this job")
-        setattr(process, label, module)
-    process.smartPixelsMiniAODGenTask = cms.Task(*[getattr(process, l) for l, _ in modules])
+    producers = {"prunedGenParticlesWithStatusOne": prunedGenParticlesWithStatusOne,
+                 "prunedGenParticles": prunedGenParticles,
+                 "packedGenParticles": packedGenParticles,
+                 "slimmedGenJets": slimmedGenJets,
+                 "selectedHadronsAndPartonsForGenJetsFlavourInfos": selectedHadronsAndPartonsForGenJetsFlavourInfos,
+                 "ak4GenJetFlavourInfos": ak4GenJetFlavourInfos,
+                 "slimmedGenJetsFlavourInfos": slimmedGenJetsFlavourInfos}
+    # products whose presence marks a MINIAOD-carrying input, beyond the ones made here
+    miniAODMarkers = set(producers) | {"slimmedGenJetsAK8", "slimmedAddPileupInfo", "slimmedMETs",
+                                       "offlineSlimmedPrimaryVertices"}
+
+    if not hasattr(process, "genNanoTask"):
+        raise RuntimeError("produceMiniAODGenInputs: the job has no gen tables (a withGen tier)")
+    if process.genNanoTask.contains(process.metMCTable):
+        raise RuntimeError("produceMiniAODGenInputs: the stock gen tables that read PAT products are "
+                           "scheduled; it is meant for --procModifiers nano_l1_hlt, which removes them")
+    defined = sorted(label for label in miniAODMarkers if hasattr(process, label))
+    if defined:
+        raise RuntimeError(f"produceMiniAODGenInputs: {defined} already defined in this job (PAT in the job?)")
+    if not assumeNoMiniAOD:
+        fileNames = list(getattr(process.source, "fileNames", []))
+        if not fileNames:
+            raise RuntimeError("produceMiniAODGenInputs: the job has no input file to check for MINIAOD products")
+        # product branches are <type>_<module label>_<instance>_<process>.
+        labels = {b.split("_")[1] for b in inputEventBranches(fileNames[0]) if b.count("_") >= 3}
+        present = sorted(labels & miniAODMarkers)
+        if present:
+            raise RuntimeError(f"produceMiniAODGenInputs: {fileNames[0]} carries MINIAOD products {present}; "
+                               "they must not be shadowed -- run without produceMiniAODGenInputs (note: under "
+                               "nano_l1_hlt the stock GenMET/GenJetAK8/Pileup tables are then absent; see "
+                               "DPGAnalysis/Phase3SmartPixelsNanoAOD/README.md)")
+
+    for label, module in producers.items():
+        setattr(process, label, module.clone())
+    process.smartPixelsMiniAODGenTask = cms.Task(*[getattr(process, label) for label in producers])
     process.l1tPh2NanoTask.add(process.smartPixelsMiniAODGenTask)
     return process
 
