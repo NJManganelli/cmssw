@@ -267,15 +267,15 @@ def produceMiniAODGenInputs(process):
         prunedGenParticlesWithStatusOne, prunedGenParticles, packedGenParticles)
     from PhysicsTools.PatAlgos.slimming.slimmedGenJets_cfi import slimmedGenJets
     from PhysicsTools.PatAlgos.slimming.slimmedGenJetsFlavourInfos_cfi import slimmedGenJetsFlavourInfos
-    from PhysicsTools.JetMCAlgos.HadronAndPartonSelector_cfi import selectedHadronsAndPartons
+    from PhysicsTools.JetMCAlgos.HadronAndPartonSelector_cfi import selectedHadronsAndPartonsForGenJetsFlavourInfos
     from PhysicsTools.JetMCAlgos.AK4GenJetFlavourInfos_cfi import ak4GenJetFlavourInfos
     modules = (("prunedGenParticlesWithStatusOne", prunedGenParticlesWithStatusOne.clone()),
                ("prunedGenParticles", prunedGenParticles.clone()),
                ("packedGenParticles", packedGenParticles.clone()),
                ("slimmedGenJets", slimmedGenJets.clone()),
                ("selectedHadronsAndPartonsForGenJetsFlavourInfos",
-                selectedHadronsAndPartons.clone(particles="genParticles")),
-               ("ak4GenJetFlavourInfos", ak4GenJetFlavourInfos.clone(jets="ak4GenJetsNoNu")),
+                selectedHadronsAndPartonsForGenJetsFlavourInfos.clone()),
+               ("ak4GenJetFlavourInfos", ak4GenJetFlavourInfos.clone()),
                ("slimmedGenJetsFlavourInfos", slimmedGenJetsFlavourInfos.clone()))
     for label, module in modules:
         if hasattr(process, label):
