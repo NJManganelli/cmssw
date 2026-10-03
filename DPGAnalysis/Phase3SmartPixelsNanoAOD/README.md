@@ -115,37 +115,42 @@ stock tables and the helper refuses to run.
 
 ### Tables and sizes
 
-`L1TSPStudyNano+@SPActiveLayersAAAA`, 3 PU200 events of RelValTTbar D121 (file3),
-`rebuildTracksFromStubs`, emu angles. Logical types as in coffea/awkward
-(`var` = per-event list); a link table row is one (parent, child) pair.
+`L1TSPStudyNano+@SPActiveLayersAAAA`, 100 PU200 events of RelValTTbar D121 (file3),
+`rebuildTracksFromStubs`, emu angles, ZSTD level 5 (the canon_v2 production, build
+92bad91b2ba). Logical types as in coffea/awkward (`var` = per-event list); a link table row is
+one (parent, child) pair.
 
 | table | logical type | rows/event | kB/event |
 |---|---|---:|---:|
-| `L1TSmartPixelsCluster` | var * cluster | 73922 | 3123 |
-| `L1TTP` (`@TPTruth1GeVLinked`) | var * TrackingParticle | 125110 | 3029 |
-| `L1TOTStub` | var * stub | 15343 | 228 |
-| `L1TSmartPixelsExtRefitHit` | var * (ext SP track, crossing) | 639 | 62 |
-| `L1TSmartPixelsRefitHit` | var * (SP track, crossing) | 485 | 50 |
-| `L1TSmartPixelsExtTrack` (+ `spix*`, `l1TrackIdx`) | var * track | 252 | 41 |
-| `L1TExtTrack` (+ truth, GTT) | var * track | 252 | 34 |
-| `L1TSmartPixelsTrack` (+ `spix*`, `l1TrackIdx`) | var * track | 188 | 31 |
-| `L1TTrack` (+ truth, GTT) | var * track | 188 | 28 |
-| `L1TExtTrackStub`, `L1TSmartPixelsExtTrackStub` | var * (track, stub) | 1295 each | 2.5 each |
-| `L1TTrackStub`, `L1TSmartPixelsTrackStub` | var * (track, stub) | 1019 each | 2.1 each |
-| `L1TSmartPixelsExtTrackCluster` | var * (track, cluster) | 581 | 1.4 |
-| `L1TSmartPixelsTrackCluster` | var * (track, cluster) | 465 | 1.2 |
-| `L1PFCand` | var * candidate | 420 | 10.6 |
-| `L1HGCCluster` | var * cluster | 213 | 9.0 |
-| `L1PuppiCand`, `L1ExtPuppiCand` | var * candidate | 66, 69 | 3.3, 3.4 |
-| `L1SC4JetCands`, `L1SC8JetCands`, `L1SC4NGJetCands` | var * (jet, candidate) | 57, 66, 60 | 0.4 each |
-| `L1DispVertex` | var * vertex | 75 | 3.5 |
-| `GenPart` | var * particle | 50 | 1.7 |
-| 60 other base-tier tables | | | 23 |
-| **total** | | | **6693** |
+| `L1TSmartPixelsCluster` | var * cluster | 72469 | 3984 |
+| `L1TTP` (`@TPTruth1GeVLinked`) | var * TrackingParticle | 130527 | 3360 |
+| `L1TOTStub` | var * stub | 15250 | 345 |
+| `L1TSmartPixelsExtRefitHit` | var * (ext SP track, crossing) | 980 | 96 |
+| `L1TSmartPixelsRefitHit` | var * (SP track, crossing) | 770 | 76 |
+| `L1TSmartPixelsExtTrack` (+ `spix*`, `l1TrackIdx`) | var * track | 259 | 39 |
+| `L1TExtTrack` (+ truth, GTT) | var * track | 259 | 32 |
+| `L1TSmartPixelsTrack` (+ `spix*`, `l1TrackIdx`) | var * track | 186 | 27 |
+| `L1TTrack` (+ truth, GTT) | var * track | 186 | 24 |
+| `L1TExtTrackStub`, `L1TSmartPixelsExtTrackStub` | var * (track, stub) | 1321 each | 3.2 each |
+| `L1TTrackStub`, `L1TSmartPixelsTrackStub` | var * (track, stub) | 1008 each | 2.5 each |
+| `L1TSmartPixelsExtTrackCluster` | var * (track, cluster) | 896 | 2.4 |
+| `L1TSmartPixelsTrackCluster` | var * (track, cluster) | 743 | 2.0 |
+| `L1PFCand` | var * candidate | 410 | 9.3 |
+| `L1HGCCluster` | var * cluster | 200 | 7.9 |
+| `L1PuppiCand`, `L1ExtPuppiCand` | var * candidate | 53, 56 | 1.4, 1.4 |
+| `L1SC4JetCands`, `L1SC8JetCands`, `L1SC4NGJetCands` | var * (jet, candidate) | 47, 53, 49 | 0.1 each |
+| `L1DispVertex` | var * vertex | 108 | 3.7 |
+| `GenPart` | var * particle | 49 | 0.8 |
+| 60 other base-tier tables | | | 3.6 |
+| **total** | | | **8025** |
+
+Later additions, measured on 3 events of the same file: `GenJetAK8`, `GenMET` and `Pileup`
+(gen content without MINIAOD) add 0.6 kB/event, and the `L1TOTStub` `isPS` / `isTilted` flags
+0.24 kB/event.
 
 The IIII control writes the same tables (no refit hit tables, empty `...Cluster` link tables),
-6552 kB/event. Two tables dominate: every IT cluster, and the TrackingParticles linked to them
-(89% of the `L1TTP` rows have pT < 1 GeV).
+7824 kB/event on the same events. Two tables dominate: every IT cluster, and the
+TrackingParticles linked to them (89% of the `L1TTP` rows have pT < 1 GeV).
 
 ### OT stub module flags (`L1TOTStub`)
 
