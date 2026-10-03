@@ -105,7 +105,7 @@ stock tables and the helper refuses to run.
 | `@Phase2L1DPG[withGen]` (base) | L1 objects, GT; gen objects | – |
 | `@L1Trk` | `L1TTrack`, `L1TExtTrack` (15 `cov_*`), GTT columns; with gen: track truth | `tpIdx` -> `L1TTP`; `L1DispVertex` track indices |
 | `@L1PF` | `L1PFCand`, `L1PuppiCand`, `L1ExtPuppiCand`, `L1HGCCluster`, SC4/SC8/SC4NG constituent links | candidate `l1TrackIdx` -> `L1TTrack`/`L1TExtTrack`, or -> `L1TSmartPixels(Ext)Track` when a variant is wired |
-| `@TrkStubs` | `L1TOTStub` (every OT stub, with truth) | track -> stub tables `<track table>Stub` (`trackIdx`, `otStubIdx`) for the OT and SmartPixels tracks; stub `tpIdx`, `tpIdxInner`, `tpIdxOuter` |
+| `@TrkStubs` | `L1TOTStub` (every OT stub, with truth and the `isPS` / `isTilted` module flags) | track -> stub tables `<track table>Stub` (`trackIdx`, `otStubIdx`) for the OT and SmartPixels tracks; stub `tpIdx`, `tpIdxInner`, `tpIdxOuter` |
 | `@SPTrk` | `L1TSmartPixelsTrack`, `L1TSmartPixelsExtTrack` (15 `cov_*`) of the wired variant | `l1TrackIdx` -> the OT track it was built from |
 | `@SPClustersStubs` | `L1TOTStub`, `L1TSmartPixelsCluster` (every IT cluster, TBPX + ID1-ID4) | track -> stub as above; SmartPixels track -> cluster `<track table>Cluster` (`trackIdx`, `clusterIdx`; seedlessRefit: the accepted IT hits, no rows for passthrough); cluster/stub `tpIdx` |
 | `@SPSeedlessRefit` | mode tag: the seedlessRefit variant; its `L1TSmartPixels[Ext]RefitHit` and `spix*` columns on the SmartPixels tables | hit -> SmartPixels track (`trackIdx`), hit -> cluster (`selClusterIdx`) |
@@ -146,6 +146,24 @@ stock tables and the helper refuses to run.
 The IIII control writes the same tables (no refit hit tables, empty `...Cluster` link tables),
 6552 kB/event. Two tables dominate: every IT cluster, and the TrackingParticles linked to them
 (89% of the `L1TTP` rows have pT < 1 GeV).
+
+### OT stub module flags (`L1TOTStub`)
+
+Two bool columns carry the module flags the L1 track finder attaches to each stub, derived as it
+derives them, from the stub's lower-sensor detId (the `detId` column):
+
+- `isPS`: PS module (macro-pixel + strip sensors); false = 2S (two strip sensors).
+  `TrackerGeometry::getDetectorType(detId) == Ph2PSP`, the test `trackerDTC::Setup` uses for the
+  `psModule` that `L1FPGATrackProducer` hands to the tracklet stub as `isPSmodule`. The tracklet
+  chain seeds on disks with PS stubs only, has separate PS and 2S match windows, and keeps a 2S
+  disk stub's r only as a ring-half index (ring centre +- 2.5 cm). D121: barrel L1-L3 PS, L4-L6
+  2S; disks D1-D2 rings 1-10 and D3-D5 rings 1-7 PS, the five outer rings 2S.
+- `isTilted`: barrel module in a tilted ring (`TrackerTopology::barrelTiltTypeP2` = `tiltedZminus`
+  or `tiltedZplus`), the tracklet stub's `tiltedBarrel`; the hybrid KF scales the z variance of
+  these stubs only. D121: L1-L3 outside their flat central section, 12 rings per side; false for
+  flat rings and on disks.
+
+Cost: 0.25 kB/event at PU200 (ZSTD-5), 1 byte/row uncompressed.
 
 ### TrackingParticle flavours (`L1TTP`)
 

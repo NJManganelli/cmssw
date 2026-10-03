@@ -121,7 +121,7 @@ public:
     std::vector<bool> tpGenuine, tpCombinatoric, tpUnknown;
 
     std::vector<uint8_t> layer;
-    std::vector<bool> isBarrel;
+    std::vector<bool> isBarrel, isPS, isTilted;
     std::vector<uint32_t> detId;
     std::vector<float> x, y, z, r, phi, bend;
 
@@ -141,9 +141,15 @@ public:
               << tableName_ << " row " << detId.size() << " holds stub key " << ref.key()
               << "; otStubIdx on the on-track stub tables assumes row == key";
         const int lay = static_cast<int>(topo.layer(did));
+        // Both flags exactly as the L1 track finder derives them, on the same lower-sensor detId:
+        // PS = trackerDTC::Setup's psModule test, tilted = L1FPGATrackProducer's tiltedBarrel.
+        const Phase2Tracker::BarrelModuleTilt tilt = topo.barrelTiltTypeP2(did);
 
         detId.push_back(did.rawId());
         isBarrel.push_back(barrel);
+        isPS.push_back(geom.getDetectorType(did) == TrackerGeometry::ModuleType::Ph2PSP);
+        isTilted.push_back(barrel && (tilt == Phase2Tracker::BarrelModuleTilt::tiltedZminus ||
+                                      tilt == Phase2Tracker::BarrelModuleTilt::tiltedZplus));
         layer.push_back(static_cast<uint8_t>(barrel ? lay : 10 + lay));
         x.push_back(pos.x());
         y.push_back(pos.y());
@@ -171,6 +177,15 @@ public:
     tab->addColumn<uint8_t>("layer", layer,
                             "tracker layer/disk id: barrel L1..L6 = 1..6, endcap disk d = 10+d");
     tab->addColumn<bool>("isBarrel", isBarrel, "stub in the OT barrel (TOB) vs endcap");
+    tab->addColumn<bool>("isPS", isPS,
+                         "PS module (macro-pixel + strip sensors; lower sensor of type Ph2PSP), false = 2S "
+                         "(strip + strip). The L1 track finder's per-stub isPSmodule (trackerDTC::Setup): disk "
+                         "seeds take PS stubs only, and a 2S disk stub carries no measured r there");
+    tab->addColumn<bool>("isTilted", isTilted,
+                         "barrel module in a tilted ring (TrackerTopology::barrelTiltTypeP2 tiltedZminus or "
+                         "tiltedZplus; only the PS layers L1-L3 have them), false for flat barrel rings and "
+                         "every endcap module. The L1 track finder's per-stub tiltedBarrel, which scales the "
+                         "KF's z variance");
     tab->addColumn<uint32_t>("detId", detId, "module rawId carrying the stub");
     tab->addColumn<float>("x", x, "stub global x [cm]");
     tab->addColumn<float>("y", y, "stub global y [cm]");
