@@ -20,8 +20,10 @@
 
 #include "DataFormats/GeometryVector/interface/GlobalVector.h"
 #include "DataFormats/GeometryVector/interface/LocalVector.h"
+#include "DataFormats/SiPixelDetId/interface/PixelSubdetector.h"
 
 #include <cmath>
+#include <utility>
 
 namespace smartpixels {
 
@@ -43,6 +45,23 @@ namespace smartpixels {
     while (d <= -M_PI)
       d += 2 * M_PI;
     return d;
+  }
+
+  // THE SENSE OF TRAVEL, by module type: a track leaving the IP moves AWAY from the
+  // beam axis through a TBPX module and AWAY from z = 0 through a disc (PixelEndcap)
+  // module. Each rule tests the component that dominates there. On a disc the radial
+  // component is the SMALL one (|cotBeta| = tan(theta): median 0.19 on class-T ID1-ID4
+  // clusters, against a 0.36 measurement resolution), so the barrel rule applied to a
+  // disc reversed the whole direction on 34% of disc clusters (P0.3
+  // disc_alpha_global_check, 2026-10-14). SmartPixelsClusterAdcNtuplizer orients the
+  // module normal by the same two rules.
+  // Returns {projection of g on the outward axis times a positive scale, that scale}.
+  template <typename Det>
+  inline std::pair<double, double> outwardProjection(const Det& det, const GlobalVector& g) {
+    const auto pos = det.position();
+    if (det.geographicalId().subdetId() == PixelSubdetector::PixelEndcap)
+      return {g.z() * pos.z(), std::abs(pos.z())};
+    return {g.x() * pos.x() + g.y() * pos.y(), std::hypot(pos.x(), pos.y())};
   }
 
   // Module-frame (cotAlpha, cotBeta) -> global direction, using the det's own
@@ -73,15 +92,14 @@ namespace smartpixels {
     // the correction was worse than doing nothing. Forcing the sign consistent took
     // it to 2.62 cm.
     //
-    // Supply the sense from PHYSICS: a track crossing TBPX travels AWAY from the
-    // beam axis, so the global direction must have a positive radial component at
-    // the module. A very low-pT track curling back inward genuinely violates this,
-    // and no rule can recover its sense from cotAlpha/cotBeta alone -- that
-    // ambiguity is in the measurement, not in this code.
-    const auto pos = det.position();
+    // Supply the sense from PHYSICS (outwardProjection): the direction must point away
+    // from the beam axis at a TBPX module and away from z = 0 at a disc module. A very
+    // low-pT track curling back genuinely violates this, and no rule can recover its
+    // sense from cotAlpha/cotBeta alone -- that ambiguity is in the measurement, not in
+    // this code.
     const auto oriented = [&](double ca, double cb) {
       GlobalVector g = det.toGlobal(LocalVector(ca, cb, 1.0));
-      if (g.x() * pos.x() + g.y() * pos.y() < 0.)
+      if (outwardProjection(det, g).first < 0.)
         g = GlobalVector(-g.x(), -g.y(), -g.z());
       return g;
     };
@@ -136,13 +154,13 @@ namespace smartpixels {
   // never that the convention is correct.
   //
   // The orientation assertion needs a tie band. A direction perpendicular to the
-  // module's radius vector (on a disc: reported cotBeta ~ 0; on a tilted TBPX module:
-  // cotAlpha ~ cot(tilt)) has radial component ~0, where the outward rule has no
-  // preferred sense and the float rotation plus the float storage of dirPhi decide
-  // it (half an ulp of phi ~ 1.2e-7 rad). Seen once in production: an ID2 cluster
-  // with cotBeta = -8.8e-10, radial cosine +2.6e-9 at the forward map and -1.25e-8
-  // after storing dirPhi. Both senses are equally valid there, so only a radial
-  // cosine below -senseTol counts as a reversal.
+  // outward axis of outwardProjection (on a tilted TBPX module: cotAlpha ~ cot(tilt);
+  // on a disc: parallel to the disc plane) has outward component ~0, where the rule has
+  // no preferred sense and the float rotation plus the float storage of dirPhi decide
+  // it (half an ulp of phi ~ 1.2e-7 rad). Seen once in production, under the former
+  // radial rule on the discs: an ID2 cluster with cotBeta = -8.8e-10, radial cosine
+  // +2.6e-9 at the forward map and -1.25e-8 after storing dirPhi. Both senses are
+  // equally valid there, so only an outward cosine below -senseTol counts as a reversal.
   template <typename Det>
   inline bool closesBackToModule(const Det& det, const GlobalDirection& g,
                                  double cotAlpha, double cotBeta, double tol = 1e-3, double senseTol = 1e-5) {
@@ -152,8 +170,8 @@ namespace smartpixels {
     const GlobalVector gv(std::cos(g.dirPhi) * st,
                           std::sin(g.dirPhi) * st,
                           g.dirCotTheta * st);
-    const auto pos = det.position();
-    if (gv.x() * pos.x() + gv.y() * pos.y() < -senseTol * std::hypot(pos.x(), pos.y()))
+    const auto [outward, scale] = outwardProjection(det, gv);
+    if (outward < -senseTol * scale)
       return false;  // reversed: invisible to the ratio test below, so checked here
     const LocalVector lv = det.toLocal(gv);
     if (!(std::abs(lv.z()) > 1e-12))

@@ -2,6 +2,7 @@
 <use name="DataFormats/GeometrySurface"/>
 <use name="DataFormats/GeometryVector"/>
 <use name="DataFormats/SiPixelCluster"/>
+<use name="DataFormats/SiPixelDetId"/>
 <use name="SimDataFormats/TrackingAnalysis"/>
 <export>
   <lib name="1"/>
