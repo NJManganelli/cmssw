@@ -310,9 +310,10 @@ public:
                           "along one track is 0.20 cm, against 3.47 cm for using z alone. SENSE is "
                           "supplied by physics, not by the module frame: cotAlpha/cotBeta are ratios "
                           "and so are blind to direction reversal, and the sign is fixed by requiring "
-                          "the direction to point AWAY from the beam axis. Tracks that curl back "
-                          "inward violate that and keep an irrecoverable sign ambiguity -- 15% of "
-                          "tracks below 0.5 GeV, falling to 2% above 5 GeV. "
+                          "the direction to point AWAY from the beam axis on TBPX and AWAY from z = 0 "
+                          "on the discs. TBPX tracks that curl back inward violate that and keep an "
+                          "irrecoverable sign ambiguity -- 15% of tracks below 0.5 GeV, falling to 2% "
+                          "above 5 GeV. "
                           "Uncertainty: sigGlobalClusterCotTheta", 16);
     tab->addColumn<float>("sigGlobalClusterPhi", sigGlobalClusterPhi,
                           "Uncertainty on globalClusterPhi [rad], propagated from the module-frame "
