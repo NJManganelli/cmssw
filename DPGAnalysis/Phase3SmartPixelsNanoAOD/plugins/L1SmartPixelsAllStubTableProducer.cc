@@ -121,9 +121,9 @@ public:
     std::vector<bool> tpGenuine, tpCombinatoric, tpUnknown;
 
     std::vector<uint8_t> layer;
-    std::vector<bool> isBarrel, isPS, isTilted;
+    std::vector<bool> isBarrel, isPS, isTilted, isFlipped;
     std::vector<uint32_t> detId;
-    std::vector<float> x, y, z, r, phi, bend;
+    std::vector<float> x, y, z, r, phi, bend, innerStrip;
 
     for (auto ds = stubs.begin(); ds != stubs.end(); ++ds) {
       for (auto st = ds->begin(); st != ds->end(); ++st) {
@@ -133,6 +133,14 @@ public:
         const MeasurementPoint coords = st->clusterRef(0)->findAverageLocalCoordinatesCentered();
         const GeomDet* det = geom.idToDet(did);
         const GlobalPoint pos = det->surface().toGlobal(det->topology().localPosition(coords));
+        // The two inputs the hardware track fit takes for a 2S disc stub besides its position
+        // (L1TStub::alpha, HybridFit.cc:68-76), derived exactly as L1FPGATrackProducer does
+        // (L1FPGATrackProducer.cc:520-548, 616): the module is "flipped" when its outer
+        // cluster sits closer to the origin than its inner one, and the strip is the inner
+        // cluster's position TTStub::innerClusterPosition().
+        const GeomDet* detOuter = geom.idToDet(st->clusterRef(1)->getDetId());
+        const GlobalPoint posOuter = detOuter->surface().toGlobal(
+            detOuter->topology().localPosition(st->clusterRef(1)->findAverageLocalCoordinatesCentered()));
 
         const bool barrel = (did.subdetId() == StripSubdetector::TOB);
         const TTStubRef ref = edmNew::makeRefTo(stubHandle, st);
@@ -157,6 +165,8 @@ public:
         r.push_back(std::hypot(pos.x(), pos.y()));
         phi.push_back(std::atan2(pos.y(), pos.x()));
         bend.push_back(static_cast<float>(st->bendFE()));
+        innerStrip.push_back(static_cast<float>(st->innerClusterPosition()));
+        isFlipped.push_back(posOuter.mag() < pos.mag());
 
         if (doTruth_) {
           const edm::Ptr<TrackingParticle> tp = truth->findTrackingParticlePtr(ref);
@@ -201,6 +211,13 @@ public:
                           "cotAlpha). The track finder reads the back-end bend code instead (bendBE, encoded "
                           "per module; the bend field of L1TOTStubDTC's DTC word)",
                           /*mantissaBits=*/12);
+    tab->addColumn<float>("innerStrip", innerStrip,
+                          "TTStub::innerClusterPosition(): the inner cluster's position across the strips, in strip "
+                          "units (the L1TStub strip of the track finder). With isFlipped it gives the hardware fit's "
+                          "2S disc correction alpha = +-((int)innerStrip - 509.5) * pitch / r^2 (L1TStub::alpha)");
+    tab->addColumn<bool>("isFlipped", isFlipped,
+                         "module flipped: the outer cluster's global position is closer to the origin than the inner "
+                         "one's (L1FPGATrackProducer isFlipped); it sets the sign of the 2S disc alpha");
     if (doTruth_) {
       tab->addColumn<int32_t>("tpIdx", tpIdx,
                               std::string("TRUTH-ONLY, the stub's principal TP (TTStubAssociationMap::"
