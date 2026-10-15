@@ -194,11 +194,10 @@ public:
         // duplicated work and a silent divergence risk on TILTED modules (TBPX
         // tilt reaches 16.5 deg, so the rotation is per-module, not per-layer).
         //
-        // CYLINDRICAL, not Cartesian, and deliberately: phi stored directly at 16
-        // mantissa bits gives ~1e-4 rad, whereas phi RECONSTRUCTED from two
-        // Cartesian columns inherits their relative precision -- at the 10 bits
-        // used for localX/localY that is ~1 mrad, several times the sensor
-        // resolution, which would make any angular study an artefact of storage.
+        // CYLINDRICAL, not Cartesian. globalR and globalPhi are stored at full float: at 16
+        // mantissa bits (canon_v3) the phi step reached 4.9 um at IL4, up to 0.53x the CPE
+        // sigX the census KF weights hits with, and the r step reached 0.14x sigY on discs,
+        // where r is the measured coordinate.
         if (pdu != nullptr) {
           const auto gp = pdu->toGlobal(rh.localPosition());
           globalR.push_back(std::hypot(gp.x(), gp.y()));
@@ -282,15 +281,13 @@ public:
                           "cluster position, module-local y [cm]; along z on TBPX, along the radius "
                           "(pointing inward) on a disc", 16);
     tab->addColumn<float>("globalR", globalR,
-                          "POSITION. Cylindrical radius of WHERE THE CLUSTER IS [cm]", 16);
+                          "POSITION. Cylindrical radius of WHERE THE CLUSTER IS [cm], full float");
     tab->addColumn<float>("globalPhi", globalPhi,
                           "POSITION. Azimuth of WHERE THE CLUSTER IS, in CMS global coordinates "
                           "[rad]. This is a location on the detector surface and has NOTHING to do "
                           "with any direction or angle estimate: it is atan2(y,x) of the cluster "
                           "centroid. Pairs with globalR and globalZ to give the full position. "
-                          "Do NOT confuse with globalClusterPhi, which is a DIRECTION. Stored "
-                          "directly at 16 mantissa bits (~5e-5 rad) because reconstructing it from "
-                          "Cartesian columns would inherit their precision (~1 mrad)", 16);
+                          "Do NOT confuse with globalClusterPhi, which is a DIRECTION. Full float");
     tab->addColumn<float>("globalZ", globalZ,
                           "POSITION. CMS global z of WHERE THE CLUSTER IS [cm]", 16);
     tab->addColumn<float>("globalClusterPhi", globalClusterPhi,
@@ -329,14 +326,14 @@ public:
     tab->addColumn<uint8_t>("sizeY", sizeY, "cluster bounding-box extent in pixels, local y");
     tab->addColumn<uint16_t>("size", size, "FIRED-PIXEL COUNT (not the bounding box): charge/size is "
                                            "the real charge density");
-    tab->addColumn<float>("charge", charge, "cluster charge [ADC]", 10);
+    tab->addColumn<float>("charge", charge, "cluster charge [electrons] (SiPixelCluster::charge)", 10);
     tab->addColumn<float>("localCotAlpha", localCotAlpha,
                           "SENSOR angle estimate, module-local cotAlpha (-999 if none)", 12);
     tab->addColumn<float>("localCotBeta", localCotBeta,
                           "SENSOR angle estimate, cotBeta (signed; on a disc the sign flips with the module "
                           "facing, use globalClusterCotTheta to compare directions)", 12);
-    tab->addColumn<float>("sigAlpha", sigAlpha, "angle-estimator resolution, alpha", 10);
-    tab->addColumn<float>("sigBeta", sigBeta, "angle-estimator resolution, beta", 10);
+    tab->addColumn<float>("sigAlpha", sigAlpha, "angle-estimator resolution of localCotAlpha (a sigma of cotAlpha, dimensionless)", 10);
+    tab->addColumn<float>("sigBeta", sigBeta, "angle-estimator resolution of localCotBeta (a sigma of cotBeta, dimensionless)", 10);
     tab->addColumn<uint8_t>("hasAlpha", hasAlpha,
                             "sensor reports an alpha at all, whatever its value: angleSource emu ALWAYS 1 (a "
                             "flag that depended on the value would tell class C from class T); payload 0 outside "
@@ -352,18 +349,19 @@ public:
       tab->addColumn<int32_t>("tpIdx", tpIdx,
                               std::string("TRUTH-ONLY, dominant charge contributor: ") + l1tnano::tpIdxDoc());
       tab->addColumn<float>("tpPt", tpPt, "TRUTH-ONLY: pT [GeV] of the dominant TP", 10);
-      // Full PRODUCTION STATE of the dominant TP. tpLocalCot{Alpha,Beta} are
-      // helix-propagated from this vertex+direction and therefore IGNORE multiple
-      // scattering, which is exactly what makes them the MS-free reference. Carrying
-      // the inputs as well as the result lets an analysis RECOMPUTE that projection
-      // instead of trusting it, vary it, and tell a genuinely displaced TP apart from
-      // one that merely scattered. NOTE these are at the PRODUCTION VERTEX, not at the
-      // module -- do not use them as an incidence angle.
+      // PRODUCTION STATE of the dominant TP, at reduced precision (vertex 16 bits, eta/phi 12
+      // bits): enough to tell a displaced TP from one that merely scattered, NOT enough to
+      // recompute a helix projection at IT or OT precision. For projections use the full-precision
+      // L1TTP row (L1TTP[tpIdx]). tpLocalCot{Alpha,Beta} are helix-propagated in the producer and
+      // ignore multiple scattering. NOTE these are at the PRODUCTION VERTEX, not at the module --
+      // do not use them as an incidence angle.
       tab->addColumn<float>("tpVx", tpVx, "TRUTH-ONLY: dominant TP production vertex x [cm]", 16);
       tab->addColumn<float>("tpVy", tpVy, "TRUTH-ONLY: dominant TP production vertex y [cm]", 16);
       tab->addColumn<float>("tpVz", tpVz, "TRUTH-ONLY: dominant TP production vertex z [cm]", 16);
-      tab->addColumn<float>("tpEta", tpEta, "TRUTH-ONLY: dominant TP eta AT PRODUCTION", 12);
-      tab->addColumn<float>("tpPhi", tpPhi, "TRUTH-ONLY: dominant TP phi AT PRODUCTION", 12);
+      tab->addColumn<float>("tpEta", tpEta,
+                            "TRUTH-ONLY: dominant TP eta AT PRODUCTION, 12 bits; for projections use L1TTP[tpIdx]", 12);
+      tab->addColumn<float>("tpPhi", tpPhi,
+                            "TRUTH-ONLY: dominant TP phi AT PRODUCTION, 12 bits; for projections use L1TTP[tpIdx]", 12);
       tab->addColumn<float>("tpLocalCotAlpha", tpLocalCotAlpha,
                             "TRUTH-ONLY: TRUE incidence cotAlpha at this module (helix-propagated), "
                             "i.e. what the sensor is trying to measure", 12);

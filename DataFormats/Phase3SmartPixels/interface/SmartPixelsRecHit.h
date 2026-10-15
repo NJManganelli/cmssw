@@ -64,7 +64,7 @@ public:
   uint16_t sizeX() const { return sizeX_; }        // bounding-box extent, local x
   uint16_t sizeY() const { return sizeY_; }        // bounding-box extent, local y
   uint16_t size() const { return size_; }          // FIRED-PIXEL COUNT (not the box)
-  float charge() const { return charge_; }         // total cluster charge [ADC]
+  float charge() const { return charge_; }         // total cluster charge [electrons] (SiPixelCluster::charge)
   ClusterRef cluster() const { return cluster_; }
 
   // --- the SmartPixels angle estimate -------------------------------------
