@@ -227,8 +227,9 @@ public:
           "row of the SELECTED cluster in " + clusterTableName_ +
               " (-1 if none). EXACT link: both "
               "tables walk the same SiPixelRecHitCollection with the same filter and order. Consumers "
-              "MUST assert cluster[selClusterIdx].detId == detId -- matching on position instead fails, "
-              "since both store coordinates at ~5 um nano precision against a 25 um pitch");
+              "MUST assert cluster[selClusterIdx].detId == detId. Link by this index, not by position: "
+              "recoLocalX/Y here are full floats while the cluster table stores localX/Y at 16 bits, so "
+              "the two positions differ at the storage step");
     hitTable->addColumn<float>("projLocalX", projLocalX,
         "RUNNING projection: track state as of this layer's visit, local x [cm]");
     hitTable->addColumn<float>("projLocalY", projLocalY, "RUNNING projection, local y [cm]");
@@ -255,7 +256,7 @@ public:
     hitTable->addColumn<float>("sigY", sigY, "reco local-y uncertainty from the pixel CPE [cm] (-999 if none)");
     hitTable->addColumn<uint8_t>("recoSizeX", recoSizeX, "selected cluster extent in pixels along local x");
     hitTable->addColumn<uint8_t>("recoSizeY", recoSizeY, "selected cluster extent in pixels along local y");
-    hitTable->addColumn<float>("recoCharge", recoCharge, "selected cluster charge [ADC] (-999 if none)", /*mantissaBits=*/12);
+    hitTable->addColumn<float>("recoCharge", recoCharge, "selected cluster charge [electrons] (-999 if none)", /*mantissaBits=*/12);
     hitTable->addColumn<bool>("clusterMerged", clusterMerged, "TRUTH-ONLY: a second TP contributes more than clusterMergeFrac of the cluster charge");
     hitTable->addColumn<float>("tpChargeFrac", tpChargeFrac, "TRUTH-ONLY dominant contributor share of the cluster charge (-999 if none)", /*mantissaBits=*/12);
     hitTable->addColumn<float>("projResX", projResX, "reco minus projected-crossing local x [cm] (-999 if none)");

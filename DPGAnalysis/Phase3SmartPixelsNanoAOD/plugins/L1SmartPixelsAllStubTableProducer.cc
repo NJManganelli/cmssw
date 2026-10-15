@@ -191,10 +191,15 @@ public:
     tab->addColumn<float>("y", y, "stub global y [cm]");
     tab->addColumn<float>("z", z, "stub global z [cm]");
     tab->addColumn<float>("r", r, "stub global cylindrical r = hypot(x,y) [cm]");
-    tab->addColumn<float>("phi", phi, "stub global phi = atan2(y,x) [rad]", /*mantissaBits=*/12);
+    // Full float: phi is the stub's r-phi coordinate, and 12 mantissa bits (canon_v3) left an
+    // error of up to 1.3-3.1x the stub resolution that grew with |phi|. The L1 track finder's own
+    // integer phi is in the DTC word (L1TOTStubDTC).
+    tab->addColumn<float>("phi", phi, "stub global phi = atan2(y,x) [rad], full float");
     tab->addColumn<float>("bend", bend,
-                          "stub FE bend (full-strip units); the local r-phi angle, i.e. the OT's "
-                          "analogue of the SmartPixels cotAlpha",
+                          "stub FE bend, TTStub::bendFE(): the strip displacement between the two sensors in "
+                          "full-strip units, half-strip granularity (the OT's analogue of the SmartPixels "
+                          "cotAlpha). The track finder reads the back-end bend code instead (bendBE, encoded "
+                          "per module; the bend field of L1TOTStubDTC's DTC word)",
                           /*mantissaBits=*/12);
     if (doTruth_) {
       tab->addColumn<int32_t>("tpIdx", tpIdx,
