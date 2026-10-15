@@ -400,6 +400,18 @@ l1tPh3SmartPixelsAllStubTable = cms.EDProducer(
     doTruth = cms.bool(True),
 )
 
+# The DTC stub frames the tracklet track finder reads (L1TOTStubDTC): the integer coordinates, the
+# bend code, the nonant routing, DTC acceptance and the stream order, keyed to L1TOTStub rows. It
+# needs the in-job TTDTC (transient), so the flavours schedule it only next to the tracklet chain,
+# reading the same TTDTC tag the chain reads.
+l1tPh3SmartPixelsDTCStubTable = cms.EDProducer(
+    "L1SmartPixelsDTCStubTableProducer",
+    dtc = cms.InputTag("ProducerDTC", "StubAccepted"),
+    stubs = cms.InputTag("TTStubsFromPhase2TrackerDigis", "StubAccepted"),
+    tableName = cms.string("L1TOTStubDTC"),
+    withPositions = cms.bool(False),
+)
+
 
 def addPh3L1SmartPixelsClusters(process, recHitLabel="spixSmartPixelsRecHits", doTruth=True):
     """Add the untruncated IT cluster table + the complete OT stub table (coexist jobs;

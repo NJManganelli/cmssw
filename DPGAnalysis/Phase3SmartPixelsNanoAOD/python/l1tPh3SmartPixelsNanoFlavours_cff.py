@@ -45,6 +45,7 @@ _OT_TRACKS = {"prompt": "l1tTTTracksFromTrackletEmulation", "ext": "l1tTTTracksF
 _OT_ASSOCIATORS = {"prompt": "TTTrackAssociatorFromPixelDigis", "ext": "TTTrackAssociatorFromPixelDigisExtended"}
 _CAND_SIDE = {"L1PuppiCand": "prompt", "L1ExtPuppiCand": "ext"}
 _OT_STUB_TABLE = "l1tPh3SmartPixelsAllStubTable"
+_OT_DTC_TABLE = "l1tPh3SmartPixelsDTCStubTable"
 _CLUSTER_TABLE = "l1tPh3SmartPixelsClusterTable"
 _TP_TABLE = "l1tTrackingParticleTable"
 
@@ -388,6 +389,8 @@ def _reconcile(process):
     _configureDisplacedVertexLink(process, variant, sched)
     _configureGTTColumns(process, variant, sched)
     _configureTrackingParticles(process, st, variant, sched)
+    _configureOTStubDTC(process, sched)
+    _configureOTSeedType(process, sched)
     return process
 
 
@@ -600,6 +603,30 @@ def _configureGTTColumns(process, variant, sched):
             setattr(process, conv, cfi.clone(l1TracksInputTag=cms.InputTag(_OT_TRACKS[side], "Level1TTTracks")))
             _addToNano(process, "smartPixelsOTGTTConversionTask", [conv])
         getattr(process, table).src = cms.InputTag(conv, instance)
+
+
+def _configureOTStubDTC(process, sched):
+    """L1TOTStubDTC next to L1TOTStub whenever the prompt tracklet chain runs in the job: it reads
+    the chain's TTDTC, which is transient and exists only there."""
+    if _OT_STUB_TABLE not in sched or not hasattr(process, _OT_TRACKS["prompt"]):
+        return
+    dtc = getattr(process, _OT_TRACKS["prompt"]).InputTagTTDTC
+    if not hasattr(process, dtc.getModuleLabel()):
+        return
+    if not hasattr(process, _OT_DTC_TABLE):
+        from DPGAnalysis.Phase3SmartPixelsNanoAOD.l1tPh3SmartPixelsNano_cff import l1tPh3SmartPixelsDTCStubTable
+        setattr(process, _OT_DTC_TABLE, l1tPh3SmartPixelsDTCStubTable.clone(
+            dtc=dtc, stubs=getattr(process, _OT_STUB_TABLE).stubs))
+    _addToNano(process, "p3L1SmartPixelsStubTask", [_OT_DTC_TABLE])
+
+
+def _configureOTSeedType(process, sched):
+    """The tracklet seed type of every OT track (TTTrack::trackSeedType: L1L2 = 0, L2L3 = 1, L3L4 = 2,
+    L5L6 = 3, D1D2 = 4, D3D4 = 5, L1D1 = 6, L2D1 = 7; the extended seeds above)."""
+    from PhysicsTools.NanoAOD.common_cff import Var
+    for label, _ in _OT_TABLES.values():
+        if label in sched and not hasattr(getattr(process, label).variables, "seedType"):
+            getattr(process, label).variables.seedType = Var("trackSeedType()", "int", doc="tracklet seed type")
 
 
 def _configureTrackingParticles(process, st, variant, sched):
