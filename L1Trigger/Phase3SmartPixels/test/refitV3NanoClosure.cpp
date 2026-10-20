@@ -102,8 +102,11 @@ int main(int argc, char** argv) {
     std::string line;
     while (std::getline(in, line)) {
       auto j = nlohmann::json::parse(line);
-      ref[{j.at("run").get<long>(), j.at("lumi").get<long>(), j.at("event").get<long>(), j.at("track").get<int>()}] =
-          std::move(j);
+      // the key first: basic_json::operator= takes its argument by value, so in "ref[key(j)] = std::move(j)" the
+      // right side is moved from before the key is read (C++17 sequences the right operand first)
+      const auto key = std::make_tuple(j.at("run").get<long>(), j.at("lumi").get<long>(), j.at("event").get<long>(),
+                                       j.at("track").get<int>());
+      ref[key] = std::move(j);
     }
   }
 
@@ -139,7 +142,7 @@ int main(int argc, char** argv) {
   std::sort(ks.begin(), ks.end());
   const size_t nk = ks.size();
   const double kpt = nk % 2 ? ks[nk / 2] : 0.5 * (ks[nk / 2 - 1] + ks[nk / 2]);
-  std::cout << "kpt " << std::setprecision(12) << kpt << " over " << nk << " tracks\n";
+  std::cout << "kpt " << std::setprecision(12) << kpt << " over " << nk << " tracks" << std::endl;
 
   Tally T;
   long nTracks = 0, nSteps = 0;
