@@ -950,6 +950,955 @@
      }
     ]
    }
+  },
+  {
+   "name": "skip_price_level",
+   "description": "the fallback level that gives the skip price (diagnostic, the per-path counts): 0 surface|step, 1 surface, 2 barrel surface|step for a disc-going track's barrel visit, 3 that barrel surface, 4 the table's '*'",
+   "version": 1,
+   "inputs": [
+    {
+     "name": "dims",
+     "type": "string"
+    },
+    {
+     "name": "code",
+     "type": "int"
+    },
+    {
+     "name": "first",
+     "type": "int"
+    }
+   ],
+   "output": {
+    "name": "value",
+    "type": "real"
+   },
+   "data": {
+    "nodetype": "category",
+    "input": "dims",
+    "content": [
+     {
+      "key": "xy",
+      "value": {
+       "nodetype": "category",
+       "input": "code",
+       "content": [
+        {
+         "key": 1,
+         "value": {
+          "nodetype": "category",
+          "input": "first",
+          "content": [
+           {
+            "key": 0,
+            "value": 0.0
+           },
+           {
+            "key": 1,
+            "value": 1.0
+           }
+          ]
+         }
+        },
+        {
+         "key": 2,
+         "value": {
+          "nodetype": "category",
+          "input": "first",
+          "content": [
+           {
+            "key": 0,
+            "value": 0.0
+           },
+           {
+            "key": 1,
+            "value": 1.0
+           }
+          ]
+         }
+        },
+        {
+         "key": 3,
+         "value": {
+          "nodetype": "category",
+          "input": "first",
+          "content": [
+           {
+            "key": 0,
+            "value": 0.0
+           },
+           {
+            "key": 1,
+            "value": 0.0
+           }
+          ]
+         }
+        },
+        {
+         "key": 4,
+         "value": {
+          "nodetype": "category",
+          "input": "first",
+          "content": [
+           {
+            "key": 0,
+            "value": 1.0
+           },
+           {
+            "key": 1,
+            "value": 0.0
+           }
+          ]
+         }
+        },
+        {
+         "key": 101,
+         "value": {
+          "nodetype": "category",
+          "input": "first",
+          "content": [
+           {
+            "key": 0,
+            "value": 0.0
+           },
+           {
+            "key": 1,
+            "value": 1.0
+           }
+          ]
+         }
+        },
+        {
+         "key": 102,
+         "value": {
+          "nodetype": "category",
+          "input": "first",
+          "content": [
+           {
+            "key": 0,
+            "value": 0.0
+           },
+           {
+            "key": 1,
+            "value": 1.0
+           }
+          ]
+         }
+        },
+        {
+         "key": 103,
+         "value": {
+          "nodetype": "category",
+          "input": "first",
+          "content": [
+           {
+            "key": 0,
+            "value": 0.0
+           },
+           {
+            "key": 1,
+            "value": 1.0
+           }
+          ]
+         }
+        },
+        {
+         "key": 104,
+         "value": {
+          "nodetype": "category",
+          "input": "first",
+          "content": [
+           {
+            "key": 0,
+            "value": 3.0
+           },
+           {
+            "key": 1,
+            "value": 2.0
+           }
+          ]
+         }
+        },
+        {
+         "key": 11,
+         "value": {
+          "nodetype": "category",
+          "input": "first",
+          "content": [
+           {
+            "key": 0,
+            "value": 0.0
+           },
+           {
+            "key": 1,
+            "value": 0.0
+           }
+          ]
+         }
+        },
+        {
+         "key": 12,
+         "value": {
+          "nodetype": "category",
+          "input": "first",
+          "content": [
+           {
+            "key": 0,
+            "value": 0.0
+           },
+           {
+            "key": 1,
+            "value": 0.0
+           }
+          ]
+         }
+        },
+        {
+         "key": 13,
+         "value": {
+          "nodetype": "category",
+          "input": "first",
+          "content": [
+           {
+            "key": 0,
+            "value": 0.0
+           },
+           {
+            "key": 1,
+            "value": 0.0
+           }
+          ]
+         }
+        },
+        {
+         "key": 14,
+         "value": {
+          "nodetype": "category",
+          "input": "first",
+          "content": [
+           {
+            "key": 0,
+            "value": 0.0
+           },
+           {
+            "key": 1,
+            "value": 0.0
+           }
+          ]
+         }
+        },
+        {
+         "key": 0,
+         "value": {
+          "nodetype": "category",
+          "input": "first",
+          "content": [
+           {
+            "key": 0,
+            "value": 4.0
+           },
+           {
+            "key": 1,
+            "value": 4.0
+           }
+          ]
+         }
+        }
+       ]
+      }
+     },
+     {
+      "key": "xya",
+      "value": {
+       "nodetype": "category",
+       "input": "code",
+       "content": [
+        {
+         "key": 1,
+         "value": {
+          "nodetype": "category",
+          "input": "first",
+          "content": [
+           {
+            "key": 0,
+            "value": 0.0
+           },
+           {
+            "key": 1,
+            "value": 1.0
+           }
+          ]
+         }
+        },
+        {
+         "key": 2,
+         "value": {
+          "nodetype": "category",
+          "input": "first",
+          "content": [
+           {
+            "key": 0,
+            "value": 0.0
+           },
+           {
+            "key": 1,
+            "value": 1.0
+           }
+          ]
+         }
+        },
+        {
+         "key": 3,
+         "value": {
+          "nodetype": "category",
+          "input": "first",
+          "content": [
+           {
+            "key": 0,
+            "value": 0.0
+           },
+           {
+            "key": 1,
+            "value": 0.0
+           }
+          ]
+         }
+        },
+        {
+         "key": 4,
+         "value": {
+          "nodetype": "category",
+          "input": "first",
+          "content": [
+           {
+            "key": 0,
+            "value": 1.0
+           },
+           {
+            "key": 1,
+            "value": 0.0
+           }
+          ]
+         }
+        },
+        {
+         "key": 101,
+         "value": {
+          "nodetype": "category",
+          "input": "first",
+          "content": [
+           {
+            "key": 0,
+            "value": 0.0
+           },
+           {
+            "key": 1,
+            "value": 1.0
+           }
+          ]
+         }
+        },
+        {
+         "key": 102,
+         "value": {
+          "nodetype": "category",
+          "input": "first",
+          "content": [
+           {
+            "key": 0,
+            "value": 0.0
+           },
+           {
+            "key": 1,
+            "value": 1.0
+           }
+          ]
+         }
+        },
+        {
+         "key": 103,
+         "value": {
+          "nodetype": "category",
+          "input": "first",
+          "content": [
+           {
+            "key": 0,
+            "value": 0.0
+           },
+           {
+            "key": 1,
+            "value": 1.0
+           }
+          ]
+         }
+        },
+        {
+         "key": 104,
+         "value": {
+          "nodetype": "category",
+          "input": "first",
+          "content": [
+           {
+            "key": 0,
+            "value": 3.0
+           },
+           {
+            "key": 1,
+            "value": 2.0
+           }
+          ]
+         }
+        },
+        {
+         "key": 11,
+         "value": {
+          "nodetype": "category",
+          "input": "first",
+          "content": [
+           {
+            "key": 0,
+            "value": 0.0
+           },
+           {
+            "key": 1,
+            "value": 0.0
+           }
+          ]
+         }
+        },
+        {
+         "key": 12,
+         "value": {
+          "nodetype": "category",
+          "input": "first",
+          "content": [
+           {
+            "key": 0,
+            "value": 0.0
+           },
+           {
+            "key": 1,
+            "value": 0.0
+           }
+          ]
+         }
+        },
+        {
+         "key": 13,
+         "value": {
+          "nodetype": "category",
+          "input": "first",
+          "content": [
+           {
+            "key": 0,
+            "value": 0.0
+           },
+           {
+            "key": 1,
+            "value": 0.0
+           }
+          ]
+         }
+        },
+        {
+         "key": 14,
+         "value": {
+          "nodetype": "category",
+          "input": "first",
+          "content": [
+           {
+            "key": 0,
+            "value": 0.0
+           },
+           {
+            "key": 1,
+            "value": 0.0
+           }
+          ]
+         }
+        },
+        {
+         "key": 0,
+         "value": {
+          "nodetype": "category",
+          "input": "first",
+          "content": [
+           {
+            "key": 0,
+            "value": 4.0
+           },
+           {
+            "key": 1,
+            "value": 4.0
+           }
+          ]
+         }
+        }
+       ]
+      }
+     },
+     {
+      "key": "xyb",
+      "value": {
+       "nodetype": "category",
+       "input": "code",
+       "content": [
+        {
+         "key": 1,
+         "value": {
+          "nodetype": "category",
+          "input": "first",
+          "content": [
+           {
+            "key": 0,
+            "value": 0.0
+           },
+           {
+            "key": 1,
+            "value": 1.0
+           }
+          ]
+         }
+        },
+        {
+         "key": 2,
+         "value": {
+          "nodetype": "category",
+          "input": "first",
+          "content": [
+           {
+            "key": 0,
+            "value": 0.0
+           },
+           {
+            "key": 1,
+            "value": 1.0
+           }
+          ]
+         }
+        },
+        {
+         "key": 3,
+         "value": {
+          "nodetype": "category",
+          "input": "first",
+          "content": [
+           {
+            "key": 0,
+            "value": 0.0
+           },
+           {
+            "key": 1,
+            "value": 0.0
+           }
+          ]
+         }
+        },
+        {
+         "key": 4,
+         "value": {
+          "nodetype": "category",
+          "input": "first",
+          "content": [
+           {
+            "key": 0,
+            "value": 1.0
+           },
+           {
+            "key": 1,
+            "value": 0.0
+           }
+          ]
+         }
+        },
+        {
+         "key": 101,
+         "value": {
+          "nodetype": "category",
+          "input": "first",
+          "content": [
+           {
+            "key": 0,
+            "value": 0.0
+           },
+           {
+            "key": 1,
+            "value": 1.0
+           }
+          ]
+         }
+        },
+        {
+         "key": 102,
+         "value": {
+          "nodetype": "category",
+          "input": "first",
+          "content": [
+           {
+            "key": 0,
+            "value": 0.0
+           },
+           {
+            "key": 1,
+            "value": 1.0
+           }
+          ]
+         }
+        },
+        {
+         "key": 103,
+         "value": {
+          "nodetype": "category",
+          "input": "first",
+          "content": [
+           {
+            "key": 0,
+            "value": 0.0
+           },
+           {
+            "key": 1,
+            "value": 1.0
+           }
+          ]
+         }
+        },
+        {
+         "key": 104,
+         "value": {
+          "nodetype": "category",
+          "input": "first",
+          "content": [
+           {
+            "key": 0,
+            "value": 3.0
+           },
+           {
+            "key": 1,
+            "value": 2.0
+           }
+          ]
+         }
+        },
+        {
+         "key": 11,
+         "value": {
+          "nodetype": "category",
+          "input": "first",
+          "content": [
+           {
+            "key": 0,
+            "value": 0.0
+           },
+           {
+            "key": 1,
+            "value": 0.0
+           }
+          ]
+         }
+        },
+        {
+         "key": 12,
+         "value": {
+          "nodetype": "category",
+          "input": "first",
+          "content": [
+           {
+            "key": 0,
+            "value": 0.0
+           },
+           {
+            "key": 1,
+            "value": 0.0
+           }
+          ]
+         }
+        },
+        {
+         "key": 13,
+         "value": {
+          "nodetype": "category",
+          "input": "first",
+          "content": [
+           {
+            "key": 0,
+            "value": 0.0
+           },
+           {
+            "key": 1,
+            "value": 0.0
+           }
+          ]
+         }
+        },
+        {
+         "key": 14,
+         "value": {
+          "nodetype": "category",
+          "input": "first",
+          "content": [
+           {
+            "key": 0,
+            "value": 0.0
+           },
+           {
+            "key": 1,
+            "value": 0.0
+           }
+          ]
+         }
+        },
+        {
+         "key": 0,
+         "value": {
+          "nodetype": "category",
+          "input": "first",
+          "content": [
+           {
+            "key": 0,
+            "value": 4.0
+           },
+           {
+            "key": 1,
+            "value": 4.0
+           }
+          ]
+         }
+        }
+       ]
+      }
+     },
+     {
+      "key": "xyab",
+      "value": {
+       "nodetype": "category",
+       "input": "code",
+       "content": [
+        {
+         "key": 1,
+         "value": {
+          "nodetype": "category",
+          "input": "first",
+          "content": [
+           {
+            "key": 0,
+            "value": 0.0
+           },
+           {
+            "key": 1,
+            "value": 1.0
+           }
+          ]
+         }
+        },
+        {
+         "key": 2,
+         "value": {
+          "nodetype": "category",
+          "input": "first",
+          "content": [
+           {
+            "key": 0,
+            "value": 0.0
+           },
+           {
+            "key": 1,
+            "value": 1.0
+           }
+          ]
+         }
+        },
+        {
+         "key": 3,
+         "value": {
+          "nodetype": "category",
+          "input": "first",
+          "content": [
+           {
+            "key": 0,
+            "value": 0.0
+           },
+           {
+            "key": 1,
+            "value": 0.0
+           }
+          ]
+         }
+        },
+        {
+         "key": 4,
+         "value": {
+          "nodetype": "category",
+          "input": "first",
+          "content": [
+           {
+            "key": 0,
+            "value": 1.0
+           },
+           {
+            "key": 1,
+            "value": 0.0
+           }
+          ]
+         }
+        },
+        {
+         "key": 101,
+         "value": {
+          "nodetype": "category",
+          "input": "first",
+          "content": [
+           {
+            "key": 0,
+            "value": 0.0
+           },
+           {
+            "key": 1,
+            "value": 1.0
+           }
+          ]
+         }
+        },
+        {
+         "key": 102,
+         "value": {
+          "nodetype": "category",
+          "input": "first",
+          "content": [
+           {
+            "key": 0,
+            "value": 0.0
+           },
+           {
+            "key": 1,
+            "value": 1.0
+           }
+          ]
+         }
+        },
+        {
+         "key": 103,
+         "value": {
+          "nodetype": "category",
+          "input": "first",
+          "content": [
+           {
+            "key": 0,
+            "value": 0.0
+           },
+           {
+            "key": 1,
+            "value": 1.0
+           }
+          ]
+         }
+        },
+        {
+         "key": 104,
+         "value": {
+          "nodetype": "category",
+          "input": "first",
+          "content": [
+           {
+            "key": 0,
+            "value": 3.0
+           },
+           {
+            "key": 1,
+            "value": 2.0
+           }
+          ]
+         }
+        },
+        {
+         "key": 11,
+         "value": {
+          "nodetype": "category",
+          "input": "first",
+          "content": [
+           {
+            "key": 0,
+            "value": 0.0
+           },
+           {
+            "key": 1,
+            "value": 0.0
+           }
+          ]
+         }
+        },
+        {
+         "key": 12,
+         "value": {
+          "nodetype": "category",
+          "input": "first",
+          "content": [
+           {
+            "key": 0,
+            "value": 0.0
+           },
+           {
+            "key": 1,
+            "value": 0.0
+           }
+          ]
+         }
+        },
+        {
+         "key": 13,
+         "value": {
+          "nodetype": "category",
+          "input": "first",
+          "content": [
+           {
+            "key": 0,
+            "value": 0.0
+           },
+           {
+            "key": 1,
+            "value": 0.0
+           }
+          ]
+         }
+        },
+        {
+         "key": 14,
+         "value": {
+          "nodetype": "category",
+          "input": "first",
+          "content": [
+           {
+            "key": 0,
+            "value": 0.0
+           },
+           {
+            "key": 1,
+            "value": 0.0
+           }
+          ]
+         }
+        },
+        {
+         "key": 0,
+         "value": {
+          "nodetype": "category",
+          "input": "first",
+          "content": [
+           {
+            "key": 0,
+            "value": 4.0
+           },
+           {
+            "key": 1,
+            "value": 4.0
+           }
+          ]
+         }
+        }
+       ]
+      }
+     }
+    ]
+   }
   }
  ]
 }

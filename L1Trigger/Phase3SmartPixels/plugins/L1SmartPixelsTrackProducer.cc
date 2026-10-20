@@ -843,7 +843,9 @@ void L1SmartPixelsTrackProducer::writeV3Dump(std::ostream& out, const edm::Event
   out << "{\"run\": " << iEvent.id().run() << ", \"lumi\": " << iEvent.id().luminosityBlock()
       << ", \"event\": " << iEvent.id().event() << ", \"track\": " << track << ", \"refit\": "
       << (res.refit ? "true" : "false") << ", \"nacc\": " << res.nacc << ", \"disc_going\": "
-      << (res.discGoing ? "true" : "false") << ", \"ot\": " << helix(aOT) << ", \"seed_C\": " << mat(res.seedC)
+      << (res.discGoing ? "true" : "false") << ", \"seedClipped\": " << (res.seedClipped ? "true" : "false")
+      << ", \"endCommit\": " << (res.endCommit ? "true" : "false") << ", \"ot\": " << helix(aOT)
+      << ", \"seed_C\": " << mat(res.seedC)
       << ", \"steps\": [";
   for (size_t j = 0; j < res.steps.size(); ++j) {
     const auto& st = res.steps[j];
@@ -853,7 +855,9 @@ void L1SmartPixelsTrackProducer::writeV3Dump(std::ostream& out, const edm::Event
         << ", \"chi2\": " << vec(st.chi2) << ", \"kchoice\": " << st.kchoice << ", \"scores\": " << vec(st.scores)
         << ", \"skipPrice\": " << num(st.skipPrice) << ", \"rankChi2\": " << num(st.rankChi2)
         << ", \"rankMargin\": " << num(st.selMargin) << ", \"selMargin\": " << num(scoreMargin(st.scores))
-        << ", \"fallback\": " << (st.fallback ? "true" : "false")
+        << ", \"fallback\": " << (st.fallback ? "true" : "false") << ", \"predGuard\": " << (st.predGuard ? "true" : "false")
+        << ", \"jacZeroed\": " << st.jacZeroed << ", \"angleMode\": [" << st.angleMode[0] << ", " << st.angleMode[1]
+        << "], \"skipLevel\": " << st.skipLevel
         << ", \"h0\": " << vec(st.h0) << ", \"meas\": " << vec(st.meas) << ", \"sig\": " << vec(st.sig);
     if (st.accepted)
       out << ", \"aPre\": " << vec(st.aPre) << ", \"CPred\": " << mat(st.CPred) << ", \"aPost\": " << vec(st.aPost)

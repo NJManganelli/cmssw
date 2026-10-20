@@ -89,9 +89,13 @@ TEST_CASE("refit v3 angle tables", "[refitV3]") {
 }
 
 TEST_CASE("refit v3 skip price", "[refitV3]") {
-  for (const auto& e : reference().at("skip_price"))
-    REQUIRE(same(payloads().skipPrice(e.at("dims").get<std::string>(), e.at("code").get<int>(), e.at("first").get<int>() == 1),
-                 e.at("value").get<double>()));
+  for (const auto& e : reference().at("skip_price")) {
+    const auto dims = e.at("dims").get<std::string>();
+    const int code = e.at("code").get<int>();
+    const bool first = e.at("first").get<int>() == 1;
+    REQUIRE(same(payloads().skipPrice(dims, code, first), e.at("value").get<double>()));
+    REQUIRE(payloads().skipPriceLevel(dims, code, first) == e.at("level").get<int>());
+  }
 }
 
 TEST_CASE("refit v3 seed model", "[refitV3]") {

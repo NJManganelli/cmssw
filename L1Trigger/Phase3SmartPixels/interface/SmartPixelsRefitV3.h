@@ -134,7 +134,8 @@ namespace smartpixels::v3 {
   class SeedModel {
   public:
     void load(const std::string& path);
-    Mat5 dC(double absEta, double p) const;  // the correction at |eta| and |p|
+    Mat5 dC(double absEta, double p, bool* clipped = nullptr) const;  // the correction at |eta| and |p|; clipped: p
+                                                                       // or |eta| outside the fitted domain
 
   private:
     std::vector<double> edges_;
@@ -179,12 +180,13 @@ namespace smartpixels::v3 {
     AngleEntry barrelAngle(int surface, int sign, double key, bool beta) const;
     AngleEntry discAngle(int surface, double key, bool beta) const;
     double skipPrice(const std::string& dims, int code, bool first) const;
+    int skipPriceLevel(const std::string& dims, int code, bool first) const;  // its fallback level (0 = own bin)
 
     SeedModel seed;
     Material material;
 
   private:
-    std::shared_ptr<const correction::Correction> rU_, rV_, orient_, angBarrel_, angDisc_, skip_;
+    std::shared_ptr<const correction::Correction> rU_, rV_, orient_, angBarrel_, angDisc_, skip_, skipLevel_;
     std::vector<std::shared_ptr<const correction::CorrectionSet>> sets_;
     std::string setId_;
     bool loaded_ = false;
@@ -248,6 +250,11 @@ namespace smartpixels::v3 {
     std::array<double, 2> projSig{{kNaN, kNaN}};      // sqrt of the prediction's (u, v) variances
     double selMargin = kNaN;                           // runner-up minus best ranking value (the replay's rankMargin)
     bool fallback = false;                             // the window's nearest-module projection failed: every module
+    // the rare paths (the closure's per-path counts)
+    bool predGuard = false;                            // the chosen candidate's |cot_pred| > 12: not applied
+    int jacZeroed = 0;                                 // Jacobian columns the jacobianMaxAbs guard zeroed in the update
+    std::array<int, 2> angleMode{{-1, -1}};            // the applied cluster's angle-table mode (0 no entry, 1, 2)
+    int skipLevel = -1;                                // the skip price's fallback level (0 = its own bin)
     std::array<bool, 2> has{};                         // the chosen cluster's usable angles
     Vec4 meas{{kNaN, kNaN, kNaN, kNaN}}, sig{{kNaN, kNaN, kNaN, kNaN}};
     // closure (double): the state before Q, the covariance after Q, the state after the update
@@ -259,6 +266,8 @@ namespace smartpixels::v3 {
 
   struct TrackResult {
     bool covOK = false, refit = false, discGoing = false;
+    bool seedClipped = false;  // the seed model evaluated outside its fitted p / |eta| domain
+    bool endCommit = false;    // a window was committed on its first layer alone at the end of the track
     int nacc = 0;
     Vec5 a{};
     Mat5 C{};
@@ -288,7 +297,8 @@ namespace smartpixels::v3 {
                     double kpt) const;
     void innerMaterial(Copy& c, bool discGoing, double kpt) const;
     std::vector<Cand> candidates(const Copy& c, int S, int step, const EventClusters& clusters, bool& fallback) const;
-    void measurements(const Cand& k, const Cluster& cl, Vec4& meas, Vec4& sig, std::array<bool, 2>& has) const;
+    void measurements(const Cand& k, const Cluster& cl, Vec4& meas, Vec4& sig, std::array<bool, 2>& has,
+                      std::array<int, 2>* modes = nullptr) const;
     bool uses(int consumer, int angle, int surface, int step) const;
     double gateStat(const Cand& k, const Cluster& cl, int step, int consumer) const;
     void apply(Copy& c, int step, const Cand& k, const Cluster& cl) const;

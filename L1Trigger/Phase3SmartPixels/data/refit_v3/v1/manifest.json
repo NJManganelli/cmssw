@@ -1,7 +1,7 @@
 {
  "schema": "spix-refit-v3-payload/1",
  "set_id": "v1",
- "created": "2026-10-20T12:05:56Z",
+ "created": "2026-10-20T20:41:41Z",
  "reference_commit": "a710b04468770793325f1560c7594ac923301f8f",
  "spec": "/Volumes/WDMac/smartpixels_scratch/v3cmssw/spec",
  "config": "SmartPixels seedless refit v3 (the replay's INN-D with the two-layer hit choice)",
@@ -29,8 +29,8 @@
    ]
   },
   "skip_price.json": {
-   "sha256": "99a036cd2ce74febebcfab4b703a0fc3235073d3c3e428213b29ef33e4d139c1",
-   "md5": "258ad4347e185090d491b3589864a170",
+   "sha256": "07eec3fc87310b50ec6a82d1f8075d85531aa2a76eafe6c8541a7b17e23c7599",
+   "md5": "d1c70615960d77cd18ac692939493468",
    "sources": [
     "wpc_cuts_c1b_v1.json"
    ]
