@@ -2,7 +2,9 @@
 // nano's OT tracks and SmartPixels clusters (the values the replay reads), the replay's geometry JSON and
 // its chunk-median kpt, and compared track by track with the replay's reference output (spec/reference).
 //   refitV3NanoClosure <nano.root> <reference.jsonl> <geometry.json> <manifest.json> <mask AAAA|AAAI|...>
-//                      [nEvents=10] [knownBad=""]
+//                      [nEvents=10] [knownBad=""] [dump.jsonl]
+// dump.jsonl: the engine's per-track records (per accepted step aPre / CPred / aPost / CPost in double), for
+// eval_refitq/v3cmssw/closure_compare.py forced against the replay's forced file.
 // Exit code 0 when every compared quantity agrees within the development tolerances.
 #include "L1Trigger/Phase3SmartPixels/interface/SmartPixelsRefitV3.h"
 
@@ -20,6 +22,8 @@
 #include <iomanip>
 #include <iostream>
 #include <map>
+#include <memory>
+#include <sstream>
 #include <string>
 #include <tuple>
 
@@ -83,6 +87,29 @@ int main(int argc, char** argv) {
   const std::string nano = argv[1], refPath = argv[2], geoPath = argv[3], manifest = argv[4], mask = argv[5];
   const int nEvents = argc > 6 ? std::stoi(argv[6]) : 10;
   const std::string knownBad = argc > 7 ? argv[7] : "";
+  std::unique_ptr<std::ofstream> dump;
+  if (argc > 8)
+    dump = std::make_unique<std::ofstream>(argv[8]);
+  auto num = [](double x) {
+    std::ostringstream o;
+    if (std::isfinite(x))
+      o << std::setprecision(17) << x;
+    else
+      o << "null";
+    return o.str();
+  };
+  auto vec = [&num](const auto& v) {
+    std::string s = "[";
+    for (size_t i = 0; i < v.size(); ++i)
+      s += (i ? ", " : "") + num(v[i]);
+    return s + "]";
+  };
+  auto mat = [&vec](const Mat5& m) {
+    std::string s = "[";
+    for (size_t i = 0; i < 5; ++i)
+      s += (i ? ", " : "") + vec(m[i]);
+    return s + "]";
+  };
 
   const Geometry geo = loadGeometry(geoPath);
   Payloads pay;
@@ -191,6 +218,26 @@ int main(int argc, char** argv) {
       const auto& R = it->second;
       ++nTracks;
       const TrackResult res = eng.run(a, C, kpt, active, cls);
+      if (dump) {
+        const char* fn[5] = {"rInv", "phi0", "tanL", "z0", "d0"};
+        std::string fin = "{";
+        for (int i = 0; i < 5; ++i)
+          fin += std::string(i ? ", " : "") + "\"" + fn[i] + "\": " + num(res.a[i]);
+        fin += "}";
+        *dump << "{\"run\": " << *run << ", \"lumi\": " << *lumi << ", \"event\": " << *evt << ", \"track\": " << t
+              << ", \"steps\": [";
+        bool first = true;
+        for (size_t j = 0; j < res.steps.size(); ++j) {
+          const auto& st = res.steps[j];
+          if (!st.accepted)
+            continue;
+          *dump << (first ? "" : ", ") << "{\"step\": " << j << ", \"surface\": " << st.surface
+                << ", \"accepted\": true, \"aPre\": " << vec(st.aPre) << ", \"CPred\": " << mat(st.CPred)
+                << ", \"aPost\": " << vec(st.aPost) << ", \"CPost\": " << mat(st.CPost) << "}";
+          first = false;
+        }
+        *dump << "], \"final\": " << fin << ", \"final_C\": " << mat(res.C) << "}\n";
+      }
       const std::string id = "ev " + std::to_string(*evt) + " trk " + std::to_string(t);
       if (res.refit != R.at("refit").get<bool>())
         T.bad("refit flag", id);
