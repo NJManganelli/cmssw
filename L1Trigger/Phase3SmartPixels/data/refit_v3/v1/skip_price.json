@@ -1,0 +1,955 @@
+{
+ "schema_version": 2,
+ "description": "SmartPixels refit v3: skip price",
+ "corrections": [
+  {
+   "name": "skip_price",
+   "description": "the two-layer hit choice's skip price P: the 99 % gate cut (gate|<dims>|calibrated of the cut file) per cut-surface code (+100: a barrel visit of a disc-going track; 0: the table's '*' value, test-only) and first visit step; the cut file's fallback chain resolved",
+   "version": 1,
+   "inputs": [
+    {
+     "name": "dims",
+     "type": "string"
+    },
+    {
+     "name": "code",
+     "type": "int"
+    },
+    {
+     "name": "first",
+     "type": "int"
+    }
+   ],
+   "output": {
+    "name": "value",
+    "type": "real"
+   },
+   "data": {
+    "nodetype": "category",
+    "input": "dims",
+    "content": [
+     {
+      "key": "xy",
+      "value": {
+       "nodetype": "category",
+       "input": "code",
+       "content": [
+        {
+         "key": 1,
+         "value": {
+          "nodetype": "category",
+          "input": "first",
+          "content": [
+           {
+            "key": 0,
+            "value": 182.32801744482498
+           },
+           {
+            "key": 1,
+            "value": 182.32801744482498
+           }
+          ]
+         }
+        },
+        {
+         "key": 2,
+         "value": {
+          "nodetype": "category",
+          "input": "first",
+          "content": [
+           {
+            "key": 0,
+            "value": 123.49526701541788
+           },
+           {
+            "key": 1,
+            "value": 123.49526701541788
+           }
+          ]
+         }
+        },
+        {
+         "key": 3,
+         "value": {
+          "nodetype": "category",
+          "input": "first",
+          "content": [
+           {
+            "key": 0,
+            "value": 97.42490409200035
+           },
+           {
+            "key": 1,
+            "value": 64.86935905944871
+           }
+          ]
+         }
+        },
+        {
+         "key": 4,
+         "value": {
+          "nodetype": "category",
+          "input": "first",
+          "content": [
+           {
+            "key": 0,
+            "value": 68.15867752967745
+           },
+           {
+            "key": 1,
+            "value": 68.15867752967745
+           }
+          ]
+         }
+        },
+        {
+         "key": 101,
+         "value": {
+          "nodetype": "category",
+          "input": "first",
+          "content": [
+           {
+            "key": 0,
+            "value": 499.29815619975875
+           },
+           {
+            "key": 1,
+            "value": 499.29815619975875
+           }
+          ]
+         }
+        },
+        {
+         "key": 102,
+         "value": {
+          "nodetype": "category",
+          "input": "first",
+          "content": [
+           {
+            "key": 0,
+            "value": 234.94285896176615
+           },
+           {
+            "key": 1,
+            "value": 234.94285896176615
+           }
+          ]
+         }
+        },
+        {
+         "key": 103,
+         "value": {
+          "nodetype": "category",
+          "input": "first",
+          "content": [
+           {
+            "key": 0,
+            "value": 118.35047083500942
+           },
+           {
+            "key": 1,
+            "value": 118.35047083500942
+           }
+          ]
+         }
+        },
+        {
+         "key": 104,
+         "value": {
+          "nodetype": "category",
+          "input": "first",
+          "content": [
+           {
+            "key": 0,
+            "value": 68.15867752967745
+           },
+           {
+            "key": 1,
+            "value": 68.15867752967745
+           }
+          ]
+         }
+        },
+        {
+         "key": 11,
+         "value": {
+          "nodetype": "category",
+          "input": "first",
+          "content": [
+           {
+            "key": 0,
+            "value": 163.85481382324366
+           },
+           {
+            "key": 1,
+            "value": 158.28487616329716
+           }
+          ]
+         }
+        },
+        {
+         "key": 12,
+         "value": {
+          "nodetype": "category",
+          "input": "first",
+          "content": [
+           {
+            "key": 0,
+            "value": 130.68107301222597
+           },
+           {
+            "key": 1,
+            "value": 137.60803584753882
+           }
+          ]
+         }
+        },
+        {
+         "key": 13,
+         "value": {
+          "nodetype": "category",
+          "input": "first",
+          "content": [
+           {
+            "key": 0,
+            "value": 85.62324434689498
+           },
+           {
+            "key": 1,
+            "value": 58.047468511642904
+           }
+          ]
+         }
+        },
+        {
+         "key": 14,
+         "value": {
+          "nodetype": "category",
+          "input": "first",
+          "content": [
+           {
+            "key": 0,
+            "value": 62.29208936295518
+           },
+           {
+            "key": 1,
+            "value": 51.409332120892216
+           }
+          ]
+         }
+        },
+        {
+         "key": 0,
+         "value": {
+          "nodetype": "category",
+          "input": "first",
+          "content": [
+           {
+            "key": 0,
+            "value": 131.94682782072294
+           },
+           {
+            "key": 1,
+            "value": 131.94682782072294
+           }
+          ]
+         }
+        }
+       ]
+      }
+     },
+     {
+      "key": "xya",
+      "value": {
+       "nodetype": "category",
+       "input": "code",
+       "content": [
+        {
+         "key": 1,
+         "value": {
+          "nodetype": "category",
+          "input": "first",
+          "content": [
+           {
+            "key": 0,
+            "value": 183.49872682068315
+           },
+           {
+            "key": 1,
+            "value": 183.49872682068315
+           }
+          ]
+         }
+        },
+        {
+         "key": 2,
+         "value": {
+          "nodetype": "category",
+          "input": "first",
+          "content": [
+           {
+            "key": 0,
+            "value": 123.80769027475583
+           },
+           {
+            "key": 1,
+            "value": 123.80769027475583
+           }
+          ]
+         }
+        },
+        {
+         "key": 3,
+         "value": {
+          "nodetype": "category",
+          "input": "first",
+          "content": [
+           {
+            "key": 0,
+            "value": 98.40660551287627
+           },
+           {
+            "key": 1,
+            "value": 65.71970613970562
+           }
+          ]
+         }
+        },
+        {
+         "key": 4,
+         "value": {
+          "nodetype": "category",
+          "input": "first",
+          "content": [
+           {
+            "key": 0,
+            "value": 71.44293554270962
+           },
+           {
+            "key": 1,
+            "value": 71.44293554270962
+           }
+          ]
+         }
+        },
+        {
+         "key": 101,
+         "value": {
+          "nodetype": "category",
+          "input": "first",
+          "content": [
+           {
+            "key": 0,
+            "value": 502.80916996609153
+           },
+           {
+            "key": 1,
+            "value": 502.80916996609153
+           }
+          ]
+         }
+        },
+        {
+         "key": 102,
+         "value": {
+          "nodetype": "category",
+          "input": "first",
+          "content": [
+           {
+            "key": 0,
+            "value": 235.01825446810548
+           },
+           {
+            "key": 1,
+            "value": 235.01825446810548
+           }
+          ]
+         }
+        },
+        {
+         "key": 103,
+         "value": {
+          "nodetype": "category",
+          "input": "first",
+          "content": [
+           {
+            "key": 0,
+            "value": 118.92330292214143
+           },
+           {
+            "key": 1,
+            "value": 118.92330292214143
+           }
+          ]
+         }
+        },
+        {
+         "key": 104,
+         "value": {
+          "nodetype": "category",
+          "input": "first",
+          "content": [
+           {
+            "key": 0,
+            "value": 71.44293554270962
+           },
+           {
+            "key": 1,
+            "value": 71.44293554270962
+           }
+          ]
+         }
+        },
+        {
+         "key": 11,
+         "value": {
+          "nodetype": "category",
+          "input": "first",
+          "content": [
+           {
+            "key": 0,
+            "value": 165.69144420796295
+           },
+           {
+            "key": 1,
+            "value": 158.6983317276883
+           }
+          ]
+         }
+        },
+        {
+         "key": 12,
+         "value": {
+          "nodetype": "category",
+          "input": "first",
+          "content": [
+           {
+            "key": 0,
+            "value": 131.7332124763045
+           },
+           {
+            "key": 1,
+            "value": 138.08177777302433
+           }
+          ]
+         }
+        },
+        {
+         "key": 13,
+         "value": {
+          "nodetype": "category",
+          "input": "first",
+          "content": [
+           {
+            "key": 0,
+            "value": 86.33406293152467
+           },
+           {
+            "key": 1,
+            "value": 58.70679829326913
+           }
+          ]
+         }
+        },
+        {
+         "key": 14,
+         "value": {
+          "nodetype": "category",
+          "input": "first",
+          "content": [
+           {
+            "key": 0,
+            "value": 63.17818507046179
+           },
+           {
+            "key": 1,
+            "value": 51.86984068090561
+           }
+          ]
+         }
+        },
+        {
+         "key": 0,
+         "value": {
+          "nodetype": "category",
+          "input": "first",
+          "content": [
+           {
+            "key": 0,
+            "value": 132.80614898149577
+           },
+           {
+            "key": 1,
+            "value": 132.80614898149577
+           }
+          ]
+         }
+        }
+       ]
+      }
+     },
+     {
+      "key": "xyb",
+      "value": {
+       "nodetype": "category",
+       "input": "code",
+       "content": [
+        {
+         "key": 1,
+         "value": {
+          "nodetype": "category",
+          "input": "first",
+          "content": [
+           {
+            "key": 0,
+            "value": 249.68046757458467
+           },
+           {
+            "key": 1,
+            "value": 249.68046757458467
+           }
+          ]
+         }
+        },
+        {
+         "key": 2,
+         "value": {
+          "nodetype": "category",
+          "input": "first",
+          "content": [
+           {
+            "key": 0,
+            "value": 178.50101014439252
+           },
+           {
+            "key": 1,
+            "value": 178.50101014439252
+           }
+          ]
+         }
+        },
+        {
+         "key": 3,
+         "value": {
+          "nodetype": "category",
+          "input": "first",
+          "content": [
+           {
+            "key": 0,
+            "value": 116.59190001296436
+           },
+           {
+            "key": 1,
+            "value": 85.44729596872484
+           }
+          ]
+         }
+        },
+        {
+         "key": 4,
+         "value": {
+          "nodetype": "category",
+          "input": "first",
+          "content": [
+           {
+            "key": 0,
+            "value": 83.08548938026047
+           },
+           {
+            "key": 1,
+            "value": 83.08548938026047
+           }
+          ]
+         }
+        },
+        {
+         "key": 101,
+         "value": {
+          "nodetype": "category",
+          "input": "first",
+          "content": [
+           {
+            "key": 0,
+            "value": 526.5137269832926
+           },
+           {
+            "key": 1,
+            "value": 526.5137269832926
+           }
+          ]
+         }
+        },
+        {
+         "key": 102,
+         "value": {
+          "nodetype": "category",
+          "input": "first",
+          "content": [
+           {
+            "key": 0,
+            "value": 252.2925998036046
+           },
+           {
+            "key": 1,
+            "value": 252.2925998036046
+           }
+          ]
+         }
+        },
+        {
+         "key": 103,
+         "value": {
+          "nodetype": "category",
+          "input": "first",
+          "content": [
+           {
+            "key": 0,
+            "value": 125.09708772767323
+           },
+           {
+            "key": 1,
+            "value": 126.29884707029687
+           }
+          ]
+         }
+        },
+        {
+         "key": 104,
+         "value": {
+          "nodetype": "category",
+          "input": "first",
+          "content": [
+           {
+            "key": 0,
+            "value": 83.08548938026047
+           },
+           {
+            "key": 1,
+            "value": 83.08548938026047
+           }
+          ]
+         }
+        },
+        {
+         "key": 11,
+         "value": {
+          "nodetype": "category",
+          "input": "first",
+          "content": [
+           {
+            "key": 0,
+            "value": 165.3125784113766
+           },
+           {
+            "key": 1,
+            "value": 158.6118897835933
+           }
+          ]
+         }
+        },
+        {
+         "key": 12,
+         "value": {
+          "nodetype": "category",
+          "input": "first",
+          "content": [
+           {
+            "key": 0,
+            "value": 131.47077766843418
+           },
+           {
+            "key": 1,
+            "value": 140.9931382551321
+           }
+          ]
+         }
+        },
+        {
+         "key": 13,
+         "value": {
+          "nodetype": "category",
+          "input": "first",
+          "content": [
+           {
+            "key": 0,
+            "value": 86.2887689728298
+           },
+           {
+            "key": 1,
+            "value": 58.47150786098342
+           }
+          ]
+         }
+        },
+        {
+         "key": 14,
+         "value": {
+          "nodetype": "category",
+          "input": "first",
+          "content": [
+           {
+            "key": 0,
+            "value": 62.78932991834024
+           },
+           {
+            "key": 1,
+            "value": 52.60237410059722
+           }
+          ]
+         }
+        },
+        {
+         "key": 0,
+         "value": {
+          "nodetype": "category",
+          "input": "first",
+          "content": [
+           {
+            "key": 0,
+            "value": 148.1353229317262
+           },
+           {
+            "key": 1,
+            "value": 148.1353229317262
+           }
+          ]
+         }
+        }
+       ]
+      }
+     },
+     {
+      "key": "xyab",
+      "value": {
+       "nodetype": "category",
+       "input": "code",
+       "content": [
+        {
+         "key": 1,
+         "value": {
+          "nodetype": "category",
+          "input": "first",
+          "content": [
+           {
+            "key": 0,
+            "value": 251.01012853260696
+           },
+           {
+            "key": 1,
+            "value": 251.01012853260696
+           }
+          ]
+         }
+        },
+        {
+         "key": 2,
+         "value": {
+          "nodetype": "category",
+          "input": "first",
+          "content": [
+           {
+            "key": 0,
+            "value": 179.14670498458656
+           },
+           {
+            "key": 1,
+            "value": 179.14670498458656
+           }
+          ]
+         }
+        },
+        {
+         "key": 3,
+         "value": {
+          "nodetype": "category",
+          "input": "first",
+          "content": [
+           {
+            "key": 0,
+            "value": 119.65750096898165
+           },
+           {
+            "key": 1,
+            "value": 86.85124442110876
+           }
+          ]
+         }
+        },
+        {
+         "key": 4,
+         "value": {
+          "nodetype": "category",
+          "input": "first",
+          "content": [
+           {
+            "key": 0,
+            "value": 88.54843569107659
+           },
+           {
+            "key": 1,
+            "value": 88.54843569107659
+           }
+          ]
+         }
+        },
+        {
+         "key": 101,
+         "value": {
+          "nodetype": "category",
+          "input": "first",
+          "content": [
+           {
+            "key": 0,
+            "value": 526.9962301494
+           },
+           {
+            "key": 1,
+            "value": 526.9962301494
+           }
+          ]
+         }
+        },
+        {
+         "key": 102,
+         "value": {
+          "nodetype": "category",
+          "input": "first",
+          "content": [
+           {
+            "key": 0,
+            "value": 256.93993713637917
+           },
+           {
+            "key": 1,
+            "value": 256.93993713637917
+           }
+          ]
+         }
+        },
+        {
+         "key": 103,
+         "value": {
+          "nodetype": "category",
+          "input": "first",
+          "content": [
+           {
+            "key": 0,
+            "value": 127.57201697123567
+           },
+           {
+            "key": 1,
+            "value": 129.4455641822525
+           }
+          ]
+         }
+        },
+        {
+         "key": 104,
+         "value": {
+          "nodetype": "category",
+          "input": "first",
+          "content": [
+           {
+            "key": 0,
+            "value": 88.54843569107659
+           },
+           {
+            "key": 1,
+            "value": 88.54843569107659
+           }
+          ]
+         }
+        },
+        {
+         "key": 11,
+         "value": {
+          "nodetype": "category",
+          "input": "first",
+          "content": [
+           {
+            "key": 0,
+            "value": 166.15344167351353
+           },
+           {
+            "key": 1,
+            "value": 159.02534560815374
+           }
+          ]
+         }
+        },
+        {
+         "key": 12,
+         "value": {
+          "nodetype": "category",
+          "input": "first",
+          "content": [
+           {
+            "key": 0,
+            "value": 132.4239553743007
+           },
+           {
+            "key": 1,
+            "value": 141.46689023242334
+           }
+          ]
+         }
+        },
+        {
+         "key": 13,
+         "value": {
+          "nodetype": "category",
+          "input": "first",
+          "content": [
+           {
+            "key": 0,
+            "value": 86.83620605976509
+           },
+           {
+            "key": 1,
+            "value": 59.49149988772125
+           }
+          ]
+         }
+        },
+        {
+         "key": 14,
+         "value": {
+          "nodetype": "category",
+          "input": "first",
+          "content": [
+           {
+            "key": 0,
+            "value": 63.625498359390754
+           },
+           {
+            "key": 1,
+            "value": 52.74740559607957
+           }
+          ]
+         }
+        },
+        {
+         "key": 0,
+         "value": {
+          "nodetype": "category",
+          "input": "first",
+          "content": [
+           {
+            "key": 0,
+            "value": 149.463334493924
+           },
+           {
+            "key": 1,
+            "value": 149.463334493924
+           }
+          ]
+         }
+        }
+       ]
+      }
+     }
+    ]
+   }
+  }
+ ]
+}

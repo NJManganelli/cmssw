@@ -1,0 +1,233 @@
+{
+ "schema": "spix-refit-v3-material/1",
+ "highland": {
+  "c0": 0.0136,
+  "c1": 0.038
+ },
+ "barrel_planes": [
+  {
+   "r": 4.17,
+   "layer": 0,
+   "xx0": 0.0009,
+   "what": "TBPX HV lines outside L1"
+  },
+  {
+   "r": null,
+   "layer": 2,
+   "xx0": 0.0187,
+   "what": "TBPX L2 module (incl. ladder cooling)"
+  },
+  {
+   "r": 7.29,
+   "layer": 0,
+   "xx0": 0.001,
+   "what": "TBPX HV lines outside L2"
+  },
+  {
+   "r": null,
+   "layer": 3,
+   "xx0": 0.0148,
+   "what": "TBPX L3 module"
+  },
+  {
+   "r": 11.68,
+   "layer": 0,
+   "xx0": 0.0008,
+   "what": "TBPX HV lines outside L3"
+  },
+  {
+   "r": null,
+   "layer": 4,
+   "xx0": 0.0148,
+   "what": "TBPX L4 module"
+  },
+  {
+   "r": 15.84,
+   "layer": 0,
+   "xx0": 0.0009,
+   "what": "TBPX HV lines outside L4"
+  },
+  {
+   "r": 16.24,
+   "layer": 0,
+   "xx0": 0.012,
+   "what": "TBPX external cylinder"
+  },
+  {
+   "r": 20.95,
+   "layer": 0,
+   "xx0": 0.0117,
+   "what": "ITST, IT support tube"
+  },
+  {
+   "r": 21.3,
+   "layer": 0,
+   "xx0": 0.0049,
+   "what": "TBPS innermost cylinder"
+  }
+ ],
+ "material_scale": 1.0,
+ "ot_inner_r_cm": 22.0,
+ "disc_going_planes": [
+  {
+   "kind": "cyl",
+   "r": 3.0412365387959466,
+   "half_z": 19.942499282999997,
+   "xx0": 0.018519,
+   "what": "TBPX L1 module: trackerRecoMaterial.xml (tkLayout RL)"
+  },
+  {
+   "kind": "cyl",
+   "r": 4.17,
+   "half_z": 19.914949999999997,
+   "xx0": 0.0009,
+   "what": "TBPX HV lines outside L1"
+  },
+  {
+   "kind": "cyl",
+   "r": 6.170610377019563,
+   "half_z": 20.072499515,
+   "xx0": 0.0187,
+   "what": "TBPX L2 module (incl. ladder cooling)"
+  },
+  {
+   "kind": "cyl",
+   "r": 7.29,
+   "half_z": 20.0325,
+   "xx0": 0.001,
+   "what": "TBPX HV lines outside L2"
+  },
+  {
+   "kind": "cyl",
+   "r": 10.474936398749827,
+   "half_z": 20.072499515,
+   "xx0": 0.0148,
+   "what": "TBPX L3 module"
+  },
+  {
+   "kind": "cyl",
+   "r": 11.68,
+   "half_z": 20.0325,
+   "xx0": 0.0008,
+   "what": "TBPX HV lines outside L3"
+  },
+  {
+   "kind": "cyl",
+   "r": 14.667811690807856,
+   "half_z": 20.072499515,
+   "xx0": 0.0148,
+   "what": "TBPX L4 module"
+  },
+  {
+   "kind": "cyl",
+   "r": 15.84,
+   "half_z": 20.0325,
+   "xx0": 0.0009,
+   "what": "TBPX HV lines outside L4"
+  },
+  {
+   "kind": "cyl",
+   "r": 16.24,
+   "half_z": 20.0363,
+   "xx0": 0.012,
+   "what": "TBPX external cylinder"
+  },
+  {
+   "kind": "cyl",
+   "r": 20.95,
+   "half_z": 160.12449999999998,
+   "xx0": 0.0117,
+   "what": "ITST, IT support tube"
+  },
+  {
+   "kind": "cyl",
+   "r": 21.3,
+   "half_z": 120.8406,
+   "xx0": 0.0049,
+   "what": "TBPS innermost cylinder"
+  },
+  {
+   "kind": "disc",
+   "z": 25.184259449259258,
+   "r_ext": [
+    3.1000000503452725,
+    16.08827419273313
+   ],
+   "xx0": 0.0133596,
+   "disk": 1,
+   "what": "TFPX disk 1 module"
+  },
+  {
+   "kind": "disc",
+   "z": 32.17925933425926,
+   "r_ext": [
+    3.1000000503452725,
+    16.08827419273313
+   ],
+   "xx0": 0.0133596,
+   "disk": 2,
+   "what": "TFPX disk 2 module"
+  },
+  {
+   "kind": "disc",
+   "z": 41.10726073925925,
+   "r_ext": [
+    3.1000000503452725,
+    16.08827419273313
+   ],
+   "xx0": 0.0133596,
+   "disk": 3,
+   "what": "TFPX disk 3 module"
+  },
+  {
+   "kind": "disc",
+   "z": 52.504260099259255,
+   "r_ext": [
+    3.1000000503452725,
+    16.08827419273313
+   ],
+   "xx0": 0.0133596,
+   "disk": 4,
+   "what": "TFPX disk 4 module"
+  },
+  {
+   "kind": "disc",
+   "z": 67.05225852425927,
+   "r_ext": [
+    3.1000000503452725,
+    16.08827419273313
+   ],
+   "xx0": 0.0133596,
+   "disk": 5,
+   "what": "TFPX disk 5 module"
+  },
+  {
+   "kind": "disc",
+   "z": 84.12225822425926,
+   "r_ext": [
+    3.1000000503452725,
+    16.08827419273313
+   ],
+   "xx0": 0.0133596,
+   "disk": 6,
+   "what": "TFPX disk 6 module"
+  }
+ ],
+ "disc_material_scale": 2.671247136543709,
+ "cylinder_material_scale": 1.0,
+ "il1_module": {
+  "layer": 1,
+  "xx0": 0.018519,
+  "what": "TBPX L1 module: trackerRecoMaterial.xml (tkLayout RL)"
+ },
+ "beam_pipe": {
+  "r": 2.3,
+  "xx0": 0.0022761,
+  "what": "beam pipe: tkLayout global_constants.hh:71 (x/X0), Analyzer.cc:224 (r = 23 mm)"
+ },
+ "rules": {
+  "barrel_only": "planes with radius in (R_S, R_prev]; layer planes at the layer's mean module-centre radius; kink at the plane radius",
+  "disc_going": "planes crossed within their extent at arc length s(S) < s <= s(prev), kink at the crossing radius; disc X = scale x/X0 / |tanL|",
+  "inner": "barrel-only: calibration planes + IL1 module + beam pipe down to r = 0; disc-going: disc-going planes + the beam pipe (no |z| limit), 0 < s <= s(innermost accepted)"
+ }
+}

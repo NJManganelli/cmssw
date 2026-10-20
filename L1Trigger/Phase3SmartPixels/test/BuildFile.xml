@@ -2,3 +2,13 @@
   <use name="catch2"/>
   <use name="L1Trigger/Phase3SmartPixels"/>
 </bin>
+<bin file="testSmartPixelsRefitV3.cpp" name="testSmartPixelsRefitV3">
+  <use name="catch2"/>
+  <use name="json"/>
+  <use name="L1Trigger/Phase3SmartPixels"/>
+</bin>
+<bin file="refitV3NanoClosure.cpp" name="refitV3NanoClosure">
+  <use name="rootgraphics"/>
+  <use name="json"/>
+  <use name="L1Trigger/Phase3SmartPixels"/>
+</bin>
