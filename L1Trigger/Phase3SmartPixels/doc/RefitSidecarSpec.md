@@ -191,12 +191,17 @@ struct SmartPixelsRefitHitInfo {   // one entry per LAYER CROSSING attempted (no
   int8_t selHitClass;      // simlink class of the selected hit: 0 same TP as the OT track's
                            // TTTrackAssociator TP, 1 other TP, 2 noise, -1 none
   float  tpLocalCotAlpha, tpLocalCotBeta;  // selected hit's unsmeared parent local angles (-999.f if none)
+  // --- refit v3 only (refitVersion 3; defaults on v2): the two-layer hit choice ---
+  int8_t kchoice;          // the choice committed for the window this crossing opened: 0 best, 1 runner-up,
+                           // 2 skip; -1 none (no window opened here, or v2)
+  float  rankChi2;         // the chosen candidate's ranking innovation chi2 (-999.f if none)
+  float  skipPrice;        // P of the window opened here (the 99 % gate cut in the step's rank dims)
 };
 
 struct SmartPixelsRefitTrackInfo { // one entry per track (refit or passthrough)
   uint8_t  status;         // bit0 refit performed (else passthrough); bit1 otCovOK;
                            // bit2 RETIRED (was the parametrized OT covariance); bit3 anyWindowTruncated;
-                           // bits4-7 reserved
+                           // bit4 discGoing (v3); bits5-7 reserved
   uint8_t  nCrossings;     // valid layer crossings attempted
   uint8_t  nAcceptedHits;  // hits accepted into the KF
   uint8_t  nKFUpdates;     // scalar-update groups applied (== layers updated)
@@ -212,6 +217,8 @@ struct SmartPixelsRefitTrackInfo { // one entry per track (refit or passthrough)
                            // TTClusterAssociationMap, dominantTrackingParticle; IT: charge);
                            // ownerless clusters count in the denominator. Nano: tpIdx
   uint8_t  nOTClustersOwnedByMatchedTp, nITClustersOwnedByMatchedTp;  // TRUTH-ONLY, 0 if unmatched
+  uint8_t  refitVersion;   // 2: the original seedlessRefit; 3: refit v3 (seedlessRefitPreset v3,
+                           // doc/RefitV3Design.md). status bit4 (v3): the OT path meets a disc (+-1 cm)
 };
 
 struct SmartPixelsRefitSidecar {
@@ -234,6 +241,11 @@ Rules:
   (output track i, input track i) via the invariant. Adapters compute them on demand.
 - Fields marked TRUTH-ONLY exist for training labels and diagnostics; no inference
   adapter may forward them (enforced by the transmitted-subset definitions below).
+- Refit v3: `hitInfo[i]` holds one entry per VISITED surface (the engine's visit plan), the
+  selected-hit fields describe the cluster the two-layer choice kept, `proj*` is the
+  prediction from the state the update used, `projOT*` and `truthRes*` are not filled
+  (-999.f), and `chi2ITAtOT` is not filled; `shiftChi2` and `logDetRatio` compare with the
+  floored OT covariance (without the seed model's correction).
 
 ## 3. Transmitted subsets (hardware-boundary model)
 

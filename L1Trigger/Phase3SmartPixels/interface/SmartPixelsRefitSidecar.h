@@ -115,6 +115,11 @@ namespace smartpixels {
                                                        // can be class 0 and still carry another TP's charge, which
                                                        // biases its position and makes its angle ill-defined -- an
                                                        // effect the pre-cluster (per-digi) hit model could not express.
+    // refit v3 (refitVersion 3): the two-layer choice committed at the window this crossing opened (0 best,
+    // 1 runner-up, 2 skip, -1 none), the chosen candidate's ranking chi2 and the window's skip price.
+    int8_t kchoice = -1;
+    float rankChi2 = -999.f;
+    float skipPrice = -999.f;
   };
 
   // One entry per track (refit or passthrough).
@@ -163,6 +168,7 @@ namespace smartpixels {
     // OT stub clusters and accepted IT clusters owned by matchedTpIdx; 0 if unmatched. TRUTH-ONLY.
     uint8_t nOTClustersOwnedByMatchedTp = 0;
     uint8_t nITClustersOwnedByMatchedTp = 0;
+    uint8_t refitVersion = 2;  // 2: the original seedlessRefit; 3: the replay's calibrated arm (seedlessRefitPreset v3)
   };
 
   struct SmartPixelsRefitSidecar {
@@ -188,6 +194,7 @@ namespace smartpixels {
     // Do not reuse it -- pre-removal files may have it set, and a new meaning
     // would silently mis-read them.
     inline constexpr uint8_t kAnyWindowTruncated = 0x8; // bit3
+    inline constexpr uint8_t kDiscGoing = 0x10;         // bit4: v3, the OT path meets a disc (+-1 cm)
   }  // namespace trackstatus
 
 }  // namespace smartpixels
