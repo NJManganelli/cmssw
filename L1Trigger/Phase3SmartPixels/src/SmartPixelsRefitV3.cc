@@ -654,9 +654,12 @@ namespace smartpixels::v3 {
       }
       xs.push_back({sj, rj, on});
     }
+    // (sCur, sPrev]: the previous surface's own plane in, the current surface's out. The replay excludes the
+    // current plane by exact equality (its planes and surfaces share one geometry); here the planes come from the
+    // payload and the surfaces from the reconstruction geometry, so both ends take the same 1e-6 cm tolerance.
     for (size_t k = 0; k < planes.size(); ++k) {
       const auto& pl = planes[k];
-      if (!(xs[k].on && xs[k].s > sCur && xs[k].s <= sPrev + 1e-6))
+      if (!(xs[k].on && xs[k].s > sCur + 1e-6 && xs[k].s <= sPrev + 1e-6))
         continue;
       const double xx0 = pl.disc ? discScale * pl.xx0 : mat.cylScale * pl.xx0;
       const double path = pl.disc ? 1.0 / std::max(std::abs(tanl), 1e-6) : 1.0;
