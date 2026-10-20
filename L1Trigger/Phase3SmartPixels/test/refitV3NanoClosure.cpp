@@ -2,9 +2,11 @@
 // nano's OT tracks and SmartPixels clusters (the values the replay reads), the replay's geometry JSON and
 // its chunk-median kpt, and compared track by track with the replay's reference output (spec/reference).
 //   refitV3NanoClosure <nano.root> <reference.jsonl> <geometry.json> <manifest.json> <mask AAAA|AAAI|...>
-//                      [nEvents=10] [knownBad=""] [dump.jsonl]
-// dump.jsonl: the engine's per-track records (per accepted step aPre / CPred / aPost / CPost in double), for
-// eval_refitq/v3cmssw/closure_compare.py forced against the replay's forced file.
+//                      [nEvents=10] [knownBad=""] [dump.jsonl] [angleUse all|none|rank]
+// dump.jsonl: the engine's per-track records in the closure dump's names (every step's choice, scores and margins;
+// per accepted step aPre / CPred / aPost / CPost in double), for eval_refitq/v3cmssw/closure_compare.py select /
+// forced and knownbad_effects.py. angleUse: none = no angles, rank = angles in the ranking only (the identities).
+// The per-path counts are printed as PATH lines.
 // Exit code 0 when every compared quantity agrees within the development tolerances.
 #include "L1Trigger/Phase3SmartPixels/interface/SmartPixelsRefitV3.h"
 
@@ -88,8 +90,9 @@ int main(int argc, char** argv) {
   const int nEvents = argc > 6 ? std::stoi(argv[6]) : 10;
   const std::string knownBad = argc > 7 ? argv[7] : "";
   std::unique_ptr<std::ofstream> dump;
-  if (argc > 8)
+  if (argc > 8 && std::string(argv[8]).size())
     dump = std::make_unique<std::ofstream>(argv[8]);
+  std::map<std::string, long> paths;  // the rare paths taken (the closure's per-path counts)
   auto num = [](double x) {
     std::ostringstream o;
     if (std::isfinite(x))
@@ -115,9 +118,10 @@ int main(int argc, char** argv) {
   Payloads pay;
   pay.load(manifest);
   Config cfg;
-  for (auto& c : cfg.use)
-    for (auto& a : c)
-      a = {{true, true}};
+  const std::string angleUse = argc > 9 ? argv[9] : "all";
+  for (int ic = 0; ic < 2; ++ic)
+    for (auto& a : cfg.use[ic])
+      a = {{angleUse == "all" || (angleUse == "rank" && ic == 0), angleUse == "all" || (angleUse == "rank" && ic == 0)}};
   cfg.knownBad = knownBad;
   const Engine eng(cfg, pay, geo);
   const auto active = activeOf(mask);
@@ -218,6 +222,22 @@ int main(int argc, char** argv) {
       const auto& R = it->second;
       ++nTracks;
       const TrackResult res = eng.run(a, C, kpt, active, cls);
+      paths["tracks"] += 1;
+      paths["seed outside the fitted domain"] += res.seedClipped;
+      paths["end-of-track one-layer commit"] += res.endCommit;
+      for (const auto& st : res.steps) {
+        if (!st.visited)
+          continue;
+        paths["visited crossings"] += 1;
+        paths["window fallback (every module)"] += st.fallback;
+        paths["prediction |cot| > 12 guard"] += st.predGuard;
+        paths["updates with a Jacobian column zeroed"] += st.jacZeroed > 0;
+        for (int ia = 0; ia < 2; ++ia)
+          if (st.accepted)
+            paths[std::string(ia ? "beta" : "alpha") + " table mode " + std::to_string(st.angleMode[ia])] += 1;
+        if (st.skipLevel >= 0)
+          paths["skip price fallback level " + std::to_string(st.skipLevel)] += 1;
+      }
       if (dump) {
         const char* fn[5] = {"rInv", "phi0", "tanL", "z0", "d0"};
         std::string fin = "{";
@@ -225,16 +245,24 @@ int main(int argc, char** argv) {
           fin += std::string(i ? ", " : "") + "\"" + fn[i] + "\": " + num(res.a[i]);
         fin += "}";
         *dump << "{\"run\": " << *run << ", \"lumi\": " << *lumi << ", \"event\": " << *evt << ", \"track\": " << t
-              << ", \"steps\": [";
-        bool first = true;
+              << ", \"refit\": " << (res.refit ? "true" : "false") << ", \"nacc\": " << res.nacc
+              << ", \"disc_going\": " << (res.discGoing ? "true" : "false") << ", \"steps\": [";
         for (size_t j = 0; j < res.steps.size(); ++j) {
           const auto& st = res.steps[j];
-          if (!st.accepted)
-            continue;
-          *dump << (first ? "" : ", ") << "{\"step\": " << j << ", \"surface\": " << st.surface
-                << ", \"accepted\": true, \"aPre\": " << vec(st.aPre) << ", \"CPred\": " << mat(st.CPred)
-                << ", \"aPost\": " << vec(st.aPost) << ", \"CPost\": " << mat(st.CPost) << "}";
-          first = false;
+          std::array<double, 3> sc = st.scores;
+          std::sort(sc.begin(), sc.end(), [](double x, double y) {
+            return (std::isfinite(x) ? x : 1e308) < (std::isfinite(y) ? y : 1e308);
+          });
+          const double selMargin = std::isfinite(sc[0]) && std::isfinite(sc[1]) ? sc[1] - sc[0] : kInf;
+          *dump << (j ? ", " : "") << "{\"step\": " << j << ", \"surface\": " << st.surface << ", \"visited\": "
+                << (st.visited ? "true" : "false") << ", \"accepted\": " << (st.accepted ? "true" : "false")
+                << ", \"detId\": " << st.detId << ", \"cluster\": " << st.cluster << ", \"ncand\": " << st.ncand
+                << ", \"kchoice\": " << st.kchoice << ", \"chi2\": " << vec(st.chi2) << ", \"scores\": "
+                << vec(st.scores) << ", \"selMargin\": " << num(selMargin) << ", \"rankMargin\": " << num(st.selMargin);
+          if (st.accepted)
+            *dump << ", \"aPre\": " << vec(st.aPre) << ", \"CPred\": " << mat(st.CPred) << ", \"aPost\": "
+                  << vec(st.aPost) << ", \"CPost\": " << mat(st.CPost);
+          *dump << "}";
         }
         *dump << "], \"final\": " << fin << ", \"final_C\": " << mat(res.C) << "}\n";
       }
@@ -320,6 +348,8 @@ int main(int argc, char** argv) {
   std::cout << "tracks " << nTracks << ", visited steps " << nSteps << "\n"
             << "max |da|/sigma " << maxDa << ", max |dC|/sqrt(CiiCjj) " << maxDC << ", max rel dchi2 " << maxDchi2
             << ", max seed dC " << maxDseed << "\n";
+  for (const auto& [k, v] : paths)
+    std::cout << "PATH " << k << ": " << v << "\n";
   for (const auto& [k, v] : T.n) {
     std::cout << "MISMATCH " << k << ": " << v << "\n";
     for (const auto& x : T.ex[k])
