@@ -29,7 +29,7 @@ _STATE = "smartPixelsNano"
 # seedlessRefitConfig overrides the add-on flavours apply over SEEDLESSREFIT_DEFAULTS.
 _TIER_SEEDLESSREFIT_DEFAULTS = {"angleSource": "emu"}
 
-_MODE_TAGS = {"SPSeedlessRefit": "seedlessRefit"}
+_MODE_TAGS = {"SPSeedlessRefit": "seedlessRefit", "SPSeedlessRefitV3": "seedlessRefitV3"}
 _TP_TRUTH_TAGS = {"TPTruth1GeV": "charged1GeV",
                   "TPTruthLinked": "linked",
                   "TPTruth1GeVLinked": "charged1GeVOrLinked",
@@ -258,6 +258,12 @@ def useSPSeedlessRefit(process):
     return _useModeTag(process, "SPSeedlessRefit")
 
 
+def useSPSeedlessRefitV3(process):
+    """@SPSeedlessRefitV3: the seedless refit v3 (the replay's calibrated arm with the two-layer hit choice,
+    doc/RefitV3Design.md); the same tables as @SPSeedlessRefit, with the v3 columns filled."""
+    return _useModeTag(process, "SPSeedlessRefitV3")
+
+
 def _reserved(tag):
     def customise(process):
         raise NotImplementedError(f"SmartPixels nano: @{tag} is RESERVED; the mode is not implemented. "
@@ -357,12 +363,13 @@ def _applySeedlessRefitSettings(process, st):
     from L1Trigger.Phase3SmartPixels.customizeSmartPixels_cff import (
         _applySeedlessRefitConfig, configureSmartPixelsRecHits, smartPixelsVariantLabels)
     resolved = _seedlessRefitConfig(st)
-    variant = st.variant.value()
-    if variant.startswith("seedlessRefit:"):
+    from L1Trigger.Phase3SmartPixels.customizeSmartPixels_cff import SEEDLESSREFIT_PRESETS
+    mode, _, activeSP = st.variant.value().partition(":")
+    if mode in SEEDLESSREFIT_PRESETS:
         if resolved["angleSource"] == "payload" and not resolved["pixelavAngleSet"]:
             raise ValueError("smartPixelsNanoParams: angleSource='payload' needs pixelavAngleSet")
-        for label in smartPixelsVariantLabels("seedlessRefit", variant.split(":")[1]):
-            _applySeedlessRefitConfig(getattr(process, label), resolved)
+        for label in smartPixelsVariantLabels(mode, activeSP):
+            _applySeedlessRefitConfig(getattr(process, label), resolved, SEEDLESSREFIT_PRESETS[mode])
     if hasattr(process, "spixSmartPixelsRecHits"):
         configureSmartPixelsRecHits(process, resolved["pixelavAngleSet"], resolved["smarthitFakeSet"],
                                     angleSource=resolved["angleSource"], discScope=resolved["discScope"])
@@ -493,7 +500,7 @@ def _configureModeTables(process, variant, sched):
     """The seedlessRefit variant's own tables: per-crossing refit hits (trackIdx -> SmartPixels
     track, selClusterIdx -> L1TSmartPixelsCluster when those tables are present) and the spix*
     columns on the SmartPixels track tables."""
-    if variant is None or variant[0] != "seedlessRefit":
+    if variant is None or variant[0] not in ("seedlessRefit", "seedlessRefitV3"):
         return
     from DPGAnalysis.Phase3SmartPixelsNanoAOD.l1tPh3SmartPixelsNano_cff import l1tPh3SmartPixelsRefitTable
     for side, (spLabel, spName) in _SP_TABLES.items():
@@ -536,7 +543,7 @@ def _configureStubLinks(process, st, variant, sched):
             if not hasattr(process, label):
                 setattr(process, label, l1tPh3SmartPixelsTrackClusterLinkTable.clone(
                     tracks=tracks, linkTableName=f"{tableName}Cluster", trackTableName=tableName,
-                    sidecar=tracks if spVariant[0] == "seedlessRefit" else cms.InputTag("")))
+                    sidecar=tracks if spVariant[0] in ("seedlessRefit", "seedlessRefitV3") else cms.InputTag("")))
                 _addToNano(process, "p3L1SmartPixelsLinkTask", [label])
 
 

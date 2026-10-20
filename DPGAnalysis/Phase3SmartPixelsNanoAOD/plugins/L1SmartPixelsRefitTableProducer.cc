@@ -54,7 +54,8 @@ public:
         tpRowMapToken_(consumes<edm::ValueMap<int>>(cfg.getParameter<edm::InputTag>("tpRowMap"))),
         trackTableName_(cfg.getParameter<std::string>("trackTableName")),
         clusterTableName_(cfg.getParameter<std::string>("clusterTableName")),
-        hitTableName_(cfg.getParameter<std::string>("hitTableName")) {
+        hitTableName_(cfg.getParameter<std::string>("hitTableName")),
+        closurePrecision_(cfg.getParameter<bool>("closurePrecision")) {
     produces<nanoaod::FlatTable>("hit");
     if (!trackTableName_.empty())
       produces<nanoaod::FlatTable>("trk");
@@ -127,6 +128,10 @@ public:
     std::vector<float> chi2IncX, chi2IncY, chi2IncAlpha, chi2IncBeta;
     std::vector<int32_t> selHitClass;
     std::vector<float> tpLocalCotAlpha, tpLocalCotBeta;
+    std::vector<int32_t> kchoice;
+    std::vector<float> rankChi2, skipPrice;
+    std::vector<uint8_t> refitVersion;
+    std::vector<bool> discGoing;
 
     for (size_t it = 0; it < nTracks; ++it) {
       const auto& ti = sidecar.trackInfo[it];
@@ -151,6 +156,8 @@ public:
       compactWord.push_back(static_cast<int32_t>(smartpixels::packCompactWord(ti)));
       nOTClustersOwnedByMatchedTp.push_back(ti.nOTClustersOwnedByMatchedTp);
       nITClustersOwnedByMatchedTp.push_back(ti.nITClustersOwnedByMatchedTp);
+      refitVersion.push_back(ti.refitVersion);
+      discGoing.push_back(ti.status & smartpixels::trackstatus::kDiscGoing);
 
       for (const auto& hi : sidecar.hitInfo[it]) {
         hitTrackIdx.push_back(static_cast<int32_t>(it));
@@ -202,6 +209,9 @@ public:
         selHitClass.push_back(hi.selHitClass);
         tpLocalCotAlpha.push_back(hi.tpLocalCotAlpha);
         tpLocalCotBeta.push_back(hi.tpLocalCotBeta);
+        kchoice.push_back(hi.kchoice);
+        rankChi2.push_back(hi.rankChi2);
+        skipPrice.push_back(hi.skipPrice);
       }
     }
 
@@ -233,8 +243,8 @@ public:
     hitTable->addColumn<float>("projLocalX", projLocalX,
         "RUNNING projection: track state as of this layer's visit, local x [cm]");
     hitTable->addColumn<float>("projLocalY", projLocalY, "RUNNING projection, local y [cm]");
-    hitTable->addColumn<float>("projCotAlpha", projCotAlpha, "RUNNING projection, expected cotAlpha", 12);
-    hitTable->addColumn<float>("projCotBeta", projCotBeta, "RUNNING projection, expected cotBeta", 12);
+    hitTable->addColumn<float>("projCotAlpha", projCotAlpha, "RUNNING projection, expected cotAlpha", bits(12));
+    hitTable->addColumn<float>("projCotBeta", projCotBeta, "RUNNING projection, expected cotBeta", bits(12));
     hitTable->addColumn<float>("projOTLocalX", projOTLocalX,
         "OT-ONLY projection (the OT track, no Kalman updates), local x [cm]");
     hitTable->addColumn<float>("projOTLocalY", projOTLocalY, "OT-ONLY projection, local y [cm]");
@@ -248,36 +258,39 @@ public:
         "sqrt((H C_OT H^T)_xx) [cm]: single-shot projection cone from the OT covariance, "
         "EXCLUDING the measurement term");
     hitTable->addColumn<float>("projOTSigY", projOTSigY, "sqrt((H C_OT H^T)_yy) [cm]");
-    hitTable->addColumn<float>("projOTCotAlpha", projOTCotAlpha, "OT-ONLY expected cotAlpha", 12);
-    hitTable->addColumn<float>("projOTCotBeta", projOTCotBeta, "OT-ONLY expected cotBeta", 12);
+    hitTable->addColumn<float>("projOTCotAlpha", projOTCotAlpha, "OT-ONLY expected cotAlpha", bits(12));
+    hitTable->addColumn<float>("projOTCotBeta", projOTCotBeta, "OT-ONLY expected cotBeta", bits(12));
     hitTable->addColumn<float>("recoLocalX", recoLocalX, "reco cluster local x [cm] (-999 if none)");
     hitTable->addColumn<float>("recoLocalY", recoLocalY, "reco cluster local y [cm] (-999 if none)");
     hitTable->addColumn<float>("sigX", sigX, "reco local-x uncertainty from the pixel CPE [cm] (-999 if none)");
     hitTable->addColumn<float>("sigY", sigY, "reco local-y uncertainty from the pixel CPE [cm] (-999 if none)");
     hitTable->addColumn<uint8_t>("recoSizeX", recoSizeX, "selected cluster extent in pixels along local x");
     hitTable->addColumn<uint8_t>("recoSizeY", recoSizeY, "selected cluster extent in pixels along local y");
-    hitTable->addColumn<float>("recoCharge", recoCharge, "selected cluster charge [electrons] (-999 if none)", /*mantissaBits=*/12);
+    hitTable->addColumn<float>("recoCharge", recoCharge, "selected cluster charge [electrons] (-999 if none)", bits(12));
     hitTable->addColumn<bool>("clusterMerged", clusterMerged, "TRUTH-ONLY: a second TP contributes more than clusterMergeFrac of the cluster charge");
-    hitTable->addColumn<float>("tpChargeFrac", tpChargeFrac, "TRUTH-ONLY dominant contributor share of the cluster charge (-999 if none)", /*mantissaBits=*/12);
+    hitTable->addColumn<float>("tpChargeFrac", tpChargeFrac, "TRUTH-ONLY dominant contributor share of the cluster charge (-999 if none)", bits(12));
     hitTable->addColumn<float>("projResX", projResX, "reco minus projected-crossing local x [cm] (-999 if none)");
     hitTable->addColumn<float>("projResY", projResY, "reco minus projected-crossing local y [cm] (-999 if none)");
-    hitTable->addColumn<float>("recoCotAlpha", recoCotAlpha, "reco cotAlpha of the selected hit (-999 if none)", /*mantissaBits=*/12);
-    hitTable->addColumn<float>("recoCotBeta", recoCotBeta, "reco cotBeta of the selected hit (-999 if none)", /*mantissaBits=*/12);
-    hitTable->addColumn<float>("sigAlpha", sigAlpha, "per-hit cotAlpha sigma from the PixelAV payload (-999 if none)", /*mantissaBits=*/12);
-    hitTable->addColumn<float>("sigBeta", sigBeta, "per-hit cotBeta sigma from the PixelAV payload (-999 if none)", /*mantissaBits=*/12);
+    hitTable->addColumn<float>("recoCotAlpha", recoCotAlpha, "reco cotAlpha of the selected hit (-999 if none)", bits(12));
+    hitTable->addColumn<float>("recoCotBeta", recoCotBeta, "reco cotBeta of the selected hit (-999 if none)", bits(12));
+    hitTable->addColumn<float>("sigAlpha", sigAlpha, "per-hit cotAlpha sigma from the PixelAV payload (-999 if none)", bits(12));
+    hitTable->addColumn<float>("sigBeta", sigBeta, "per-hit cotBeta sigma from the PixelAV payload (-999 if none)", bits(12));
     hitTable->addColumn<float>("pullX", pullX, "KF pull x = r/sqrt(S) (-999 if none)");
     hitTable->addColumn<float>("pullY", pullY, "KF pull y = r/sqrt(S) (-999 if none)");
     hitTable->addColumn<float>("pullAlpha", pullAlpha, "KF pull cotAlpha = r/sqrt(S) (-999 if none)");
     hitTable->addColumn<float>("pullBeta", pullBeta, "KF pull cotBeta = r/sqrt(S) (-999 if none)");
-    hitTable->addColumn<float>("chi2IncX", chi2IncX, "crossing chi2 increment, local-x position term (-999 if none; 0 if not applied)", /*mantissaBits=*/12);
-    hitTable->addColumn<float>("chi2IncY", chi2IncY, "crossing chi2 increment, local-y position term (-999 if none; 0 if not applied)", /*mantissaBits=*/12);
-    hitTable->addColumn<float>("chi2IncAlpha", chi2IncAlpha, "crossing chi2 increment, cotAlpha angle term (-999 if none; 0 if not applied)", /*mantissaBits=*/12);
-    hitTable->addColumn<float>("chi2IncBeta", chi2IncBeta, "crossing chi2 increment, cotBeta angle term (-999 if none; 0 if not applied)", /*mantissaBits=*/12);
-    hitTable->addColumn<float>("selChi2Margin", selChi2Margin, "runner-up minus best selection chi2 (>=0; -999 if <2 candidates or no accepted hit)", /*mantissaBits=*/12);
+    hitTable->addColumn<float>("chi2IncX", chi2IncX, "crossing chi2 increment, local-x position term (-999 if none; 0 if not applied)", bits(12));
+    hitTable->addColumn<float>("chi2IncY", chi2IncY, "crossing chi2 increment, local-y position term (-999 if none; 0 if not applied)", bits(12));
+    hitTable->addColumn<float>("chi2IncAlpha", chi2IncAlpha, "crossing chi2 increment, cotAlpha angle term (-999 if none; 0 if not applied)", bits(12));
+    hitTable->addColumn<float>("chi2IncBeta", chi2IncBeta, "crossing chi2 increment, cotBeta angle term (-999 if none; 0 if not applied)", bits(12));
+    hitTable->addColumn<float>("selChi2Margin", selChi2Margin, "runner-up minus best selection chi2 (>=0; -999 if <2 candidates or no accepted hit)", bits(12));
     hitTable->addColumn<int32_t>("selHitClass", selHitClass, "TRUTH-ONLY simlink class of the selected hit by its dominant charge contributor: 0 the OT track's "
         "loosely-genuine TP (L1TTrack_tpIdx, not the SmartPixels track's tpIdx), 1 another TP, 2 noise, -1 no hit accepted");
-    hitTable->addColumn<float>("tpLocalCotAlpha", tpLocalCotAlpha, "TRUTH-ONLY unsmeared parent local cotAlpha of the selected hit (-999 if none)", /*mantissaBits=*/12);
-    hitTable->addColumn<float>("tpLocalCotBeta", tpLocalCotBeta, "TRUTH-ONLY unsmeared parent local cotBeta of the selected hit (-999 if none)", /*mantissaBits=*/12);
+    hitTable->addColumn<float>("tpLocalCotAlpha", tpLocalCotAlpha, "TRUTH-ONLY unsmeared parent local cotAlpha of the selected hit (-999 if none)", bits(12));
+    hitTable->addColumn<float>("tpLocalCotBeta", tpLocalCotBeta, "TRUTH-ONLY unsmeared parent local cotBeta of the selected hit (-999 if none)", bits(12));
+    hitTable->addColumn<int32_t>("kchoice", kchoice, "refit v3: the two-layer choice committed at the window this crossing opened (0 best, 1 runner-up, 2 skip; -1 none or v2)");
+    hitTable->addColumn<float>("rankChi2", rankChi2, "refit v3: the chosen candidate's ranking innovation chi2 (-999 if none or v2)");
+    hitTable->addColumn<float>("skipPrice", skipPrice, "refit v3: the skip price of the window opened at this crossing (-999 if none or v2)");
     hitTable->setDoc(trackTableName_.empty()
                          ? std::string("SmartPixels refit per-crossing records (one row per layer crossing)")
                          : "SmartPixels refit per-crossing records for the " + trackTableName_ +
@@ -332,6 +345,8 @@ public:
     trkTable->addColumn<float>("spixLogDetRatio", logDetRatio,
         "ln(det C_OT / det C_refit) >= 0: total information gained, parametrisation-independent");
     trkTable->addColumn<int32_t>("spixCompactWord", compactWord, "16-bit transmitted-subset compact word (packCompactWord; see SmartPixelsTransmittedSubset.h)");
+    trkTable->addColumn<uint8_t>("spixRefitVersion", refitVersion, "2: the original seedlessRefit; 3: refit v3 (the replay's calibrated arm)");
+    trkTable->addColumn<bool>("spixDiscGoing", discGoing, "refit v3: the OT track's path meets a disc (+-1 cm); false for v2");
     iEvent.put(std::move(trkTable), "trk");
   }
 
@@ -346,6 +361,8 @@ public:
     desc.add<std::string>("clusterTableName", "L1TSmartPixelsCluster")
         ->setComment("cluster table selClusterIdx indexes; empty = no selClusterIdx column");
     desc.add<std::string>("hitTableName", "L1TSmartPixelsRefitHit");
+    desc.add<bool>("closurePrecision", false)
+        ->setComment("TEST ONLY (refit v3 closure): every column at full float precision");
     descriptions.addWithDefaultLabel(desc);
   }
 
@@ -356,6 +373,9 @@ private:
   const std::string trackTableName_;
   const std::string clusterTableName_;
   const std::string hitTableName_;
+  const bool closurePrecision_;
+
+  int bits(int n) const { return closurePrecision_ ? -1 : n; }
 };
 
 DEFINE_FWK_MODULE(L1SmartPixelsRefitTableProducer);

@@ -28,7 +28,9 @@ PASSTHROUGH_MODES = ["passthrough", "passthroughFloat", "passthroughHW", "tracki
 # Modes parametrized by the active pixel-layer configuration (need activeSP).
 # seedlessRefit reuses the activeSP encoding to select the refit layer set (BPIX
 # layers), e.g. "1100" -> suffix AAII selects the two inner barrel layers.
-ACTIVE_LAYER_MODES = ["correctionlibRegression", "correctionlibTPToySmear", "seedlessRefit"]
+ACTIVE_LAYER_MODES = ["correctionlibRegression", "correctionlibTPToySmear", "seedlessRefit", "seedlessRefitV3"]
+# The seedless refit's two presets: one producer mode (seedlessRefit), the vocabulary name selects the preset.
+SEEDLESSREFIT_PRESETS = {"seedlessRefit": "v2", "seedlessRefitV3": "v3"}
 # Modes for which the TP/truth association is LOAD-BEARING: without it the
 # producer silently passes tracks through unmodified (per-track fallback),
 # which invalidates any study. Truth availability must be guaranteed.
@@ -36,7 +38,7 @@ ACTIVE_LAYER_MODES = ["correctionlibRegression", "correctionlibTPToySmear", "see
 # (reemulateL1TrackFinding, or file-present IT products),
 # not just the TTTrack association maps; the requirement is flagged the same way.
 TRUTH_REQUIRED_MODES = ["trackingParticleTruth", "correctionlibRegression",
-                        "correctionlibTPToySmear", "seedlessRefit"]
+                        "correctionlibTPToySmear", "seedlessRefit", "seedlessRefitV3"]
 # Refit "tier model" (see L1Trigger/Phase3SmartPixels/README.md):
 #   seedlessRefit = Tier 2 interim refit (real pixel digis + synthesized angles).
 #               Active-layer + truth-required; implementation lands in Phase 2.
@@ -170,6 +172,57 @@ SEEDLESSREFIT_DEFAULTS = {
 }
 
 
+# Refit v3 (seedlessRefitV3, doc/RefitV3Design.md): the replay's calibrated arm INN-D with the two-layer hit
+# choice. Every calibrated number is in the versioned payload set; the angle use is configuration, so the real
+# sensor angles drop in through new payloads (doc/RefitV3Calibration.md). The shared seedlessRefit keys
+# (maxKFUpdates, minHits, otNPar, chi2UpdateGate, jacobianMaxAbs, predAngleMaxAbs, measAngleMaxAbs,
+# layerOrder) apply to v3 too.
+SEEDLESSREFIT_V3_ANGLE_USE = tuple(f"{c}:{a}:{r}" for c in ("rank", "update") for a in ("alpha", "beta")
+                                   for r in ("barrel", "disc"))
+SEEDLESSREFIT_V3_DEFAULTS = {
+    "payloadManifest": "L1Trigger/Phase3SmartPixels/data/refit_v3/v1/manifest.json",
+    "nsig": 4.0,
+    "hitChoice": "tree2",       # "tree2" (the two-layer choice) | "best"
+    "seedCov": "smooth",        # "smooth" (+ the seed model) | "reported"
+    "scattering": "highland",
+    "innerMaterial": True,
+    "posErr": "rtables",        # "rtables" | "published"
+    "angErr": "table",          # "table" | "published"
+    "metric": "innovation",     # "innovation" | "producer"
+    "angleUse": SEEDLESSREFIT_V3_ANGLE_USE,
+    "angleSteps": "all",        # "all" | "first" | "later"
+    "knownBad": "",             # TEST ONLY: a planted closure known-bad
+    "closureDumpFile": "",      # TEST ONLY: per-track JSON lines in double precision
+}
+SEEDLESSREFIT_V3_CHOICES = {"hitChoice": ("tree2", "best"), "seedCov": ("smooth", "reported"),
+                            "scattering": ("highland",), "posErr": ("rtables", "published"),
+                            "angErr": ("table", "published"), "metric": ("innovation", "producer"),
+                            "angleSteps": ("all", "first", "later")}
+
+
+def _resolveSeedlessRefitV3Config(v3=None):
+  """seedlessRefitConfig['v3'] merged over SEEDLESSREFIT_V3_DEFAULTS, validated loudly."""
+  resolved = dict(SEEDLESSREFIT_V3_DEFAULTS)
+  if v3 is None:
+    return resolved
+  unknown = set(v3) - set(SEEDLESSREFIT_V3_DEFAULTS)
+  if unknown:
+    raise ValueError(f"seedlessRefitConfig['v3'] has unknown key(s) {sorted(unknown)}; "
+                     f"valid keys are {sorted(SEEDLESSREFIT_V3_DEFAULTS)}")
+  resolved.update(v3)
+  for k, allowed in SEEDLESSREFIT_V3_CHOICES.items():
+    if resolved[k] not in allowed:
+      raise ValueError(f"seedlessRefitConfig['v3']['{k}']={resolved[k]!r} invalid; must be one of {allowed}")
+  bad = [u for u in resolved["angleUse"] if u not in SEEDLESSREFIT_V3_ANGLE_USE]
+  if bad:
+    raise ValueError(f"seedlessRefitConfig['v3']['angleUse'] entries {bad} are not consumer:angle:region with "
+                     f"consumer rank|update, angle alpha|beta, region barrel|disc")
+  resolved["angleUse"] = tuple(resolved["angleUse"])
+  if not resolved["nsig"] > 0:
+    raise ValueError(f"seedlessRefitConfig['v3']['nsig'] must be positive, got {resolved['nsig']!r}")
+  return resolved
+
+
 def _resolveSeedlessRefitConfig(seedlessRefitConfig=None):
   """Merge a user seedlessRefitConfig dict over SEEDLESSREFIT_DEFAULTS with loud validation.
 
@@ -179,10 +232,13 @@ def _resolveSeedlessRefitConfig(seedlessRefitConfig=None):
   fresh copy of the defaults.
   """
   resolved = dict(SEEDLESSREFIT_DEFAULTS)
+  resolved["v3"] = _resolveSeedlessRefitV3Config()
   if seedlessRefitConfig is None:
     return resolved
   if not isinstance(seedlessRefitConfig, dict):
     raise ValueError(f"seedlessRefitConfig must be a dict, got {type(seedlessRefitConfig).__name__}")
+  seedlessRefitConfig = dict(seedlessRefitConfig)
+  resolved["v3"] = _resolveSeedlessRefitV3Config(seedlessRefitConfig.pop("v3", None))
   unknown = set(seedlessRefitConfig) - set(SEEDLESSREFIT_DEFAULTS)
   if unknown:
     raise ValueError(
@@ -300,8 +356,25 @@ def _allVariants():
           + [("correctionlibRegression", rconf) for rconf in REGRESSION_CONFIGS])
 
 
-def _applySeedlessRefitConfig(module, resolved):
-  """Push a resolved (validated) seedlessRefit config dict onto a producer module."""
+def _applySeedlessRefitConfig(module, resolved, preset="v2"):
+  """Push a resolved (validated) seedlessRefit config dict onto a producer module; preset v3 also sets
+  the v3 element switches (seedlessRefitV3)."""
+  module.seedlessRefitPreset = cms.string(preset)
+  v3 = resolved["v3"]
+  module.seedlessRefitV3 = cms.PSet(
+      payloadManifest=cms.string(v3["payloadManifest"]),
+      nsig=cms.double(float(v3["nsig"])),
+      hitChoice=cms.string(v3["hitChoice"]),
+      seedCov=cms.string(v3["seedCov"]),
+      scattering=cms.string(v3["scattering"]),
+      innerMaterial=cms.bool(bool(v3["innerMaterial"])),
+      posErr=cms.string(v3["posErr"]),
+      angErr=cms.string(v3["angErr"]),
+      metric=cms.string(v3["metric"]),
+      angleUse=cms.vstring(*v3["angleUse"]),
+      angleSteps=cms.string(v3["angleSteps"]),
+      knownBad=cms.string(v3["knownBad"]),
+      closureDumpFile=cms.string(v3["closureDumpFile"]))
   module.seedlessRefitWindowRPhi = cms.vdouble(*resolved["windowRPhi"])
   module.seedlessRefitWindowZ = cms.vdouble(*resolved["windowZ"])
   module.seedlessRefitWindowDiscRPhi = cms.vdouble(*resolved["windowDiscRPhi"])
@@ -326,6 +399,17 @@ def _applySeedlessRefitConfig(module, resolved):
   # RESERVED, not consumed by Tier-2: passed through so future ASIC-efficiency
   # wiring is drop-in. Non-empty triggers a LogWarning in the producer ctor.
   module.seedlessRefitBdtModel = cms.string(resolved["bdtModel"])
+
+
+def _markSeedlessRefitVersion(process, preset, manifest):
+  """File-level marker of the refit version(s) in the job: nanoMetadata's smartPixelsRefit string (Runs tree),
+  e.g. "v3 L1Trigger/Phase3SmartPixels/data/refit_v3/v1/manifest.json"; several variants are ';'-joined."""
+  if not hasattr(process, "nanoMetadata"):
+    return
+  tag = "v2" if preset == "v2" else f"v3 {manifest}"
+  strings = process.nanoMetadata.strings
+  have = strings.smartPixelsRefit.value().split(";") if hasattr(strings, "smartPixelsRefit") else []
+  strings.smartPixelsRefit = cms.string(";".join(sorted(set(have + [tag]))))
 
 
 def addSmartPixelsTrackProducerVariants(process, variants=None, correctionSet=DEFAULT_CORRECTION_SET,
@@ -360,7 +444,7 @@ def addSmartPixelsTrackProducerVariants(process, variants=None, correctionSet=DE
     # and raises the RESERVED (Tier 3 'refit') NotImplementedError here.
     prompt, extended = smartPixelsVariantLabels(mode, activeSP)
 
-    if mode == "seedlessRefit" and seedlessRefitResolved["angleSource"] == "payload" and not seedlessRefitResolved["pixelavAngleSet"]:
+    if mode in SEEDLESSREFIT_PRESETS and seedlessRefitResolved["angleSource"] == "payload" and not seedlessRefitResolved["pixelavAngleSet"]:
       raise ValueError(
           "seedlessRefit variant requested but seedlessRefitConfig['pixelavAngleSet'] is empty; "
           "the PixelAV angle-response payload is REQUIRED (see doc/PixelAVAngleResponseSpec.md; "
@@ -373,12 +457,13 @@ def addSmartPixelsTrackProducerVariants(process, variants=None, correctionSet=DE
     setattr(process, extended, process.l1tSmartPixelsTrackProducerExtended.clone())
     for label in (prompt, extended):
       module = getattr(process, label)
-      module.smartPixelsEmulatorMode = cms.string(mode)
+      module.smartPixelsEmulatorMode = cms.string("seedlessRefit" if mode in SEEDLESSREFIT_PRESETS else mode)
       if mode in ACTIVE_LAYER_MODES:
         module.smartPixelsActiveLayers = activeSP
         module.smartPixelsCorrectionSet = cms.FileInPath(correctionSet)
-      if mode == "seedlessRefit":
-        _applySeedlessRefitConfig(module, seedlessRefitResolved)
+      if mode in SEEDLESSREFIT_PRESETS:
+        _applySeedlessRefitConfig(module, seedlessRefitResolved, SEEDLESSREFIT_PRESETS[mode])
+        _markSeedlessRefitVersion(process, SEEDLESSREFIT_PRESETS[mode], seedlessRefitResolved["v3"]["payloadManifest"])
         # The angle now comes from SmartPixelsRecHitProducer upstream, so the
         # payload configures THAT and the refit is engine-free (its old local RNG
         # existed only for the noise-angle draw, which moved with the synthesis).
@@ -1064,7 +1149,7 @@ def smartPixelsCoexist(process, variants=None, correctionSet=DEFAULT_CORRECTION_
       addPh3L1SmartPixelsTracks(process, srcLabel=prompt, srcExtendedLabel=extended, tableSuffix=suffix)
       # seedlessRefit variants ALSO emit a SmartPixelsRefitSidecar -> add the per-hit
       # link table + track extension table. Other modes produce no sidecar.
-      if mode == "seedlessRefit":
+      if mode in SEEDLESSREFIT_PRESETS:
         addPh3L1SmartPixelsRefitTables(process, srcLabel=prompt, srcExtendedLabel=extended, tableSuffix=suffix)
     # L1TOTStub and the link-only track -> stub tables of the reference L1TTrack /
     # L1TExtTrack collections (the refit reuses the same stub refs). Idempotent.

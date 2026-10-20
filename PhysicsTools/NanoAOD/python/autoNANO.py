@@ -166,6 +166,7 @@ autoNANO.update({
     'SPClustersStubs': {'customize': _spxFlavours + 'addSPClusterStubTables'},
     # SmartPixels mode tags (one per job) and mask tags (one per job; IIII = passthrough control)
     'SPSeedlessRefit': {'customize': _spxFlavours + 'useSPSeedlessRefit'},
+    'SPSeedlessRefitV3': {'customize': _spxFlavours + 'useSPSeedlessRefitV3'},
     'SPParallelSeedRefit': {'customize': _spxFlavours + 'useSPParallelSeedRefit'},  # reserved
     'SPJointSeedFit': {'customize': _spxFlavours + 'useSPJointSeedFit'},  # reserved
     **{f'SPActiveLayers{m}': {'customize': f'{_spxFlavours}useSPActiveLayers{m}'}
@@ -179,6 +180,9 @@ autoNANO.update({
     'L1TSPStudyNano': {'sequence': '@Phase2L1DPGwithGen',
                        'customize': '+'.join(['@Phase2L1DPGwithGen', '@L1PF', '@L1Trk', '@SPTrk', '@SPClustersStubs',
                                               '@TPTruth1GeVLinked', '@SPSeedlessRefit'])},
+    'L1TSPStudyNanoV3': {'sequence': '@Phase2L1DPGwithGen',
+                         'customize': '+'.join(['@Phase2L1DPGwithGen', '@L1PF', '@L1Trk', '@SPTrk', '@SPClustersStubs',
+                                                '@TPTruth1GeVLinked', '@SPSeedlessRefitV3'])},
     'SPStudyNano': {'sequence': '@L1TSPStudyNano+@PHYS',
                     'customize': '@L1TSPStudyNano+@PHYS'},
 })
