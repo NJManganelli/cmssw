@@ -1,0 +1,103 @@
+{
+ "schema": "spix-refit-v3-payload/1",
+ "set_id": "v1",
+ "created": "2026-10-20T12:05:56Z",
+ "reference_commit": "a710b04468770793325f1560c7594ac923301f8f",
+ "spec": "/Volumes/WDMac/smartpixels_scratch/v3cmssw/spec",
+ "config": "SmartPixels seedless refit v3 (the replay's INN-D with the two-layer hit choice)",
+ "disc_material_scale": 2.671247136543709,
+ "skip_price_cov_model": "calibrated",
+ "physics_checks": [
+  "wpc.c1b.j6-gate",
+  "wpc.c1b.j5-known-good-a20",
+  "wpc.c1b.j4-cut-fit"
+ ],
+ "files": {
+  "rtables.json": {
+   "sha256": "8a09e3629bc485545f0f2e2c55b0fd810ffda8887b0ce60491e2e16ac3e8746c",
+   "md5": "b1af9b643e01a4b50ad3d0131db6ff98",
+   "sources": [
+    "refit_calibration_v3.json"
+   ]
+  },
+  "angles.json": {
+   "sha256": "77af63344b9037afac987d18d71c805e1a743239ffa156a7842287cabd92630f",
+   "md5": "48620912185e235106f919b4c45f3f8f",
+   "sources": [
+    "angle_table_v1a1e_canon_v3.json",
+    "angle_table_v1a1e_disclocal_canon_v3.json"
+   ]
+  },
+  "skip_price.json": {
+   "sha256": "99a036cd2ce74febebcfab4b703a0fc3235073d3c3e428213b29ef33e4d139c1",
+   "md5": "258ad4347e185090d491b3589864a170",
+   "sources": [
+    "wpc_cuts_c1b_v1.json"
+   ]
+  },
+  "seed_model.json": {
+   "sha256": "4954a8e0668a042ebf528d2fcd96183daf787ab802bddad0bb8b300965d7d303",
+   "md5": "43ddb49af0bdd8e712992b5f631f27de",
+   "sources": [
+    "seed_model_v1.json"
+   ]
+  },
+  "material.json": {
+   "sha256": "92efa39a5408fbc42861222bb2365c7256fe93057ddd732d14df09d2f3460792",
+   "md5": "9f757903f9537d939a9939ab85408e1f",
+   "sources": [
+    "refit_calibration_v3.json",
+    "disc_material_v1.json",
+    "scalefit_summary.json"
+   ]
+  }
+ },
+ "sources": {
+  "seed_model_v1.json": {
+   "sha256": "759dbad2fd8dca6e5212b948332517414711da90339310c1c92187d7b9dbe56d",
+   "registry": "wpc.c1b.seed-model-v1",
+   "source": "/Volumes/WDMac/smartpixels_scratch/wpc/seedmodel/seed_model_v1.json"
+  },
+  "disc_material_v1.json": {
+   "sha256": "a1857e5c0989c220810e4cfeb6b17b49a8d8817f168762950d1f15268fa449a5",
+   "registry": "wpc.c1b.j3-material-scale-smooth",
+   "source": "/Volumes/WDMac/smartpixels_scratch/wpc/c1b/material/disc_material_v1.json"
+  },
+  "scalefit_summary.json": {
+   "sha256": "f8154c9541566e4bf102cb5793fedc67262ccb1ecfb1f74b374a404d250e4367",
+   "registry": "wpc.c1b.j3-material-scale-smooth",
+   "source": "/Volumes/WDMac/smartpixels_scratch/wpc/c1b/scale/scalefit_summary.json"
+  },
+  "refit_calibration_v3.json": {
+   "sha256": "71c11da35be7e6fb5f96243ac36abea3e65e054e565b80f34f23b6468e2cf8de",
+   "registry": "wpc.c1a (entry)",
+   "source": "/Users/nmangane/smartpixels/ngtagger-train/eval_refitq/combinatorics/results/refit_calibration/refit_calibration_v3.json"
+  },
+  "angle_table_v1a1e_canon_v3.json": {
+   "sha256": "84cf24e12bb21cde300e730c46f5a611122818dbfb621ab5147647d25ccdd0b3",
+   "registry": "p03.table.v1a1e",
+   "source": "/Volumes/WDMac/smartpixels_scratch/p03_angles/angle_table_v1a1e_canon_v3.json"
+  },
+  "angle_table_v1a1e_disclocal_canon_v3.json": {
+   "sha256": "8e9bf57aab7bb9a9b093e4a29ae91e330d3b120957c39a5e72c2b3e4ba439ab6",
+   "registry": "p03.table.v1a1e-disclocal",
+   "source": "/Volumes/WDMac/smartpixels_scratch/p03_angles/angle_table_v1a1e_disclocal_canon_v3.json"
+  },
+  "wpc_cuts_c1b_v1.json": {
+   "sha256": "92f50bb4c87a6d535abeff8ee2e300789fba90674e702a6f7b0f498ef3834c85",
+   "registry": "wpc.c1b.j4-cut-fit",
+   "source": "/Volumes/WDMac/smartpixels_scratch/wpc/c1b/cuts/wpc_cuts_c1b_v1.json"
+  },
+  "d1_exempt_v2.json": {
+   "sha256": "b05c431632982bc6db4dd3b38635aefa884d008827570f743582e1e539ee1788",
+   "registry": "wpc.c1b.verdict",
+   "source": "/Volumes/WDMac/smartpixels_scratch/wpc/c1b/d1_exempt_v2.json"
+  },
+  "spix_module_geometry_D121.json": {
+   "sha256": "7e5e2c820acbb93fd7445421af687da3baad85929a1eeb6a00ebdede58c3f054",
+   "registry": "",
+   "source": "/Users/nmangane/smartpixels/cmssw/work/otstub_arm/spix_module_geometry_D121.json"
+  }
+ },
+ "big": 1e+30
+}

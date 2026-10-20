@@ -1,4 +1,6 @@
 <use name="boost"/>
+<use name="correctionlib"/>
+<use name="json"/>
 <use name="root"/>
 <use name="rootrflx"/>
 <use name="DataFormats/Common"/>
