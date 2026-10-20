@@ -353,6 +353,10 @@ private:
   const double clusterMergeFrac_;
   const bool useEmu_;
   std::string angleSetPath_;
+  // the angle-resolution knob k (angle' = truth + k (angle - truth) on class T): its ONE source, put in the
+  // event as "angleKnob" {kAlpha, kBeta, scaled} so the refit takes its sigma scaling from here
+  double kAlpha_ = 1., kBeta_ = 1.;
+  bool kScaled_ = false;
 
   edm::EDGetTokenT<edm::DetSetVector<PixelDigi>> digiToken_;
   std::vector<CnnScalar> emuBarrelScalars_, emuDiscScalars_;
@@ -517,8 +521,19 @@ SmartPixelsRecHitProducer::SmartPixelsRecHitProducer(const edm::ParameterSet& cf
     }
   }
 
+  kAlpha_ = cfg.getParameter<double>("kAlpha");
+  kBeta_ = cfg.getParameter<double>("kBeta");
+  const std::string kMode = cfg.getParameter<std::string>("kMode");
+  if (kMode != "fixed" && kMode != "scaled")
+    throw cms::Exception("Configuration") << "kMode must be fixed or scaled, got '" << kMode << "'";
+  kScaled_ = kMode == "scaled";
+  if (kAlpha_ != 1. || kBeta_ != 1.)
+    throw cms::Exception("Configuration")
+        << "the angle-resolution knob k != 1 is not ported yet (the class-T transform of the replay's "
+           "angle_import.knob / disc_angles.knob); refit v3 runs at k = 1";
   produces<SmartPixelsRecHitCollection>();
   produces<SmartPixelsRecHitTruthCollection>();
+  produces<std::vector<double>>("angleKnob");
 }
 
 void SmartPixelsRecHitProducer::produce(edm::Event& iEvent, const edm::EventSetup& iSetup) {
@@ -779,6 +794,8 @@ void SmartPixelsRecHitProducer::produce(edm::Event& iEvent, const edm::EventSetu
 
   iEvent.put(std::move(outHits));
   iEvent.put(std::move(outTruth));
+  iEvent.put(std::make_unique<std::vector<double>>(std::vector<double>{kAlpha_, kBeta_, kScaled_ ? 1. : 0.}),
+             "angleKnob");
   if (emuDebug)
     iEvent.put(std::move(emuDebug), "emuDebug");
 }
@@ -1116,6 +1133,10 @@ void SmartPixelsRecHitProducer::fillDescriptions(edm::ConfigurationDescriptions&
   desc.add<double>("emuTruthMaxHelixDist", 1.0)
       ->setComment("emu: class T needs the TP helix to cross the module plane within this of the hit [cm]");
   desc.add<double>("emuHelixStep", 0.2)->setComment("emu: helix-plane root scan step [cm], as the cluster ntuple");
+  desc.add<double>("kAlpha", 1.0)->setComment("angle-resolution knob on class-T alpha (only 1 is implemented)");
+  desc.add<double>("kBeta", 1.0)->setComment("angle-resolution knob on class-T beta (only 1 is implemented)");
+  desc.add<std::string>("kMode", "fixed")
+      ->setComment("fixed: the published sigma; scaled: sigma x max(k, 0.05) for every cluster (the refit reads it)");
   desc.add<bool>("emuDebug", false)
       ->setComment("emu: also put std::vector<double> 'emuDebug' (15 per cluster: CNN angles/sigmas, class, "
                    "hxDist from the full scan, A1 draws, pseudo-truth, dump row, biases, output angles; the CNN "

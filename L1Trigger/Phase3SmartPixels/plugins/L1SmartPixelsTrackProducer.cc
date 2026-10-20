@@ -47,6 +47,7 @@
 #include "L1Trigger/Phase3SmartPixels/interface/SmartPixelsOTClusterTruth.h"
 #include "L1Trigger/Phase3SmartPixels/interface/SmartPixelsParentMap.h"
 #include "L1Trigger/Phase3SmartPixels/interface/SmartPixelsRefitSidecar.h"
+#include "L1Trigger/Phase3SmartPixels/interface/SmartPixelsRefitV3.h"
 #include "L1Trigger/Phase3SmartPixels/interface/SmartPixelsSurface.h"
 #include "L1Trigger/Phase3SmartPixels/interface/SmartPixelsTransmittedSubset.h"
 #include "DataFormats/Common/interface/DetSetVector.h"
@@ -135,6 +136,9 @@
 #include <cmath>
 #include <fstream>
 #include <limits>
+#include <iomanip>
+#include <optional>
+#include <sstream>
 
 // Refit-quality BDT (spec §6a): conifer GBDT evaluated in-flight on the
 // REFIT_BDT_FEATURES v0 feature vector. ap_fixed.h pulls the HLS ap types that
@@ -207,6 +211,9 @@ public:
 
   void beginStream(edm::StreamID) override;
   void endStream() override;
+  void configureV3(const edm::ParameterSet& iConfig);
+  static void writeV3Dump(std::ostream& out, const edm::Event& iEvent, int track, const smartpixels::v3::Vec5& aOT,
+                          const smartpixels::v3::TrackResult& res);
   void produce(edm::Event&, const edm::EventSetup&) override;
 
   static std::unique_ptr< std::map< std::string, std::map< int, double > > > initializeGlobalCache(edm::ParameterSet const& iPSet) {
@@ -442,6 +449,17 @@ private:
   mutable unsigned long long seedlessRefitClampedMeasAngles_ = 0;  // candidate angles dropped by measAngleMaxAbs (spec §6b)
   mutable unsigned long long seedlessRefitClampedPredCross_ = 0;   // predicted crossings rejected by predAngleMaxAbs (spec §6b)
 
+  // seedlessRefit preset "v3" (doc/RefitV3Design.md): the replay's calibrated arm, ported in
+  // SmartPixelsRefitV3; v2 above stays bitwise unchanged.
+  bool v3_ = false;
+  smartpixels::v3::Config v3Config_;
+  std::unique_ptr<smartpixels::v3::Payloads> v3Payloads_;
+  smartpixels::v3::Geometry v3Geo_;
+  const TrackerGeometry* v3GeoTag_ = nullptr;
+  std::string v3DumpPath_;  // closure only: per-track JSON lines (v3cmssw/PLAN.md §1 item 16)
+  std::unique_ptr<std::ofstream> v3Dump_;
+  edm::EDGetTokenT<std::vector<double>> angleKnobToken_;
+
   edm::InputTag L1TrackInputTag;       // L1 track collection
   edm::InputTag MCTruthTrackInputTag;  // MC truth collection
   edm::InputTag MCTruthClusterInputTag;
@@ -581,6 +599,12 @@ L1SmartPixelsTrackProducer::L1SmartPixelsTrackProducer(edm::ParameterSet const& 
     seedlessRefitStoreOTProjection_ = iConfig.getParameter<bool>("seedlessRefitStoreOTProjection");
     seedlessRefitLayerOrder_ = iConfig.getParameter<std::string>("seedlessRefitLayerOrder");
     seedlessRefitOTNPar_ = iConfig.getParameter<int>("seedlessRefitOTNPar");
+    const std::string preset = iConfig.getParameter<std::string>("seedlessRefitPreset");
+    if (preset != "v2" && preset != "v3")
+      throw cms::Exception("Configuration") << "seedlessRefitPreset must be v2 or v3, got '" << preset << "'.";
+    v3_ = preset == "v3";
+    if (v3_)
+      configureV3(iConfig);
     {
       const std::string av = iConfig.getParameter<std::string>("seedlessRefitPixelavAngleSet");
       seedlessRefitPixelavAngleSet_ = av.empty() ? std::string() : edm::FileInPath(av).fullPath();
@@ -676,6 +700,9 @@ L1SmartPixelsTrackProducer::L1SmartPixelsTrackProducer(edm::ParameterSet const& 
         iConfig.getParameter<edm::InputTag>("smartPixelsRecHitInputTag"));
     smartPixelsRecHitTruthToken_ = consumes<SmartPixelsRecHitTruthCollection>(
         iConfig.getParameter<edm::InputTag>("smartPixelsRecHitInputTag"));
+    if (v3_)
+      angleKnobToken_ = consumes<std::vector<double>>(
+          edm::InputTag(iConfig.getParameter<edm::InputTag>("smartPixelsRecHitInputTag").label(), "angleKnob"));
   }
 
   produces<TTTrackCollection>(outputCollectionName_);
@@ -725,6 +752,117 @@ L1SmartPixelsTrackProducer::~L1SmartPixelsTrackProducer() {
 }
 void L1SmartPixelsTrackProducer::beginStream(edm::StreamID) {
 }
+void L1SmartPixelsTrackProducer::configureV3(const edm::ParameterSet& iConfig) {
+  if (!iConfig.getParameter<std::string>("seedlessRefitBdtModel").empty())
+    throw cms::Exception("Configuration") << "seedlessRefitBdtModel is trained on v2's features; v3 takes none.";
+  const auto& p = iConfig.getParameter<edm::ParameterSet>("seedlessRefitV3");
+  auto choose = [&p](const char* key, std::initializer_list<const char*> allowed) {
+    const std::string v = p.getParameter<std::string>(key);
+    for (const char* a : allowed)
+      if (v == a)
+        return v;
+    throw cms::Exception("Configuration") << "seedlessRefitV3." << key << " = '" << v << "' is not implemented.";
+  };
+  auto& c = v3Config_;
+  c.nsig = p.getParameter<double>("nsig");
+  c.tree2 = choose("hitChoice", {"tree2", "best"}) == "tree2";
+  c.seedSmooth = choose("seedCov", {"smooth", "reported"}) == "smooth";
+  c.highland = choose("scattering", {"highland"}) == "highland";
+  c.innerMaterial = p.getParameter<bool>("innerMaterial");
+  c.rtables = choose("posErr", {"rtables", "published"}) == "rtables";
+  c.angleTable = choose("angErr", {"table", "published"}) == "table";
+  c.innovationMetric = choose("metric", {"innovation", "producer"}) == "innovation";
+  const std::string steps = choose("angleSteps", {"all", "first", "later"});
+  c.angleSteps = steps == "all" ? 0 : (steps == "first" ? 1 : 2);
+  for (auto& cons : c.use)
+    for (auto& ang : cons)
+      ang = {{false, false}};
+  for (const auto& u : p.getParameter<std::vector<std::string>>("angleUse")) {
+    // consumer:angle:region; the window and gate consumers are not implemented
+    const auto c1 = u.find(':'), c2 = u.rfind(':');
+    const std::string cons = u.substr(0, c1), ang = u.substr(c1 + 1, c2 - c1 - 1), reg = u.substr(c2 + 1);
+    const int ic = cons == "rank" ? 0 : (cons == "update" ? 1 : -1);
+    const int ia = ang == "alpha" ? 0 : (ang == "beta" ? 1 : -1);
+    const int ir = reg == "barrel" ? 0 : (reg == "disc" ? 1 : -1);
+    if (c1 == std::string::npos || c1 == c2 || ic < 0 || ia < 0 || ir < 0)
+      throw cms::Exception("Configuration") << "seedlessRefitV3.angleUse entry '" << u
+                                            << "' is not consumer:angle:region with consumer rank|update, angle "
+                                               "alpha|beta, region barrel|disc.";
+    c.use[ic][ia][ir] = true;
+  }
+  c.maxKFUpdates = seedlessRefitMaxKFUpdates_;
+  c.minHits = seedlessRefitMinHits_;
+  c.otNPar = seedlessRefitOTNPar_;
+  c.chi2UpdateGate = seedlessRefitChi2UpdateGate_;
+  c.jacobianMaxAbs = seedlessRefitJacobianMaxAbs_;
+  c.predAngleMaxAbs = seedlessRefitPredAngleMaxAbs_;
+  c.outsideIn = seedlessRefitLayerOrder_ == "outsideIn";
+  c.knownBad = p.getParameter<std::string>("knownBad");
+  v3DumpPath_ = p.getParameter<std::string>("closureDumpFile");
+  v3Payloads_ = std::make_unique<smartpixels::v3::Payloads>();
+  v3Payloads_->load(edm::FileInPath(p.getParameter<std::string>("payloadManifest")).fullPath());
+}
+
+void L1SmartPixelsTrackProducer::writeV3Dump(std::ostream& out, const edm::Event& iEvent, int track,
+                                              const smartpixels::v3::Vec5& aOT,
+                                              const smartpixels::v3::TrackResult& res) {
+  // the spec's reference schema plus every update's state in double (v3cmssw/PLAN.md §1 item 16)
+  auto num = [](double x) {
+    std::ostringstream o;
+    if (std::isfinite(x))
+      o << std::setprecision(17) << x;
+    else
+      o << "null";
+    return o.str();
+  };
+  auto vec = [&num](const auto& v) {
+    std::string s = "[";
+    for (size_t i = 0; i < v.size(); ++i)
+      s += (i ? ", " : "") + num(v[i]);
+    return s + "]";
+  };
+  // the second-lowest minus the lowest of a window's committing scores (inf with fewer than two)
+  auto scoreMargin = [](const std::array<double, 3>& sc) {
+    std::array<double, 3> v = sc;
+    std::sort(v.begin(), v.end(), [](double x, double y) { return (std::isfinite(x) ? x : 1e308) < (std::isfinite(y) ? y : 1e308); });
+    return std::isfinite(v[0]) && std::isfinite(v[1]) ? v[1] - v[0] : std::numeric_limits<double>::infinity();
+  };
+  auto mat = [&vec](const smartpixels::v3::Mat5& m) {
+    std::string s = "[";
+    for (size_t i = 0; i < 5; ++i)
+      s += (i ? ", " : "") + vec(m[i]);
+    return s + "]";
+  };
+  const char* names[5] = {"rInv", "phi0", "tanL", "z0", "d0"};
+  auto helix = [&](const smartpixels::v3::Vec5& a) {
+    std::string s = "{";
+    for (int i = 0; i < 5; ++i)
+      s += std::string(i ? ", " : "") + "\"" + names[i] + "\": " + num(a[i]);
+    return s + "}";
+  };
+  out << "{\"run\": " << iEvent.id().run() << ", \"lumi\": " << iEvent.id().luminosityBlock()
+      << ", \"event\": " << iEvent.id().event() << ", \"track\": " << track << ", \"refit\": "
+      << (res.refit ? "true" : "false") << ", \"nacc\": " << res.nacc << ", \"disc_going\": "
+      << (res.discGoing ? "true" : "false") << ", \"ot\": " << helix(aOT) << ", \"seed_C\": " << mat(res.seedC)
+      << ", \"steps\": [";
+  for (size_t j = 0; j < res.steps.size(); ++j) {
+    const auto& st = res.steps[j];
+    out << (j ? ", " : "") << "{\"step\": " << j << ", \"surface\": " << st.surface << ", \"visited\": "
+        << (st.visited ? "true" : "false") << ", \"accepted\": " << (st.accepted ? "true" : "false")
+        << ", \"detId\": " << st.detId << ", \"cluster\": " << st.cluster << ", \"ncand\": " << st.ncand
+        << ", \"chi2\": " << vec(st.chi2) << ", \"kchoice\": " << st.kchoice << ", \"scores\": " << vec(st.scores)
+        << ", \"skipPrice\": " << num(st.skipPrice) << ", \"rankChi2\": " << num(st.rankChi2)
+        << ", \"rankMargin\": " << num(st.selMargin) << ", \"selMargin\": " << num(scoreMargin(st.scores))
+        << ", \"fallback\": " << (st.fallback ? "true" : "false")
+        << ", \"h0\": " << vec(st.h0) << ", \"meas\": " << vec(st.meas) << ", \"sig\": " << vec(st.sig);
+    if (st.accepted)
+      out << ", \"aPre\": " << vec(st.aPre) << ", \"CPred\": " << mat(st.CPred) << ", \"aPost\": " << vec(st.aPost)
+          << ", \"CPost\": " << mat(st.CPost);
+    out << "}";
+  }
+  out << "], \"final\": " << helix(res.a) << ", \"final_C\": " << mat(res.C) << "}\n";
+}
+
 void L1SmartPixelsTrackProducer::endStream() {
   // Loud-failure guard: truth-required seedlessRefit must never silently degrade to
   // per-track passthrough (stale/mismatched maps or a wrong trackInputMode would
@@ -817,6 +955,9 @@ void L1SmartPixelsTrackProducer::produce(edm::Event& iEvent, const edm::EventSet
   std::unordered_map<uint32_t, unsigned> drClusterBaseIdx;
   std::array<bool, smartpixels::kMaxSurfaceCode + 1> drActiveSurface{};
   auto sidecar = std::make_unique<smartpixels::SmartPixelsRefitSidecar>();
+  smartpixels::v3::EventClusters v3Clusters;
+  std::optional<smartpixels::v3::Engine> v3Engine;
+  const double v3Kpt = static_cast<double>(MagConstant * b_field) / 100.0;  // pT = kpt / |rInv|, as v2's ptNow
   if (smartPixelsEmulatorMode_ == "seedlessRefit") {
     iEvent.getByToken(smartPixelsRecHitToken_, drRecHits);
     iEvent.getByToken(smartPixelsRecHitTruthToken_, drRecHitTruth);
@@ -836,6 +977,47 @@ void L1SmartPixelsTrackProducer::produce(edm::Event& iEvent, const edm::EventSet
           << "seedlessRefit requires at least one active layer (smartPixelsActiveLayers='"
           << smartPixelsActiveLayers_ << "').";
     projector_.build(*theTrackerGeom, *tTopo, 4, seedlessRefitNDiscs_);
+    if (v3_ && v3GeoTag_ != theTrackerGeom) {
+      smartpixels::v3::buildGeometry(v3Geo_, *theTrackerGeom, *tTopo);
+      v3GeoTag_ = theTrackerGeom;
+    }
+    if (v3_) {
+      // the clusters per geometry module, in cluster-table order, as the nano table writes them
+      v3Clusters.assign(v3Geo_.modules().size(), {});
+      for (const auto& ds : *drRecHits) {
+        const int mi = v3Geo_.index(ds.detId());
+        const auto bit = drClusterBaseIdx.find(ds.detId());
+        if (mi < 0 || bit == drClusterBaseIdx.end())
+          continue;
+        int pos = 0;
+        for (const auto& rh : ds) {
+          smartpixels::v3::Cluster c;
+          c.x = rh.localPosition().x();
+          c.y = rh.localPosition().y();
+          c.sigX = std::sqrt(std::max(0.f, static_cast<float>(rh.localPositionError().xx())));
+          c.sigY = std::sqrt(std::max(0.f, static_cast<float>(rh.localPositionError().yy())));
+          c.cotA = rh.cotAlpha();
+          c.cotB = rh.cotBeta();
+          c.sigA = rh.sigAlpha();
+          c.sigB = rh.sigBeta();
+          c.hasA = rh.hasAlpha() && std::abs(c.cotA) <= seedlessRefitMeasAngleMaxAbs_;
+          c.hasB = rh.hasBeta() && std::abs(c.cotB) <= seedlessRefitMeasAngleMaxAbs_;
+          c.sizeX = static_cast<int>(std::min<unsigned>(rh.sizeX(), 255));
+          c.sizeY = static_cast<int>(std::min<unsigned>(rh.sizeY(), 255));
+          c.index = static_cast<int>(bit->second) + pos++;
+          v3Clusters[mi].push_back(c);
+        }
+      }
+      // the angle knob's one source: the rec-hit producer that applied it
+      const auto& knob = iEvent.get(angleKnobToken_);
+      if (knob.size() != 3 || knob[0] != 1. || knob[1] != 1.)
+        throw cms::Exception("SmartPixelsRefitV3") << "the angle knob k != 1 is not ported to the refit's sigma scaling";
+      v3Engine.emplace(v3Config_, *v3Payloads_, v3Geo_);
+      if (!v3DumpPath_.empty() && !v3Dump_) {
+        const auto sid = iEvent.streamID().value();
+        v3Dump_ = std::make_unique<std::ofstream>(sid ? v3DumpPath_ + "." + std::to_string(sid) : v3DumpPath_);
+      }
+    }
     // No RNG here any more. Angle synthesis moved to SmartPixelsRecHitProducer,
     // and its stochastic part is payload-side HashPRNG, deterministic in the
     // cluster inputs. The old local engine existed only for the noise-angle
@@ -1677,487 +1859,591 @@ void L1SmartPixelsTrackProducer::produce(edm::Event& iEvent, const edm::EventSet
         }
       }
 
-      // Visit order per seedlessRefitLayerOrder_ along drPath. Sidecar hitInfo records are
-      // pushed in VISIT order, so their sequence documents how the fit actually
-      // proceeded; every consumer selects on hitInfo.layer, never on position.
-      const int drNPath = drPath.size();
-      const bool drOutsideIn = (seedlessRefitLayerOrder_ == "outsideIn");
-      for (int step = 0; step < drNPath; ++step) {
-        const int ip = drOutsideIn ? (drNPath - 1 - step) : step;
-        if (!otCovOK || nUpdates >= seedlessRefitMaxKFUpdates_)
-          break;
-        const unsigned surface = drPath[ip].code;
-        if (!drActiveSurface[surface])
-          continue;
-        const bool isDisc = smartpixels::isDiscSurface(surface);
-        const unsigned surfIdx = isDisc ? surface - smartpixels::kDiscSurfaceOffset - 1 : surface - 1;
-
-        // ---- MULTIPLE-SCATTERING PROCESS NOISE -------------------------------
-        // Inflate C for the material traversed since the last constraint, BEFORE
-        // projecting, so it is visible to both S = H C H^T + sigma^2 and the gain.
-        //
-        // WHY IT IS NEEDED. C is filled from the OT track, shrunk by every update
-        // (C -= K v^T) and never grows: there is no propagation step at all,
-        // because the state IS the 5 helix parameters and "propagating" is
-        // crossLayer re-evaluating the same helix at another radius. The measured
-        // consequence is that correct-hit pull widths follow VISIT ORDER, not layer
-        // identity -- the first-visited layer sits at ~1.0 because it is projected
-        // with the honest OT covariance, and everything after it degrades (4.1,
-        // 5.4, 7.8 under the old inside-out order).
-        //
-        // MATERIAL IS KEYED TO GEOMETRY, NOT TO MEASUREMENTS. The particle scatters
-        // in every surface it crosses, including uninstrumented ones and ones that
-        // happened to yield no hit, so the budget is accrued over the surfaces
-        // TRAVERSED between the two constraint points rather than per update. A disc
-        // is charged the same theta0 as a layer (see the disc note below).
-        //
-        // STRUCTURE FROM PHYSICS, SCALE FROM DATA. A kink of projected SPACE angle
-        // theta at radius r_s leaves the momentum magnitude alone, so rInv is
-        // untouched; it rotates the direction and shifts the impact parameters that
-        // keep the trajectory passing through r_s. In TTTrack's own conventions
-        // (POCA = (d0 sin phi0, -d0 cos phi0), so d0 = x0 sin phi0 - y0 cos phi0):
-        //     azimuthal:    d(phi0) = theta sec(lam),     d(d0) = +r_s * d(phi0)
-        //     dip:          d(tanL) = theta sec^2(lam),   d(z0) = -r_s * d(tanL)
-        // (the transverse momentum is p cos(lam), so an azimuthal kink theta turns
-        // phi by theta / cos(lam); d(tanL) = sec^2 d(lam)). Q = theta^2 (J_T J_T^T +
-        // J_L J_L^T), rank 2, with theta = multScattTerm / p per traversed surface.
-        // The kink Jacobian depends only on the transverse radius r_s of the kink point
-        // (d(d0) = r_s d(phi0), d(z0) = -s d(tanL) with s ~ r_s), so it holds unchanged
-        // for a kink on a disc. DISCS: one theta0 per disc as per layer. The layer term
-        // has no incidence (path-length) factor, and the disc keeps that convention. Not
-        // tuned for discs: the reconstruction geometry gives a TFPX module 1.34% X0 at
-        // normal incidence against 1.48-1.85% for the TBPX layers.
-        // multScattTerm keeps TMTT's KalmanMultiScattTerm value (0.00075 rad*GeV):
-        // TMTT uses it as the TRANSVERSE deflection per pT, and multScattTerm / p *
-        // sec(lam) is exactly that, so the azimuthal term is unchanged in magnitude.
-        // Applied to the STATE covariance rather than by inflating the measurement
-        // error, so the emitted outCov stays honest for downstream vertexing and
-        // tagging.
-        //
-        // HISTORY (2026-09-23): the first version (f629627) had d(d0) = -r_s theta,
-        // which is the reco::TrackBase::dxy convention (dxy = -d0 here): it moved the
-        // crossing AT the kink by a median 33 um and inflated the lever arm to
-        // ~(r + r_s). It also used theta = multScattTerm / pT with d(tanL) = theta
-        // sec^2, overstating the dip term by sec(lam).
-        if (seedlessRefitApplyProcessNoise_ && nUpdates > 0 && drPrevLayerR > 0.) {
-          const double ptNow = std::abs(MagConstant * b_field / (a[0] * 100.0));
-          const int nCross = std::max(1, std::abs(drPath[ip].nTraversed - drPath[drPrevPath].nTraversed));
-          if (ptNow > 1e-3) {
-            const double sec2 = 1.0 + a[2] * a[2];
-            const double sec = std::sqrt(sec2);
-            const double pNow = ptNow * sec;
-            const double theta0 = seedlessRefitMultScattTerm_ / pNow;  // projected space angle
-            const double var = theta0 * theta0 * static_cast<double>(nCross);
-            const double rs = drPrevLayerR;  // kink sits at the material, i.e. the
-                                             // last surface crossed, giving the lever
-                                             // arm to the surface now being predicted
-            ROOT::Math::SVector<double, 5> jT, jL;
-            jT[0] = 0.; jT[1] = sec; jT[2] = 0.; jT[3] = 0.; jT[4] = +rs * sec;
-            jL[0] = 0.; jL[1] = 0.; jL[2] = sec2; jL[3] = -rs * sec2; jL[4] = 0.;
-            for (int i = 0; i < 5; ++i)
-              for (int j = 0; j <= i; ++j)
-                C(i, j) += var * (jT[i] * jT[j] + jL[i] * jL[j]);
-            ++seedlessRefitProcessNoiseApplied_;
+      if (v3_) {
+        // seedlessRefit v3: the engine on the OT track's own helix and covariance in the nano's
+        // conventions (phi(), d0()), as the replay reads them. The engine never sees truth; the
+        // TRUTH-ONLY labels below only describe its choices in the sidecar.
+        smartpixels::v3::Vec5 v3a{{iterL1Track->rInv(), iterL1Track->phi(), iterL1Track->tanL(), iterL1Track->z0(),
+                                   iterL1Track->d0()}};
+        smartpixels::v3::Mat5 v3C{};
+        {
+          const auto& tc = iterL1Track->helixCovMat();
+          for (int i = 0; i < 5; ++i)
+            for (int j = 0; j < 5; ++j)
+              v3C[i][j] = tc(i, j);
+        }
+        const smartpixels::v3::TrackResult res = v3Engine->run(v3a, v3C, v3Kpt, drActiveSurface, v3Clusters);
+        if (v3Dump_)
+          writeV3Dump(*v3Dump_, iEvent, this_l1track - 1, v3a, res);
+        for (const auto& st : res.steps) {
+          if (!st.visited)
+            continue;
+          smartpixels::SmartPixelsRefitHitInfo hi;
+          hi.layer = static_cast<uint8_t>(st.surface);
+          hi.detId = st.detId;
+          hi.windowMult = static_cast<uint16_t>(std::min(st.ncand, 65535));
+          hi.kchoice = static_cast<int8_t>(st.kchoice);
+          hi.rankChi2 = std::isfinite(st.rankChi2) ? static_cast<float>(st.rankChi2) : -999.f;
+          hi.skipPrice = std::isfinite(st.skipPrice) ? static_cast<float>(st.skipPrice) : -999.f;
+          ++drTrackInfo.nCrossings;
+          drMaxWindowMult = std::max<unsigned>(drMaxWindowMult, st.ncand);
+          if (st.accepted) {
+            const int mi = v3Geo_.index(st.detId);
+            const auto& mcl = v3Clusters[mi];
+            const auto cit = std::find_if(
+                mcl.begin(), mcl.end(), [&st](const smartpixels::v3::Cluster& c) { return c.index == st.cluster; });
+            hi.flags |= smartpixels::hitflag::kHitAccepted;
+            if (st.has[0])
+              hi.flags |= smartpixels::hitflag::kHasAlpha;
+            if (st.has[1])
+              hi.flags |= smartpixels::hitflag::kHasBeta;
+            hi.selClusterIdx = st.cluster;
+            hi.recoLocalX = static_cast<float>(cit->x);
+            hi.recoLocalY = static_cast<float>(cit->y);
+            hi.sigX = static_cast<float>(st.sig[0]);
+            hi.sigY = static_cast<float>(st.sig[1]);
+            hi.recoSizeX = static_cast<uint8_t>(cit->sizeX);
+            hi.recoSizeY = static_cast<uint8_t>(cit->sizeY);
+            hi.projLocalX = static_cast<float>(st.h0[0]);
+            hi.projLocalY = static_cast<float>(st.h0[1]);
+            hi.projCotAlpha = static_cast<float>(st.h0[2]);
+            hi.projCotBeta = static_cast<float>(st.h0[3]);
+            hi.projSigX = static_cast<float>(st.projSig[0]);
+            hi.projSigY = static_cast<float>(st.projSig[1]);
+            hi.projResX = static_cast<float>(cit->x - st.h0[0]);
+            hi.projResY = static_cast<float>(cit->y - st.h0[1]);
+            hi.recoCotAlpha = st.has[0] ? static_cast<float>(cit->cotA) : -999.f;
+            hi.recoCotBeta = st.has[1] ? static_cast<float>(cit->cotB) : -999.f;
+            hi.sigAlpha = st.has[0] ? static_cast<float>(st.sig[2]) : -999.f;
+            hi.sigBeta = st.has[1] ? static_cast<float>(st.sig[3]) : -999.f;
+            hi.pullX = st.applied[0] ? static_cast<float>(st.pull[0]) : -999.f;
+            hi.pullY = st.applied[1] ? static_cast<float>(st.pull[1]) : -999.f;
+            hi.pullAlpha = st.applied[2] ? static_cast<float>(st.pull[2]) : -999.f;
+            hi.pullBeta = st.applied[3] ? static_cast<float>(st.pull[3]) : -999.f;
+            hi.chi2IncX = static_cast<float>(st.applied[0] ? st.chi2[0] : 0.);
+            hi.chi2IncY = static_cast<float>(st.applied[1] ? st.chi2[1] : 0.);
+            hi.chi2IncAlpha = static_cast<float>(st.applied[2] ? st.chi2[2] : 0.);
+            hi.chi2IncBeta = static_cast<float>(st.applied[3] ? st.chi2[3] : 0.);
+            hi.selChi2Margin = std::isfinite(st.selMargin) ? static_cast<float>(st.selMargin) : -999.f;
+            // TRUTH-ONLY labels of the chosen cluster (the parallel truth collection, index-aligned)
+            int tpKey = -1;
+            const auto trSet = drRecHitTruth->find(st.detId);
+            const auto bit = drClusterBaseIdx.find(st.detId);
+            if (trSet != drRecHitTruth->end() && bit != drClusterBaseIdx.end()) {
+              const auto& tr = (*trSet)[st.cluster - static_cast<int>(bit->second)];
+              tpKey = tr.hasTp() ? static_cast<int>(tr.dominantTp().key()) : -1;
+              hi.selHitClass = !tr.hasTp() ? int8_t(2) : (tpKey == drOTTpKey ? int8_t(0) : int8_t(1));
+              hi.tpLocalCotAlpha = static_cast<float>(tr.trueCotAlpha());
+              hi.tpLocalCotBeta = static_cast<float>(tr.trueCotBeta());
+              hi.tpChargeFrac = static_cast<float>(tr.chargeFrac());
+              if (tr.merged())
+                hi.flags |= smartpixels::hitflag::kClusterMerged;
+            }
+            drLayerHitMask |= smartpixels::surfaceHitBit(st.surface);
+            for (auto [tot, k] : {std::pair<float*, int>{&drTrackInfo.chi2IncXTot, 0},
+                                  std::pair<float*, int>{&drTrackInfo.chi2IncYTot, 1},
+                                  std::pair<float*, int>{&drTrackInfo.chi2IncAlphaTot, 2},
+                                  std::pair<float*, int>{&drTrackInfo.chi2IncBetaTot, 3}})
+              *tot = (*tot < -900.f ? 0.f : *tot) + static_cast<float>(st.applied[k] ? st.chi2[k] : 0.);
+            drAcceptedTpKeys.push_back(tpKey);
+            ++nAcceptedHits;
+            ++nUpdates;
+          }
+          drHitInfo.push_back(hi);
+        }
+        drTrackInfo.refitVersion = 3;
+        if (res.discGoing)
+          drTrackInfo.status |= smartpixels::trackstatus::kDiscGoing;
+        if (res.refit) {
+          for (int i = 0; i < 5; ++i) {
+            a[i] = res.a[i];
+            for (int j = 0; j <= i; ++j)
+              C(i, j) = res.C[i][j];
           }
         }
+      } else {
+        // Visit order per seedlessRefitLayerOrder_ along drPath. Sidecar hitInfo records are
+        // pushed in VISIT order, so their sequence documents how the fit actually
+        // proceeded; every consumer selects on hitInfo.layer, never on position.
+        const int drNPath = drPath.size();
+        const bool drOutsideIn = (seedlessRefitLayerOrder_ == "outsideIn");
+        for (int step = 0; step < drNPath; ++step) {
+          const int ip = drOutsideIn ? (drNPath - 1 - step) : step;
+          if (!otCovOK || nUpdates >= seedlessRefitMaxKFUpdates_)
+            break;
+          const unsigned surface = drPath[ip].code;
+          if (!drActiveSurface[surface])
+            continue;
+          const bool isDisc = smartpixels::isDiscSurface(surface);
+          const unsigned surfIdx = isDisc ? surface - smartpixels::kDiscSurfaceOffset - 1 : surface - 1;
 
-        const smartpixels::Crossing cx =
-            projector_.crossSurface(makeHelix(a), surface, drField, seedlessRefitPredAngleMaxAbs_);
-        if (!cx.valid) {
-          // Predicted-angle clamp (spec §6b hygiene) or genuine off-acceptance.
-          // Count the clamp activations for the endStream report (attribute a
-          // rejected crossing to the clamp when the unclamped projection WOULD have
-          // been valid but exceeded the predicted-angle bound).
-          const smartpixels::Crossing cxUnclamped = projector_.crossSurface(makeHelix(a), surface, drField, 0.);
-          if (cxUnclamped.valid &&
-              (std::abs(cxUnclamped.cotAlpha) > seedlessRefitPredAngleMaxAbs_ ||
-               std::abs(cxUnclamped.cotBeta) > seedlessRefitPredAngleMaxAbs_))
-            ++seedlessRefitClampedPredCross_;
-          continue;
-        }
-        const PixelGeomDetUnit* pixDet = cx.det;
-        const PixelTopology& pixTopo = pixDet->specificTopology();
-        const std::pair<float, float> pitch = pixTopo.pitch();
-        const double sigX = pitch.first / std::sqrt(12.0);
-        const double sigY = pitch.second / std::sqrt(12.0);
+          // ---- MULTIPLE-SCATTERING PROCESS NOISE -------------------------------
+          // Inflate C for the material traversed since the last constraint, BEFORE
+          // projecting, so it is visible to both S = H C H^T + sigma^2 and the gain.
+          //
+          // WHY IT IS NEEDED. C is filled from the OT track, shrunk by every update
+          // (C -= K v^T) and never grows: there is no propagation step at all,
+          // because the state IS the 5 helix parameters and "propagating" is
+          // crossLayer re-evaluating the same helix at another radius. The measured
+          // consequence is that correct-hit pull widths follow VISIT ORDER, not layer
+          // identity -- the first-visited layer sits at ~1.0 because it is projected
+          // with the honest OT covariance, and everything after it degrades (4.1,
+          // 5.4, 7.8 under the old inside-out order).
+          //
+          // MATERIAL IS KEYED TO GEOMETRY, NOT TO MEASUREMENTS. The particle scatters
+          // in every surface it crosses, including uninstrumented ones and ones that
+          // happened to yield no hit, so the budget is accrued over the surfaces
+          // TRAVERSED between the two constraint points rather than per update. A disc
+          // is charged the same theta0 as a layer (see the disc note below).
+          //
+          // STRUCTURE FROM PHYSICS, SCALE FROM DATA. A kink of projected SPACE angle
+          // theta at radius r_s leaves the momentum magnitude alone, so rInv is
+          // untouched; it rotates the direction and shifts the impact parameters that
+          // keep the trajectory passing through r_s. In TTTrack's own conventions
+          // (POCA = (d0 sin phi0, -d0 cos phi0), so d0 = x0 sin phi0 - y0 cos phi0):
+          //     azimuthal:    d(phi0) = theta sec(lam),     d(d0) = +r_s * d(phi0)
+          //     dip:          d(tanL) = theta sec^2(lam),   d(z0) = -r_s * d(tanL)
+          // (the transverse momentum is p cos(lam), so an azimuthal kink theta turns
+          // phi by theta / cos(lam); d(tanL) = sec^2 d(lam)). Q = theta^2 (J_T J_T^T +
+          // J_L J_L^T), rank 2, with theta = multScattTerm / p per traversed surface.
+          // The kink Jacobian depends only on the transverse radius r_s of the kink point
+          // (d(d0) = r_s d(phi0), d(z0) = -s d(tanL) with s ~ r_s), so it holds unchanged
+          // for a kink on a disc. DISCS: one theta0 per disc as per layer. The layer term
+          // has no incidence (path-length) factor, and the disc keeps that convention. Not
+          // tuned for discs: the reconstruction geometry gives a TFPX module 1.34% X0 at
+          // normal incidence against 1.48-1.85% for the TBPX layers.
+          // multScattTerm keeps TMTT's KalmanMultiScattTerm value (0.00075 rad*GeV):
+          // TMTT uses it as the TRANSVERSE deflection per pT, and multScattTerm / p *
+          // sec(lam) is exactly that, so the azimuthal term is unchanged in magnitude.
+          // Applied to the STATE covariance rather than by inflating the measurement
+          // error, so the emitted outCov stays honest for downstream vertexing and
+          // tagging.
+          //
+          // HISTORY (2026-09-23): the first version (f629627) had d(d0) = -r_s theta,
+          // which is the reco::TrackBase::dxy convention (dxy = -d0 here): it moved the
+          // crossing AT the kink by a median 33 um and inflated the lever arm to
+          // ~(r + r_s). It also used theta = multScattTerm / pT with d(tanL) = theta
+          // sec^2, overstating the dip term by sec(lam).
+          if (seedlessRefitApplyProcessNoise_ && nUpdates > 0 && drPrevLayerR > 0.) {
+            const double ptNow = std::abs(MagConstant * b_field / (a[0] * 100.0));
+            const int nCross = std::max(1, std::abs(drPath[ip].nTraversed - drPath[drPrevPath].nTraversed));
+            if (ptNow > 1e-3) {
+              const double sec2 = 1.0 + a[2] * a[2];
+              const double sec = std::sqrt(sec2);
+              const double pNow = ptNow * sec;
+              const double theta0 = seedlessRefitMultScattTerm_ / pNow;  // projected space angle
+              const double var = theta0 * theta0 * static_cast<double>(nCross);
+              const double rs = drPrevLayerR;  // kink sits at the material, i.e. the
+                                               // last surface crossed, giving the lever
+                                               // arm to the surface now being predicted
+              ROOT::Math::SVector<double, 5> jT, jL;
+              jT[0] = 0.; jT[1] = sec; jT[2] = 0.; jT[3] = 0.; jT[4] = +rs * sec;
+              jL[0] = 0.; jL[1] = 0.; jL[2] = sec2; jL[3] = -rs * sec2; jL[4] = 0.;
+              for (int i = 0; i < 5; ++i)
+                for (int j = 0; j <= i; ++j)
+                  C(i, j) += var * (jT[i] * jT[j] + jL[i] * jL[j]);
+              ++seedlessRefitProcessNoiseApplied_;
+            }
+          }
 
-        // A valid crossing was attempted: start its sidecar record now (spec §2 -
-        // one hitInfo entry per valid crossing, whether or not a hit is accepted).
-        smartpixels::SmartPixelsRefitHitInfo hi;
-        hi.layer = static_cast<uint8_t>(surface);
-        hi.detId = cx.detId;
-        // Running projection: cx IS the current state's crossing, so this is free.
-        hi.projLocalX = static_cast<float>(cx.local.x());
-        hi.projLocalY = static_cast<float>(cx.local.y());
-        hi.projCotAlpha = static_cast<float>(cx.cotAlpha);
-        hi.projCotBeta = static_cast<float>(cx.cotBeta);
-        // OT projection + its cone, from the UNMODIFIED OT track helix. Recomputed
-        // per crossing rather than cached because crossLayer resolves the module
-        // from the helix, and the OT track may cross a DIFFERENT module than the
-        // updated state does -- silently comparing across modules would corrupt
-        // every band count derived from it.
-        if (seedlessRefitStoreOTProjection_) {
-          const smartpixels::Crossing cs =
-              projector_.crossSurface(makeHelix(aOT), surface, drField, seedlessRefitPredAngleMaxAbs_);
-          if (cs.valid && cs.detId == cx.detId) {
-            hi.projOTLocalX = static_cast<float>(cs.local.x());
-            hi.projOTLocalY = static_cast<float>(cs.local.y());
-            hi.projOTCotAlpha = static_cast<float>(cs.cotAlpha);
-            hi.projOTCotBeta = static_cast<float>(cs.cotBeta);
-            // Cone sigma: sqrt(diag(H C_OT H^T)) with H the numerical Jacobian of
-            // (localx, localy) at the OT track state. Same one-sided-difference scheme
-            // and same same-module guard as the update Jacobian below.
-            const double hs0[2] = {cs.local.x(), cs.local.y()};
-            double Hs[2][5] = {{0.}};
-            constexpr std::array<double, 5> kEpsS{{1e-6, 1e-5, 1e-5, 1e-3, 1e-3}};
-            for (int j = 0; j < 5; ++j)
-              for (const double sgn : {+1., -1.}) {
-                ROOT::Math::SVector<double, 5> ap = aOT;
-                ap[j] += sgn * kEpsS[j];
-                const smartpixels::Crossing cp =
-                    projector_.crossSurface(makeHelix(ap), surface, drField, seedlessRefitPredAngleMaxAbs_);
-                if (!cp.valid || cp.detId != cs.detId)
+          const smartpixels::Crossing cx =
+              projector_.crossSurface(makeHelix(a), surface, drField, seedlessRefitPredAngleMaxAbs_);
+          if (!cx.valid) {
+            // Predicted-angle clamp (spec §6b hygiene) or genuine off-acceptance.
+            // Count the clamp activations for the endStream report (attribute a
+            // rejected crossing to the clamp when the unclamped projection WOULD have
+            // been valid but exceeded the predicted-angle bound).
+            const smartpixels::Crossing cxUnclamped = projector_.crossSurface(makeHelix(a), surface, drField, 0.);
+            if (cxUnclamped.valid &&
+                (std::abs(cxUnclamped.cotAlpha) > seedlessRefitPredAngleMaxAbs_ ||
+                 std::abs(cxUnclamped.cotBeta) > seedlessRefitPredAngleMaxAbs_))
+              ++seedlessRefitClampedPredCross_;
+            continue;
+          }
+          const PixelGeomDetUnit* pixDet = cx.det;
+          const PixelTopology& pixTopo = pixDet->specificTopology();
+          const std::pair<float, float> pitch = pixTopo.pitch();
+          const double sigX = pitch.first / std::sqrt(12.0);
+          const double sigY = pitch.second / std::sqrt(12.0);
+
+          // A valid crossing was attempted: start its sidecar record now (spec §2 -
+          // one hitInfo entry per valid crossing, whether or not a hit is accepted).
+          smartpixels::SmartPixelsRefitHitInfo hi;
+          hi.layer = static_cast<uint8_t>(surface);
+          hi.detId = cx.detId;
+          // Running projection: cx IS the current state's crossing, so this is free.
+          hi.projLocalX = static_cast<float>(cx.local.x());
+          hi.projLocalY = static_cast<float>(cx.local.y());
+          hi.projCotAlpha = static_cast<float>(cx.cotAlpha);
+          hi.projCotBeta = static_cast<float>(cx.cotBeta);
+          // OT projection + its cone, from the UNMODIFIED OT track helix. Recomputed
+          // per crossing rather than cached because crossLayer resolves the module
+          // from the helix, and the OT track may cross a DIFFERENT module than the
+          // updated state does -- silently comparing across modules would corrupt
+          // every band count derived from it.
+          if (seedlessRefitStoreOTProjection_) {
+            const smartpixels::Crossing cs =
+                projector_.crossSurface(makeHelix(aOT), surface, drField, seedlessRefitPredAngleMaxAbs_);
+            if (cs.valid && cs.detId == cx.detId) {
+              hi.projOTLocalX = static_cast<float>(cs.local.x());
+              hi.projOTLocalY = static_cast<float>(cs.local.y());
+              hi.projOTCotAlpha = static_cast<float>(cs.cotAlpha);
+              hi.projOTCotBeta = static_cast<float>(cs.cotBeta);
+              // Cone sigma: sqrt(diag(H C_OT H^T)) with H the numerical Jacobian of
+              // (localx, localy) at the OT track state. Same one-sided-difference scheme
+              // and same same-module guard as the update Jacobian below.
+              const double hs0[2] = {cs.local.x(), cs.local.y()};
+              double Hs[2][5] = {{0.}};
+              constexpr std::array<double, 5> kEpsS{{1e-6, 1e-5, 1e-5, 1e-3, 1e-3}};
+              for (int j = 0; j < 5; ++j)
+                for (const double sgn : {+1., -1.}) {
+                  ROOT::Math::SVector<double, 5> ap = aOT;
+                  ap[j] += sgn * kEpsS[j];
+                  const smartpixels::Crossing cp =
+                      projector_.crossSurface(makeHelix(ap), surface, drField, seedlessRefitPredAngleMaxAbs_);
+                  if (!cp.valid || cp.detId != cs.detId)
+                    continue;
+                  const double inv = 1.0 / (sgn * kEpsS[j]);
+                  Hs[0][j] = (cp.local.x() - hs0[0]) * inv;
+                  Hs[1][j] = (cp.local.y() - hs0[1]) * inv;
+                  break;
+                }
+              for (int k = 0; k < 2; ++k) {
+                ROOT::Math::SVector<double, 5> Hrow;
+                bool ok = true;
+                for (int j = 0; j < 5; ++j) {
+                  Hrow[j] = Hs[k][j];
+                  if (!std::isfinite(Hs[k][j]) || std::abs(Hs[k][j]) > seedlessRefitJacobianMaxAbs_)
+                    ok = false;
+                }
+                if (!ok)
                   continue;
-                const double inv = 1.0 / (sgn * kEpsS[j]);
-                Hs[0][j] = (cp.local.x() - hs0[0]) * inv;
-                Hs[1][j] = (cp.local.y() - hs0[1]) * inv;
+                const double var = ROOT::Math::Dot(Hrow, COT * Hrow);
+                if (var > 0.) {
+                  if (k == 0)
+                    hi.projOTSigX = static_cast<float>(std::sqrt(var));
+                  else
+                    hi.projOTSigY = static_cast<float>(std::sqrt(var));
+                }
+              }
+            }
+          }
+
+          // ---- linearized measurement model h(a) = (localx, localy, cotAlpha, cotBeta) ----
+          // Numerical Jacobian against the SAME shared projector (consistency by
+          // construction). One-sided differences; if a perturbation falls off the
+          // nominal module, try the other side; else the column stays zero
+          // (parameter locally unobservable).
+          //
+          // COMPUTED HERE, ABOVE THE WINDOW COLLECT, rather than after the hit is
+          // chosen. H is a property of the CROSSING -- state, layer, module -- and has
+          // no dependence on which cluster wins, so its old position was incidental.
+          // Hoisting it is what lets projSig* below be recorded on the ~10% of
+          // crossings whose window comes up empty and which `continue` out before any
+          // update. Those are precisely the SPARSE crossings, so measuring the cone
+          // only where a hit exists would bias occupancy HIGH -- the direction that
+          // flatters the combinatorics answer.
+          const double h0[4] = {cx.local.x(), cx.local.y(), cx.cotAlpha, cx.cotBeta};
+          double H[4][5] = {{0.}};
+          constexpr std::array<double, 5> kEps{{1e-6, 1e-5, 1e-5, 1e-3, 1e-3}};
+          for (int j = 0; j < 5; ++j) {
+            for (const double sgn : {+1., -1.}) {
+              ROOT::Math::SVector<double, 5> ap = a;
+              ap[j] += sgn * kEps[j];
+              const smartpixels::Crossing cp =
+                  projector_.crossSurface(makeHelix(ap), surface, drField, seedlessRefitPredAngleMaxAbs_);
+              if (!cp.valid || cp.detId != cx.detId)
+                continue;
+              const double inv = 1.0 / (sgn * kEps[j]);
+              H[0][j] = (cp.local.x() - h0[0]) * inv;
+              H[1][j] = (cp.local.y() - h0[1]) * inv;
+              H[2][j] = (cp.cotAlpha - h0[2]) * inv;
+              H[3][j] = (cp.cotBeta - h0[3]) * inv;
+              break;
+            }
+          }
+          // jacobianMaxAbs (spec §6b): any Jacobian entry above the bound (or
+          // non-finite) makes that PARAMETER column locally unobservable -- zero it
+          // exactly like the same-module guard above. Physical |H| stays <~200 on the
+          // PU study; near-grazing crossings blow a column up (observed to ~900) or
+          // yield NaN/Inf. Column-zeroing keeps the update well-posed for the other
+          // parameters. FPGA-fidelity handle: finite-precision hardware bounds |H|.
+          for (int j = 0; j < 5; ++j) {
+            bool bad = false;
+            for (int k = 0; k < 4; ++k)
+              if (!std::isfinite(H[k][j]) || std::abs(H[k][j]) > seedlessRefitJacobianMaxAbs_) {
+                bad = true;
                 break;
               }
-            for (int k = 0; k < 2; ++k) {
-              ROOT::Math::SVector<double, 5> Hrow;
-              bool ok = true;
-              for (int j = 0; j < 5; ++j) {
-                Hrow[j] = Hs[k][j];
-                if (!std::isfinite(Hs[k][j]) || std::abs(Hs[k][j]) > seedlessRefitJacobianMaxAbs_)
-                  ok = false;
+            if (bad) {
+              ++seedlessRefitGatedJacCols_;
+              for (int k = 0; k < 4; ++k)
+                H[k][j] = 0.;
+            }
+          }
+
+          // Running projected track uncertainty at this crossing, sqrt(H C H^T), taken
+          // BEFORE any update on this layer but AFTER the multiple-scattering Q has
+          // been added. Identical construction to projOTSig* above except that it
+          // uses the CURRENT covariance instead of COT, so the two together bracket
+          // exactly what the refit buys: naive OT cone vs outsideIn refit-order cone.
+          // Track-only, with no cluster CPE term, matching projOTSig* semantics --
+          // any consumer comparing against a cluster must add the cluster error itself.
+          for (int k = 0; k < 2; ++k) {
+            ROOT::Math::SVector<double, 5> Hrow;
+            for (int j = 0; j < 5; ++j)
+              Hrow[j] = H[k][j];
+            const double var = ROOT::Math::Dot(Hrow, C * Hrow);
+            if (var > 0.) {
+              if (k == 0)
+                hi.projSigX = static_cast<float>(std::sqrt(var));
+              else
+                hi.projSigY = static_cast<float>(std::sqrt(var));
+            }
+          }
+
+          // ---- window-collect + classify CLUSTERS (readout order, FPGA truncation) ----
+          // One candidate per reconstructed cluster, not per fired pixel: a pixel is
+          // not a measurement, and one inclined particle fires several of them. The
+          // position and its uncertainty come from the pixel CPE (Lorentz- and
+          // angle-corrected, template errors), which is both the honest "what the
+          // sensor produced" and the fix for the pitch/sqrt(12) error model.
+          struct HitCand {
+            double x = 0., y = 0.;
+            double ex = 0., ey = 0.;          // reco position uncertainty from the CPE
+            uint8_t sizeX = 0, sizeY = 0;     // cluster extent in pixels
+            double charge = 0.;               // cluster charge [ADC]
+            double cotA = -999., cotB = -999.;
+            double sigA = 0., sigB = 0.;
+            bool hasA = false, hasB = false;  // per-angle validity (a real payload may be alpha-only)
+            double sel = 0.;
+            int8_t cls = 2;                   // dominant-contributor class: 0 sameTP, 1 otherTP, 2 noise
+            double chargeFrac = -999.;        // dominant contributor's share of the charge (truth-only)
+            bool merged = false;              // a second TP contributes > clusterMergeFrac
+            double parCotA = -999., parCotB = -999.;  // parent local angles (truth-only)
+            int32_t clusterIdx = -1;          // row in the untruncated cluster nano table
+            int tpKey = -1;                   // dominant contributor's TP key (truth-only)
+          };
+          std::vector<HitCand> cands;
+          bool windowTruncated = false;
+          // Candidates come from SmartPixelsRecHits: CPE position + error AND the
+          // SENSOR ANGLE ESTIMATE, produced once upstream by
+          // SmartPixelsRecHitProducer. The synthesis used to be inlined here, four
+          // loops deep on a function-local struct, which made it unreusable and left
+          // the truth-angle derivation duplicated in the payload analyzer with
+          // nothing enforcing agreement. Truth for the selHitClass label comes from
+          // the parallel truth collection, index-aligned by construction.
+          const auto rhSet = drRecHits->find(cx.detId);
+          if (rhSet != drRecHits->end()) {
+            const auto trSet = drRecHitTruth->find(cx.detId);
+            if (trSet == drRecHitTruth->end() || trSet->size() != rhSet->size())
+              throw cms::Exception("SmartPixelsRecHitTruthMisaligned")
+                  << "SmartPixelsRecHit/Truth disagree on det " << cx.detId
+                  << ": the selHitClass label would describe a different cluster.";
+            int rhPos = -1;
+            for (const auto& rh : *rhSet) {
+              ++rhPos;
+              if (static_cast<int>(cands.size()) >= seedlessRefitMaxHitsPerWindow_) {
+                windowTruncated = true;  // combinatorics truncation in readout order (hardware-like)
+                break;
               }
-              if (!ok)
+              const LocalPoint dlp = rh.localPosition();
+              // module-local windows: x = r-phi on both; y = z on a layer, radius on a disc
+              if (std::abs(dlp.x() - cx.local.x()) >
+                      (isDisc ? seedlessRefitWindowDiscRPhi_ : seedlessRefitWindowRPhi_)[surfIdx] ||
+                  std::abs(dlp.y() - cx.local.y()) > (isDisc ? seedlessRefitWindowDiscR_ : seedlessRefitWindowZ_)[surfIdx])
                 continue;
-              const double var = ROOT::Math::Dot(Hrow, COT * Hrow);
-              if (var > 0.) {
-                if (k == 0)
-                  hi.projOTSigX = static_cast<float>(std::sqrt(var));
-                else
-                  hi.projOTSigY = static_cast<float>(std::sqrt(var));
+
+              const auto& tr = (*trSet)[rhPos];
+              HitCand cand;
+              {
+                const auto bit = drClusterBaseIdx.find(cx.detId);
+                if (bit != drClusterBaseIdx.end())
+                  cand.clusterIdx = static_cast<int32_t>(bit->second + rhPos);
               }
+              cand.x = dlp.x();
+              cand.y = dlp.y();
+              const LocalError le = rh.localPositionError();
+              cand.ex = (le.xx() > 0.) ? std::sqrt(le.xx()) : sigX;
+              cand.ey = (le.yy() > 0.) ? std::sqrt(le.yy()) : sigY;
+              cand.sizeX = static_cast<uint8_t>(std::min<unsigned>(rh.sizeX(), 255));
+              cand.sizeY = static_cast<uint8_t>(std::min<unsigned>(rh.sizeY(), 255));
+              cand.charge = rh.charge();
+              cand.chargeFrac = tr.chargeFrac();
+              cand.merged = tr.merged();
+              cand.parCotA = tr.trueCotAlpha();
+              cand.parCotB = tr.trueCotBeta();
+
+              // Sensor angle estimate. The grazing cap is applied HERE: the emu source
+              // reports every angle (a value-dependent validity flag would tell class C
+              // from class T), and for the payload source, which already clears
+              // hasAlpha/hasBeta beyond the same bound upstream, this is a no-op.
+              cand.cotA = rh.cotAlpha();
+              cand.cotB = rh.cotBeta();
+              cand.sigA = rh.sigAlpha();
+              cand.sigB = rh.sigBeta();
+              cand.hasA = rh.hasAlpha() && std::abs(cand.cotA) <= seedlessRefitMeasAngleMaxAbs_;
+              cand.hasB = rh.hasBeta() && std::abs(cand.cotB) <= seedlessRefitMeasAngleMaxAbs_;
+              seedlessRefitClampedMeasAngles_ += (rh.hasAlpha() && !cand.hasA) + (rh.hasBeta() && !cand.hasB);
+
+              // TRUTH-ONLY class, by TrackingParticle IDENTITY rather than SimTrack
+              // id: a TP owns several g4Tracks. 2 = no TP at all (noise-like).
+              cand.tpKey = tr.hasTp() ? static_cast<int>(tr.dominantTp().key()) : -1;
+              cand.cls = !tr.hasTp() ? int8_t(2) : (cand.tpKey == drOTTpKey ? int8_t(0) : int8_t(1));
+
+              // Selection chi2 against the prediction (position always; angles when enabled+valid).
+              // Per-hit CPE uncertainties, not a per-module pitch/sqrt(12) constant:
+              // the selection metric is now the same quantity the KF divides by.
+              double sel = std::pow((cand.x - cx.local.x()) / cand.ex, 2) +
+                           std::pow((cand.y - cx.local.y()) / cand.ey, 2);
+              if (useAlpha && cand.hasA)
+                sel += std::pow((cand.cotA - cx.cotAlpha) / cand.sigA, 2);
+              if (useBeta && cand.hasB)
+                sel += std::pow((cand.cotB - cx.cotBeta) / cand.sigB, 2);
+              cand.sel = sel;
+              cands.push_back(cand);
             }
           }
-        }
 
-        // ---- linearized measurement model h(a) = (localx, localy, cotAlpha, cotBeta) ----
-        // Numerical Jacobian against the SAME shared projector (consistency by
-        // construction). One-sided differences; if a perturbation falls off the
-        // nominal module, try the other side; else the column stays zero
-        // (parameter locally unobservable).
-        //
-        // COMPUTED HERE, ABOVE THE WINDOW COLLECT, rather than after the hit is
-        // chosen. H is a property of the CROSSING -- state, layer, module -- and has
-        // no dependence on which cluster wins, so its old position was incidental.
-        // Hoisting it is what lets projSig* below be recorded on the ~10% of
-        // crossings whose window comes up empty and which `continue` out before any
-        // update. Those are precisely the SPARSE crossings, so measuring the cone
-        // only where a hit exists would bias occupancy HIGH -- the direction that
-        // flatters the combinatorics answer.
-        const double h0[4] = {cx.local.x(), cx.local.y(), cx.cotAlpha, cx.cotBeta};
-        double H[4][5] = {{0.}};
-        constexpr std::array<double, 5> kEps{{1e-6, 1e-5, 1e-5, 1e-3, 1e-3}};
-        for (int j = 0; j < 5; ++j) {
-          for (const double sgn : {+1., -1.}) {
-            ROOT::Math::SVector<double, 5> ap = a;
-            ap[j] += sgn * kEps[j];
-            const smartpixels::Crossing cp =
-                projector_.crossSurface(makeHelix(ap), surface, drField, seedlessRefitPredAngleMaxAbs_);
-            if (!cp.valid || cp.detId != cx.detId)
-              continue;
-            const double inv = 1.0 / (sgn * kEps[j]);
-            H[0][j] = (cp.local.x() - h0[0]) * inv;
-            H[1][j] = (cp.local.y() - h0[1]) * inv;
-            H[2][j] = (cp.cotAlpha - h0[2]) * inv;
-            H[3][j] = (cp.cotBeta - h0[3]) * inv;
-            break;
+          // Crossing-level occupancy (post-truncation) recorded on the hit info.
+          hi.windowMult = static_cast<uint16_t>(cands.size());
+          if (windowTruncated) {
+            hi.flags |= smartpixels::hitflag::kWindowTruncated;
+            drAnyWindowTruncated = true;
           }
-        }
-        // jacobianMaxAbs (spec §6b): any Jacobian entry above the bound (or
-        // non-finite) makes that PARAMETER column locally unobservable -- zero it
-        // exactly like the same-module guard above. Physical |H| stays <~200 on the
-        // PU study; near-grazing crossings blow a column up (observed to ~900) or
-        // yield NaN/Inf. Column-zeroing keeps the update well-posed for the other
-        // parameters. FPGA-fidelity handle: finite-precision hardware bounds |H|.
-        for (int j = 0; j < 5; ++j) {
-          bool bad = false;
-          for (int k = 0; k < 4; ++k)
-            if (!std::isfinite(H[k][j]) || std::abs(H[k][j]) > seedlessRefitJacobianMaxAbs_) {
-              bad = true;
-              break;
+          drMaxWindowMult = std::max<unsigned>(drMaxWindowMult, cands.size());
+          ++drTrackInfo.nCrossings;
+
+          if (cands.empty()) {
+            // Valid crossing, no hit: sidecar record kept (selected-hit fields stay
+            // at their -999.f / class -1 sentinels), no KF update.
+            drHitInfo.push_back(hi);
+            continue;
+          }
+          const auto bestIt = std::min_element(
+              cands.begin(), cands.end(), [](const HitCand& p, const HitCand& q) { return p.sel < q.sel; });
+          const HitCand& best = *bestIt;
+          // selChi2Margin (spec §2): runner-up minus best selection chi2 (>=0),
+          // a hardware-plausible measure of how unambiguous the hit choice was.
+          // Sentinel -999.f when the window held fewer than 2 candidates (no runner-up).
+          double drSelChi2Margin = -999.;
+          if (cands.size() >= 2) {
+            double runnerUp = std::numeric_limits<double>::infinity();
+            for (auto it = cands.begin(); it != cands.end(); ++it)
+              if (it != bestIt && it->sel < runnerUp)
+                runnerUp = it->sel;
+            drSelChi2Margin = runnerUp - best.sel;  // >= 0 by construction
+          }
+
+          // ---- sequential scalar Kalman updates (diagonal R; FPGA-friendly form) ----
+          // Per-scalar pull (r/sqrt(S), computed BEFORE the state update) and chi2
+          // increment (r^2/S), captured for the sidecar. k: 0=x 1=y 2=alpha 3=beta.
+          const ROOT::Math::SVector<double, 5> aLin = a;
+          std::array<double, 4> pull{{-999., -999., -999., -999.}};
+          std::array<double, 4> chi2inc{{0., 0., 0., 0.}};
+          std::array<bool, 4> applied{{false, false, false, false}};
+          const auto scalarUpdate = [&](int k, double m, double sig) {
+            ROOT::Math::SVector<double, 5> Hrow;
+            for (int j = 0; j < 5; ++j)
+              Hrow[j] = H[k][j];
+            const ROOT::Math::SVector<double, 5> v = C * Hrow;
+            const double S = ROOT::Math::Dot(Hrow, v) + sig * sig;
+            if (!(S > 0.))
+              return;
+            const double r = m - h0[k] - ROOT::Math::Dot(Hrow, a - aLin);
+            const double chi2candidate = r * r / S;
+            // chi2UpdateGate (spec §6b): a scalar update whose r^2/S exceeds the gate
+            // is a numerical pathology (near-grazing crossing -> non-physical predicted
+            // angle and/or blown-up Jacobian column, innovation up to ~1e3 cot-units).
+            // Skip it ENTIRELY: no state/covariance change, no chi2 contribution, pull
+            // stays sentinel. This is a numerical-pathology gate, NOT an outlier/quality
+            // gate -- physical wrong-hit contamination (r^2/S <= ~2e6 on the PU study) is
+            // the BDT's signal and is left untouched. The hit still counts as accepted.
+            if (chi2candidate > seedlessRefitChi2UpdateGate_) {
+              ++seedlessRefitGatedUpdates_;
+              return;
             }
-          if (bad) {
-            ++seedlessRefitGatedJacCols_;
-            for (int k = 0; k < 4; ++k)
-              H[k][j] = 0.;
-          }
-        }
+            pull[k] = r / std::sqrt(S);
+            chi2inc[k] = chi2candidate;
+            applied[k] = true;
+            const ROOT::Math::SVector<double, 5> K = v / S;
+            a += K * r;
+            for (int i = 0; i < 5; ++i)
+              for (int j = 0; j <= i; ++j)
+                C(i, j) -= K[i] * v[j];  // K = v/S -> K_i v_j symmetric
+          };
+          drPrevPath = ip;
+          drPrevLayerR = std::hypot(cx.global.x(), cx.global.y());
+          scalarUpdate(0, best.x, best.ex);
+          scalarUpdate(1, best.y, best.ey);
+          if (useAlpha && best.hasA)
+            scalarUpdate(2, best.cotA, best.sigA);
+          if (useBeta && best.hasB)
+            scalarUpdate(3, best.cotB, best.sigB);
 
-        // Running projected track uncertainty at this crossing, sqrt(H C H^T), taken
-        // BEFORE any update on this layer but AFTER the multiple-scattering Q has
-        // been added. Identical construction to projOTSig* above except that it
-        // uses the CURRENT covariance instead of COT, so the two together bracket
-        // exactly what the refit buys: naive OT cone vs outsideIn refit-order cone.
-        // Track-only, with no cluster CPE term, matching projOTSig* semantics --
-        // any consumer comparing against a cluster must add the cluster error itself.
-        for (int k = 0; k < 2; ++k) {
-          ROOT::Math::SVector<double, 5> Hrow;
-          for (int j = 0; j < 5; ++j)
-            Hrow[j] = H[k][j];
-          const double var = ROOT::Math::Dot(Hrow, C * Hrow);
-          if (var > 0.) {
-            if (k == 0)
-              hi.projSigX = static_cast<float>(std::sqrt(var));
-            else
-              hi.projSigY = static_cast<float>(std::sqrt(var));
-          }
-        }
-
-        // ---- window-collect + classify CLUSTERS (readout order, FPGA truncation) ----
-        // One candidate per reconstructed cluster, not per fired pixel: a pixel is
-        // not a measurement, and one inclined particle fires several of them. The
-        // position and its uncertainty come from the pixel CPE (Lorentz- and
-        // angle-corrected, template errors), which is both the honest "what the
-        // sensor produced" and the fix for the pitch/sqrt(12) error model.
-        struct HitCand {
-          double x = 0., y = 0.;
-          double ex = 0., ey = 0.;          // reco position uncertainty from the CPE
-          uint8_t sizeX = 0, sizeY = 0;     // cluster extent in pixels
-          double charge = 0.;               // cluster charge [ADC]
-          double cotA = -999., cotB = -999.;
-          double sigA = 0., sigB = 0.;
-          bool hasA = false, hasB = false;  // per-angle validity (a real payload may be alpha-only)
-          double sel = 0.;
-          int8_t cls = 2;                   // dominant-contributor class: 0 sameTP, 1 otherTP, 2 noise
-          double chargeFrac = -999.;        // dominant contributor's share of the charge (truth-only)
-          bool merged = false;              // a second TP contributes > clusterMergeFrac
-          double parCotA = -999., parCotB = -999.;  // parent local angles (truth-only)
-          int32_t clusterIdx = -1;          // row in the untruncated cluster nano table
-          int tpKey = -1;                   // dominant contributor's TP key (truth-only)
-        };
-        std::vector<HitCand> cands;
-        bool windowTruncated = false;
-        // Candidates come from SmartPixelsRecHits: CPE position + error AND the
-        // SENSOR ANGLE ESTIMATE, produced once upstream by
-        // SmartPixelsRecHitProducer. The synthesis used to be inlined here, four
-        // loops deep on a function-local struct, which made it unreusable and left
-        // the truth-angle derivation duplicated in the payload analyzer with
-        // nothing enforcing agreement. Truth for the selHitClass label comes from
-        // the parallel truth collection, index-aligned by construction.
-        const auto rhSet = drRecHits->find(cx.detId);
-        if (rhSet != drRecHits->end()) {
-          const auto trSet = drRecHitTruth->find(cx.detId);
-          if (trSet == drRecHitTruth->end() || trSet->size() != rhSet->size())
-            throw cms::Exception("SmartPixelsRecHitTruthMisaligned")
-                << "SmartPixelsRecHit/Truth disagree on det " << cx.detId
-                << ": the selHitClass label would describe a different cluster.";
-          int rhPos = -1;
-          for (const auto& rh : *rhSet) {
-            ++rhPos;
-            if (static_cast<int>(cands.size()) >= seedlessRefitMaxHitsPerWindow_) {
-              windowTruncated = true;  // combinatorics truncation in readout order (hardware-like)
-              break;
-            }
-            const LocalPoint dlp = rh.localPosition();
-            // module-local windows: x = r-phi on both; y = z on a layer, radius on a disc
-            if (std::abs(dlp.x() - cx.local.x()) >
-                    (isDisc ? seedlessRefitWindowDiscRPhi_ : seedlessRefitWindowRPhi_)[surfIdx] ||
-                std::abs(dlp.y() - cx.local.y()) > (isDisc ? seedlessRefitWindowDiscR_ : seedlessRefitWindowZ_)[surfIdx])
-              continue;
-
-            const auto& tr = (*trSet)[rhPos];
-            HitCand cand;
-            {
-              const auto bit = drClusterBaseIdx.find(cx.detId);
-              if (bit != drClusterBaseIdx.end())
-                cand.clusterIdx = static_cast<int32_t>(bit->second + rhPos);
-            }
-            cand.x = dlp.x();
-            cand.y = dlp.y();
-            const LocalError le = rh.localPositionError();
-            cand.ex = (le.xx() > 0.) ? std::sqrt(le.xx()) : sigX;
-            cand.ey = (le.yy() > 0.) ? std::sqrt(le.yy()) : sigY;
-            cand.sizeX = static_cast<uint8_t>(std::min<unsigned>(rh.sizeX(), 255));
-            cand.sizeY = static_cast<uint8_t>(std::min<unsigned>(rh.sizeY(), 255));
-            cand.charge = rh.charge();
-            cand.chargeFrac = tr.chargeFrac();
-            cand.merged = tr.merged();
-            cand.parCotA = tr.trueCotAlpha();
-            cand.parCotB = tr.trueCotBeta();
-
-            // Sensor angle estimate. The grazing cap is applied HERE: the emu source
-            // reports every angle (a value-dependent validity flag would tell class C
-            // from class T), and for the payload source, which already clears
-            // hasAlpha/hasBeta beyond the same bound upstream, this is a no-op.
-            cand.cotA = rh.cotAlpha();
-            cand.cotB = rh.cotBeta();
-            cand.sigA = rh.sigAlpha();
-            cand.sigB = rh.sigBeta();
-            cand.hasA = rh.hasAlpha() && std::abs(cand.cotA) <= seedlessRefitMeasAngleMaxAbs_;
-            cand.hasB = rh.hasBeta() && std::abs(cand.cotB) <= seedlessRefitMeasAngleMaxAbs_;
-            seedlessRefitClampedMeasAngles_ += (rh.hasAlpha() && !cand.hasA) + (rh.hasBeta() && !cand.hasB);
-
-            // TRUTH-ONLY class, by TrackingParticle IDENTITY rather than SimTrack
-            // id: a TP owns several g4Tracks. 2 = no TP at all (noise-like).
-            cand.tpKey = tr.hasTp() ? static_cast<int>(tr.dominantTp().key()) : -1;
-            cand.cls = !tr.hasTp() ? int8_t(2) : (cand.tpKey == drOTTpKey ? int8_t(0) : int8_t(1));
-
-            // Selection chi2 against the prediction (position always; angles when enabled+valid).
-            // Per-hit CPE uncertainties, not a per-module pitch/sqrt(12) constant:
-            // the selection metric is now the same quantity the KF divides by.
-            double sel = std::pow((cand.x - cx.local.x()) / cand.ex, 2) +
-                         std::pow((cand.y - cx.local.y()) / cand.ey, 2);
-            if (useAlpha && cand.hasA)
-              sel += std::pow((cand.cotA - cx.cotAlpha) / cand.sigA, 2);
-            if (useBeta && cand.hasB)
-              sel += std::pow((cand.cotB - cx.cotBeta) / cand.sigB, 2);
-            cand.sel = sel;
-            cands.push_back(cand);
-          }
-        }
-
-        // Crossing-level occupancy (post-truncation) recorded on the hit info.
-        hi.windowMult = static_cast<uint16_t>(cands.size());
-        if (windowTruncated) {
-          hi.flags |= smartpixels::hitflag::kWindowTruncated;
-          drAnyWindowTruncated = true;
-        }
-        drMaxWindowMult = std::max<unsigned>(drMaxWindowMult, cands.size());
-        ++drTrackInfo.nCrossings;
-
-        if (cands.empty()) {
-          // Valid crossing, no hit: sidecar record kept (selected-hit fields stay
-          // at their -999.f / class -1 sentinels), no KF update.
+          // ---- fill the accepted-hit sidecar record (spec §2) ----
+          hi.flags |= smartpixels::hitflag::kHitAccepted;
+          if (best.hasA)
+            hi.flags |= smartpixels::hitflag::kHasAlpha;
+          if (best.hasB)
+            hi.flags |= smartpixels::hitflag::kHasBeta;
+          hi.selClusterIdx = best.clusterIdx;
+          hi.recoLocalX = static_cast<float>(best.x);
+          hi.recoLocalY = static_cast<float>(best.y);
+          hi.sigX = static_cast<float>(best.ex);
+          hi.sigY = static_cast<float>(best.ey);
+          hi.recoSizeX = best.sizeX;
+          hi.recoSizeY = best.sizeY;
+          hi.recoCharge = static_cast<float>(best.charge);
+          hi.projResX = static_cast<float>(best.x - cx.local.x());
+          hi.projResY = static_cast<float>(best.y - cx.local.y());
+          hi.recoCotAlpha = best.hasA ? static_cast<float>(best.cotA) : -999.f;
+          hi.recoCotBeta = best.hasB ? static_cast<float>(best.cotB) : -999.f;
+          hi.sigAlpha = best.hasA ? static_cast<float>(best.sigA) : -999.f;
+          hi.sigBeta = best.hasB ? static_cast<float>(best.sigB) : -999.f;
+          hi.pullX = applied[0] ? static_cast<float>(pull[0]) : -999.f;
+          hi.pullY = applied[1] ? static_cast<float>(pull[1]) : -999.f;
+          hi.pullAlpha = applied[2] ? static_cast<float>(pull[2]) : -999.f;
+          hi.pullBeta = applied[3] ? static_cast<float>(pull[3]) : -999.f;
+          // Refit-BDT sum-of-squared-pull features (spec §6a features 5-8).
+          if (applied[0]) drSumPullX2 += pull[0] * pull[0];
+          if (applied[1]) drSumPullY2 += pull[1] * pull[1];
+          if (applied[2]) drSumPullAlpha2 += pull[2] * pull[2];
+          if (applied[3]) drSumPullBeta2 += pull[3] * pull[3];
+          // Per-dimension chi2 increments (spec §2); a non-applied update contributes 0.
+          const double incX = applied[0] ? chi2inc[0] : 0.;
+          const double incY = applied[1] ? chi2inc[1] : 0.;
+          const double incAlpha = applied[2] ? chi2inc[2] : 0.;
+          const double incBeta = applied[3] ? chi2inc[3] : 0.;
+          hi.chi2IncX = static_cast<float>(incX);
+          hi.chi2IncY = static_cast<float>(incY);
+          hi.chi2IncAlpha = static_cast<float>(incAlpha);
+          hi.chi2IncBeta = static_cast<float>(incBeta);
+          hi.selChi2Margin = (drSelChi2Margin > -900.) ? static_cast<float>(drSelChi2Margin) : -999.f;
+          hi.selHitClass = best.cls;
+          hi.tpLocalCotAlpha = static_cast<float>(best.parCotA);
+          hi.tpLocalCotBeta = static_cast<float>(best.parCotB);
+          hi.tpChargeFrac = static_cast<float>(best.chargeFrac);
+          if (best.merged)
+            hi.flags |= smartpixels::hitflag::kClusterMerged;
           drHitInfo.push_back(hi);
-          continue;
-        }
-        const auto bestIt = std::min_element(
-            cands.begin(), cands.end(), [](const HitCand& p, const HitCand& q) { return p.sel < q.sel; });
-        const HitCand& best = *bestIt;
-        // selChi2Margin (spec §2): runner-up minus best selection chi2 (>=0),
-        // a hardware-plausible measure of how unambiguous the hit choice was.
-        // Sentinel -999.f when the window held fewer than 2 candidates (no runner-up).
-        double drSelChi2Margin = -999.;
-        if (cands.size() >= 2) {
-          double runnerUp = std::numeric_limits<double>::infinity();
-          for (auto it = cands.begin(); it != cands.end(); ++it)
-            if (it != bestIt && it->sel < runnerUp)
-              runnerUp = it->sel;
-          drSelChi2Margin = runnerUp - best.sel;  // >= 0 by construction
-        }
 
-        // ---- sequential scalar Kalman updates (diagonal R; FPGA-friendly form) ----
-        // Per-scalar pull (r/sqrt(S), computed BEFORE the state update) and chi2
-        // increment (r^2/S), captured for the sidecar. k: 0=x 1=y 2=alpha 3=beta.
-        const ROOT::Math::SVector<double, 5> aLin = a;
-        std::array<double, 4> pull{{-999., -999., -999., -999.}};
-        std::array<double, 4> chi2inc{{0., 0., 0., 0.}};
-        std::array<bool, 4> applied{{false, false, false, false}};
-        const auto scalarUpdate = [&](int k, double m, double sig) {
-          ROOT::Math::SVector<double, 5> Hrow;
-          for (int j = 0; j < 5; ++j)
-            Hrow[j] = H[k][j];
-          const ROOT::Math::SVector<double, 5> v = C * Hrow;
-          const double S = ROOT::Math::Dot(Hrow, v) + sig * sig;
-          if (!(S > 0.))
-            return;
-          const double r = m - h0[k] - ROOT::Math::Dot(Hrow, a - aLin);
-          const double chi2candidate = r * r / S;
-          // chi2UpdateGate (spec §6b): a scalar update whose r^2/S exceeds the gate
-          // is a numerical pathology (near-grazing crossing -> non-physical predicted
-          // angle and/or blown-up Jacobian column, innovation up to ~1e3 cot-units).
-          // Skip it ENTIRELY: no state/covariance change, no chi2 contribution, pull
-          // stays sentinel. This is a numerical-pathology gate, NOT an outlier/quality
-          // gate -- physical wrong-hit contamination (r^2/S <= ~2e6 on the PU study) is
-          // the BDT's signal and is left untouched. The hit still counts as accepted.
-          if (chi2candidate > seedlessRefitChi2UpdateGate_) {
-            ++seedlessRefitGatedUpdates_;
-            return;
-          }
-          pull[k] = r / std::sqrt(S);
-          chi2inc[k] = chi2candidate;
-          applied[k] = true;
-          const ROOT::Math::SVector<double, 5> K = v / S;
-          a += K * r;
-          for (int i = 0; i < 5; ++i)
-            for (int j = 0; j <= i; ++j)
-              C(i, j) -= K[i] * v[j];  // K = v/S -> K_i v_j symmetric
-        };
-        drPrevPath = ip;
-        drPrevLayerR = std::hypot(cx.global.x(), cx.global.y());
-        scalarUpdate(0, best.x, best.ex);
-        scalarUpdate(1, best.y, best.ey);
-        if (useAlpha && best.hasA)
-          scalarUpdate(2, best.cotA, best.sigA);
-        if (useBeta && best.hasB)
-          scalarUpdate(3, best.cotB, best.sigB);
+          // Compact-word layer bitmask + per-track chi2 totals (spec §2/§3).
+          drLayerHitMask |= smartpixels::surfaceHitBit(surface);
+          drTrackInfo.chi2IncXTot =
+              (drTrackInfo.chi2IncXTot < -900.f ? 0.f : drTrackInfo.chi2IncXTot) + static_cast<float>(incX);
+          drTrackInfo.chi2IncYTot =
+              (drTrackInfo.chi2IncYTot < -900.f ? 0.f : drTrackInfo.chi2IncYTot) + static_cast<float>(incY);
+          drTrackInfo.chi2IncAlphaTot =
+              (drTrackInfo.chi2IncAlphaTot < -900.f ? 0.f : drTrackInfo.chi2IncAlphaTot) + static_cast<float>(incAlpha);
+          drTrackInfo.chi2IncBetaTot =
+              (drTrackInfo.chi2IncBetaTot < -900.f ? 0.f : drTrackInfo.chi2IncBetaTot) + static_cast<float>(incBeta);
 
-        // ---- fill the accepted-hit sidecar record (spec §2) ----
-        hi.flags |= smartpixels::hitflag::kHitAccepted;
-        if (best.hasA)
-          hi.flags |= smartpixels::hitflag::kHasAlpha;
-        if (best.hasB)
-          hi.flags |= smartpixels::hitflag::kHasBeta;
-        hi.selClusterIdx = best.clusterIdx;
-        hi.recoLocalX = static_cast<float>(best.x);
-        hi.recoLocalY = static_cast<float>(best.y);
-        hi.sigX = static_cast<float>(best.ex);
-        hi.sigY = static_cast<float>(best.ey);
-        hi.recoSizeX = best.sizeX;
-        hi.recoSizeY = best.sizeY;
-        hi.recoCharge = static_cast<float>(best.charge);
-        hi.projResX = static_cast<float>(best.x - cx.local.x());
-        hi.projResY = static_cast<float>(best.y - cx.local.y());
-        hi.recoCotAlpha = best.hasA ? static_cast<float>(best.cotA) : -999.f;
-        hi.recoCotBeta = best.hasB ? static_cast<float>(best.cotB) : -999.f;
-        hi.sigAlpha = best.hasA ? static_cast<float>(best.sigA) : -999.f;
-        hi.sigBeta = best.hasB ? static_cast<float>(best.sigB) : -999.f;
-        hi.pullX = applied[0] ? static_cast<float>(pull[0]) : -999.f;
-        hi.pullY = applied[1] ? static_cast<float>(pull[1]) : -999.f;
-        hi.pullAlpha = applied[2] ? static_cast<float>(pull[2]) : -999.f;
-        hi.pullBeta = applied[3] ? static_cast<float>(pull[3]) : -999.f;
-        // Refit-BDT sum-of-squared-pull features (spec §6a features 5-8).
-        if (applied[0]) drSumPullX2 += pull[0] * pull[0];
-        if (applied[1]) drSumPullY2 += pull[1] * pull[1];
-        if (applied[2]) drSumPullAlpha2 += pull[2] * pull[2];
-        if (applied[3]) drSumPullBeta2 += pull[3] * pull[3];
-        // Per-dimension chi2 increments (spec §2); a non-applied update contributes 0.
-        const double incX = applied[0] ? chi2inc[0] : 0.;
-        const double incY = applied[1] ? chi2inc[1] : 0.;
-        const double incAlpha = applied[2] ? chi2inc[2] : 0.;
-        const double incBeta = applied[3] ? chi2inc[3] : 0.;
-        hi.chi2IncX = static_cast<float>(incX);
-        hi.chi2IncY = static_cast<float>(incY);
-        hi.chi2IncAlpha = static_cast<float>(incAlpha);
-        hi.chi2IncBeta = static_cast<float>(incBeta);
-        hi.selChi2Margin = (drSelChi2Margin > -900.) ? static_cast<float>(drSelChi2Margin) : -999.f;
-        hi.selHitClass = best.cls;
-        hi.tpLocalCotAlpha = static_cast<float>(best.parCotA);
-        hi.tpLocalCotBeta = static_cast<float>(best.parCotB);
-        hi.tpChargeFrac = static_cast<float>(best.chargeFrac);
-        if (best.merged)
-          hi.flags |= smartpixels::hitflag::kClusterMerged;
-        drHitInfo.push_back(hi);
-
-        // Compact-word layer bitmask + per-track chi2 totals (spec §2/§3).
-        drLayerHitMask |= smartpixels::surfaceHitBit(surface);
-        drTrackInfo.chi2IncXTot =
-            (drTrackInfo.chi2IncXTot < -900.f ? 0.f : drTrackInfo.chi2IncXTot) + static_cast<float>(incX);
-        drTrackInfo.chi2IncYTot =
-            (drTrackInfo.chi2IncYTot < -900.f ? 0.f : drTrackInfo.chi2IncYTot) + static_cast<float>(incY);
-        drTrackInfo.chi2IncAlphaTot =
-            (drTrackInfo.chi2IncAlphaTot < -900.f ? 0.f : drTrackInfo.chi2IncAlphaTot) + static_cast<float>(incAlpha);
-        drTrackInfo.chi2IncBetaTot =
-            (drTrackInfo.chi2IncBetaTot < -900.f ? 0.f : drTrackInfo.chi2IncBetaTot) + static_cast<float>(incBeta);
-
-        drAcceptedTpKeys.push_back(best.tpKey);
-        ++nAcceptedHits;
-        ++nUpdates;
-      }  // surface loop
+          drAcceptedTpKeys.push_back(best.tpKey);
+          ++nAcceptedHits;
+          ++nUpdates;
+        }  // surface loop
+      }
 
       // TRUTH-ONLY match: the TP owning a strict majority (> 50%) of the output track's weight,
       // each OT stub cluster 1/2 point (a stub = 1 point) and each accepted IT cluster 1 point
@@ -2563,6 +2849,31 @@ void L1SmartPixelsTrackProducer::fillDescriptions(edm::ConfigurationDescriptions
                    "selected by the model's n_features: 17 = v0, 24 = v1 (v0 + the classic-7 TrackQuality hw "
                    "features of the input track). Empty = keep the input trkMVA1. When set, the score replaces the "
                    "refit track's trkMVA1 ctor slot (+ track-word MVA bits); n_features must be 17 or 24 or it throws.");
+  desc.add<std::string>("seedlessRefitPreset", "v2")
+      ->setComment("v2 (the producer's original refit) | v3 (the replay's calibrated arm INN-D with the two-layer "
+                   "hit choice: seedlessRefitV3, doc/RefitV3Design.md)");
+  {
+    edm::ParameterSetDescription v3;
+    v3.add<std::string>("payloadManifest", "L1Trigger/Phase3SmartPixels/data/refit_v3/v1/manifest.json")
+        ->setComment("the versioned payload set (FileInPath of its manifest; md5 checked at load)");
+    v3.add<double>("nsig", 4.0)->setComment("the window: the n-sigma position ellipse of the prediction");
+    v3.add<std::string>("hitChoice", "tree2")->setComment("tree2 (the two-layer choice) | best");
+    v3.add<std::string>("seedCov", "smooth")->setComment("smooth (+ the seed model) | reported");
+    v3.add<std::string>("scattering", "highland")->setComment("highland (the calibrated material planes)");
+    v3.add<bool>("innerMaterial", true)->setComment("charge the material inside the innermost update to C");
+    v3.add<std::string>("posErr", "rtables")->setComment("rtables | published");
+    v3.add<std::string>("angErr", "table")->setComment("table | published");
+    v3.add<std::string>("metric", "innovation")->setComment("ranking metric: innovation | producer");
+    v3.add<std::vector<std::string>>(
+          "angleUse",
+          std::vector<std::string>{"rank:alpha:barrel", "rank:alpha:disc", "rank:beta:barrel", "rank:beta:disc",
+                                   "update:alpha:barrel", "update:alpha:disc", "update:beta:barrel", "update:beta:disc"})
+        ->setComment("consumer:angle:region entries that use the measured angle (consumers rank, update)");
+    v3.add<std::string>("angleSteps", "all")->setComment("all | first | later: the visit steps whose consumers use angles");
+    v3.add<std::string>("knownBad", "")->setComment("TEST ONLY: a planted defect for the closure's known-bads");
+    v3.add<std::string>("closureDumpFile", "")->setComment("TEST ONLY: per-track JSON lines in double precision");
+    desc.add<edm::ParameterSetDescription>("seedlessRefitV3", v3);
+  }
   desc.add<edm::InputTag>("smartPixelsRecHitInputTag", edm::InputTag("spixSmartPixelsRecHits"))
       ->setComment("IT pixel rec hits used as the refit hit candidates. Default is the SmartPixels-owned "
                    "spixPixelRecHits, clustered from pixelDigiInputTag so that cluster -> digi channel -> "
