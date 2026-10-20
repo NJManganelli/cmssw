@@ -123,6 +123,13 @@ The modes are named as their nano mode tags (see `DPGAnalysis/Phase3SmartPixelsN
   `windowDiscR` (module-local y = radius); disc measurements are the same local x/y plus the
   angles in the module frame. Multiple scattering (`multScattTerm / p` per surface, disc or
   layer) is charged for each surface the OT helix traverses within its module extent.
+- **SeedlessRefit v3** (`@SPSeedlessRefitV3`, vocabulary `seedlessRefitV3`, producer mode
+  `seedlessRefit` with `seedlessRefitPreset = "v3"`): the port of the Python replay's calibrated
+  arm (two-layer hit choice, calibrated material and seed covariance, the angle tables, discs ID1-ID4,
+  the 4-sigma window), configured by `seedlessRefitConfig['v3']` and the versioned payload set
+  `data/refit_v3/<set>/`. Design, invariants and known limitations: `doc/RefitV3Design.md`;
+  re-calibration (e.g. the real sensor's angles): `doc/RefitV3Calibration.md`. The nano marks the
+  version per track (`spixRefitVersion`) and per file (nanoMetadata `smartPixelsRefit`).
 - **ParallelSeedRefit** (`@SPParallelSeedRefit`, reserved: raises `NotImplementedError`): IT
   seeds are built and fitted purely from IT clusters, in parallel to the OT L1TrackFinder's
   processing, followed by a track-track refit (IT track + OT track).
