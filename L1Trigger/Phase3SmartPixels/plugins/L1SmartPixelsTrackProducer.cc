@@ -2479,6 +2479,9 @@ void L1SmartPixelsTrackProducer::produce(edm::Event& iEvent, const edm::EventSet
         smartpixels::SmartPixelsRefitTrackInfo pt;  // all zero / status bit0 unset
         if (otCovOK)
           pt.status |= smartpixels::trackstatus::kOTCovOK;
+        // the producer version and the disc-going flag describe the collection, refit or not
+        pt.refitVersion = drTrackInfo.refitVersion;
+        pt.status |= drTrackInfo.status & smartpixels::trackstatus::kDiscGoing;
         pt.chi2IncXTot = 0.f;
         pt.chi2IncYTot = 0.f;
         pt.chi2IncAlphaTot = 0.f;
