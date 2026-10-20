@@ -113,9 +113,10 @@ def variant_tags(spec):
     mode, _, activeSP = spec.partition(":")
     if mode == "passthrough":
         return ["@SPActiveLayersIIII"]
-    if mode == "seedlessRefit":
-        return ["@SPSeedlessRefit", "@SPActiveLayers" + activeSP.replace("1", "A").replace("0", "I")]
-    raise SystemExit(f"--coopt composes the nano flavours, whose tags select seedlessRefit:<mask> or "
+    if mode in ("seedlessRefit", "seedlessRefitV3"):
+        tag = "@SPSeedlessRefitV3" if mode == "seedlessRefitV3" else "@SPSeedlessRefit"
+        return [tag, "@SPActiveLayers" + activeSP.replace("1", "A").replace("0", "I")]
+    raise SystemExit(f"--coopt composes the nano flavours, whose tags select seedlessRefit[V3]:<mask> or "
                      f"passthrough; {spec!r} runs only with coexist")
 
 
@@ -178,8 +179,8 @@ def build_customise(args, overrides):
     seen = set()
     for spec in specs:
         mode, _, activeSP = spec.partition(":")
-        if mode == "seedlessRefit" and not activeSP:
-            raise SystemExit(f"--variant seedlessRefit requires an activeSP, e.g. seedlessRefit:1111 (got '{spec}')")
+        if mode in ("seedlessRefit", "seedlessRefitV3") and not activeSP:
+            raise SystemExit(f"--variant {mode} requires an activeSP, e.g. {mode}:1111 (got '{spec}')")
         key = (mode, activeSP)
         if key in seen:
             raise SystemExit(f"--variant {spec} given more than once; each variant makes an "

@@ -290,8 +290,8 @@ check(merged["windowRPhi"] == SEEDLESSREFIT_DEFAULTS["windowRPhi"],
       "untouched keys keep defaults")
 check(SEEDLESSREFIT_DEFAULTS["minHits"] != 3,
       "SEEDLESSREFIT_DEFAULTS not mutated by merge")
-check(set(merged) == set(SEEDLESSREFIT_DEFAULTS),
-      "merged config has exactly the default key set")
+check(set(merged) == set(SEEDLESSREFIT_DEFAULTS) | {"v3"},
+      "merged config has exactly the default key set (+ the v3 element switches)")
 
 # an invalid seedlessRefitConfig must fail loudly even before the seedlessRefit
 # variant hits its (Phase-0) NotImplementedError
@@ -717,6 +717,31 @@ for tablesFirst in (True, False):
     check(pl.smartPixelsNano.trackInputModeApplied.value() == "rebuildTracksFromStubs",
           "coexist records its trackInputMode for later reconciles")
 check(all(len(v) == 1 for v in _links.values()), "the link modules do not depend on the order")
+
+print("[l] refit v3 preset (seedlessRefitV3)")
+from L1Trigger.Phase3SmartPixels.customizeSmartPixels_cff import SEEDLESSREFIT_V3_DEFAULTS, SEEDLESSREFIT_PRESETS
+check(smartPixelsVariantSuffix("seedlessRefitV3", "1111") == "seedlessRefitV3AAAA", "v3 suffix")
+check("seedlessRefitV3" in TRUTH_REQUIRED_MODES and SEEDLESSREFIT_PRESETS["seedlessRefitV3"] == "v3",
+      "v3 is truth-required and maps to preset v3")
+_r3 = _resolveSeedlessRefitConfig({"v3": {"hitChoice": "best", "angleSteps": "first"}})
+check(_r3["v3"]["hitChoice"] == "best" and _r3["v3"]["angleSteps"] == "first"
+      and _r3["v3"]["nsig"] == SEEDLESSREFIT_V3_DEFAULTS["nsig"], "v3 overrides merge over the v3 defaults")
+expect_raises(ValueError, lambda: _resolveSeedlessRefitConfig({"v3": {"nope": 1}}), "unknown v3 key raises")
+expect_raises(ValueError, lambda: _resolveSeedlessRefitConfig({"v3": {"angleUse": ["window:alpha:barrel"]}}),
+              "a not-implemented angle consumer raises")
+expect_raises(ValueError, lambda: _resolveSeedlessRefitConfig({"v3": {"scattering": "producer"}}),
+              "a not-implemented scattering model raises")
+_p3 = cms.Process("TESTV3")
+_p3, _mods3 = addSmartPixelsTrackProducerVariants(_p3, variants=[("seedlessRefitV3", "1111"), ("seedlessRefit", "1111")],
+                                                   seedlessRefitConfig={"angleSource": "emu"})
+_m3 = getattr(_p3, smartPixelsVariantLabels("seedlessRefitV3", "1111")[0])
+_m2 = getattr(_p3, smartPixelsVariantLabels("seedlessRefit", "1111")[0])
+check(_m3.smartPixelsEmulatorMode.value() == "seedlessRefit" and _m3.seedlessRefitPreset.value() == "v3",
+      "the v3 producer runs mode seedlessRefit with preset v3")
+check(_m2.seedlessRefitPreset.value() == "v2", "the v2 producer keeps preset v2")
+check(list(_m3.seedlessRefitV3.angleUse.value()) == list(SEEDLESSREFIT_V3_DEFAULTS["angleUse"])
+      and _m3.seedlessRefitV3.knownBad.value() == "" and _m3.seedlessRefitV3.closureDumpFile.value() == "",
+      "the v3 PSet carries the defaults, no known-bad, no dump")
 
 # --- summary ---------------------------------------------------------------
 print()

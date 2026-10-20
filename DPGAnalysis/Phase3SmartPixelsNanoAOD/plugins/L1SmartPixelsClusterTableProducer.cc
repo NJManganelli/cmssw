@@ -123,7 +123,8 @@ public:
         discScope_(cfg.getParameter<std::string>("discScope")),
         maxLayer_(cfg.getParameter<unsigned>("maxLayer")),
         maxDisk_(smartpixels::discScopeMaxDisk(discScope_)),
-        doTruth_(cfg.getParameter<bool>("doTruth")) {
+        doTruth_(cfg.getParameter<bool>("doTruth")),
+        closurePrecision_(cfg.getParameter<bool>("closurePrecision")) {
     if (doTruth_)
       tpRowMapToken_ = consumes<edm::ValueMap<int>>(cfg.getParameter<edm::InputTag>("tpRowMap"));
     produces<nanoaod::FlatTable>();
@@ -276,10 +277,10 @@ public:
     tab->addColumn<uint32_t>("detId", detId, "module rawId; join key to the refit hit table detId");
     tab->addColumn<uint16_t>("idxInDet", idxInDet,
                              "position of the cluster within its module; (detId, idxInDet) is a stable key");
-    tab->addColumn<float>("localX", localX, "cluster position, module-local x [cm]", 16);
+    tab->addColumn<float>("localX", localX, "cluster position, module-local x [cm]", bits(16));
     tab->addColumn<float>("localY", localY,
                           "cluster position, module-local y [cm]; along z on TBPX, along the radius "
-                          "(pointing inward) on a disc", 16);
+                          "(pointing inward) on a disc", bits(16));
     tab->addColumn<float>("globalR", globalR,
                           "POSITION. Cylindrical radius of WHERE THE CLUSTER IS [cm], full float");
     tab->addColumn<float>("globalPhi", globalPhi,
@@ -289,7 +290,7 @@ public:
                           "centroid. Pairs with globalR and globalZ to give the full position. "
                           "Do NOT confuse with globalClusterPhi, which is a DIRECTION. Full float");
     tab->addColumn<float>("globalZ", globalZ,
-                          "POSITION. CMS global z of WHERE THE CLUSTER IS [cm]", 16);
+                          "POSITION. CMS global z of WHERE THE CLUSTER IS [cm]", bits(16));
     tab->addColumn<float>("globalClusterPhi", globalClusterPhi,
                           "DIRECTION. Azimuth of the SMART-PIXEL ML ANGLE ESTIMATE for this "
                           "cluster, rotated into CMS global coordinates [rad]. This is the "
@@ -299,7 +300,7 @@ public:
                           "module-frame by definition (PixelAV) and have no meaningful global "
                           "variant. Do NOT confuse with globalPhi, which is WHERE the cluster is. "
                           "Uses the per-module surface rotation (TBPX tilt reaches 16.5 deg, so it "
-                          "is not a per-layer constant). Uncertainty: sigGlobalClusterPhi", 16);
+                          "is not a per-layer constant). Uncertainty: sigGlobalClusterPhi", bits(16));
     tab->addColumn<float>("globalClusterCotTheta", globalClusterCotTheta,
                           "DIRECTION. cot(theta) = pz/pt of the SMART-PIXEL ML ANGLE ESTIMATE, CMS "
                           "global frame. Chosen over eta because the r-z Hough wants "
@@ -311,29 +312,29 @@ public:
                           "on the discs. TBPX tracks that curl back inward violate that and keep an "
                           "irrecoverable sign ambiguity -- 15% of tracks below 0.5 GeV, falling to 2% "
                           "above 5 GeV. "
-                          "Uncertainty: sigGlobalClusterCotTheta", 16);
+                          "Uncertainty: sigGlobalClusterCotTheta", bits(16));
     tab->addColumn<float>("sigGlobalClusterPhi", sigGlobalClusterPhi,
                           "Uncertainty on globalClusterPhi [rad], propagated from the module-frame "
                           "sigAlpha/sigBeta through the SAME per-module rotation by a numerical "
                           "Jacobian, added in quadrature. Alpha and beta are treated as "
                           "independent, matching how the refit applies them as two independent "
-                          "scalar Kalman updates", 12);
+                          "scalar Kalman updates", bits(12));
     tab->addColumn<float>("sigGlobalClusterCotTheta", sigGlobalClusterCotTheta,
-                          "Uncertainty on globalClusterCotTheta, same propagation", 12);
-    tab->addColumn<float>("sigX", sigX, "CPE position uncertainty, local x [cm]", 10);
-    tab->addColumn<float>("sigY", sigY, "CPE position uncertainty, local y [cm] (sigma_r on a disc)", 10);
+                          "Uncertainty on globalClusterCotTheta, same propagation", bits(12));
+    tab->addColumn<float>("sigX", sigX, "CPE position uncertainty, local x [cm]", bits(10));
+    tab->addColumn<float>("sigY", sigY, "CPE position uncertainty, local y [cm] (sigma_r on a disc)", bits(10));
     tab->addColumn<uint8_t>("sizeX", sizeX, "cluster bounding-box extent in pixels, local x");
     tab->addColumn<uint8_t>("sizeY", sizeY, "cluster bounding-box extent in pixels, local y");
     tab->addColumn<uint16_t>("size", size, "FIRED-PIXEL COUNT (not the bounding box): charge/size is "
                                            "the real charge density");
-    tab->addColumn<float>("charge", charge, "cluster charge [electrons] (SiPixelCluster::charge)", 10);
+    tab->addColumn<float>("charge", charge, "cluster charge [electrons] (SiPixelCluster::charge)", bits(10));
     tab->addColumn<float>("localCotAlpha", localCotAlpha,
-                          "SENSOR angle estimate, module-local cotAlpha (-999 if none)", 12);
+                          "SENSOR angle estimate, module-local cotAlpha (-999 if none)", bits(12));
     tab->addColumn<float>("localCotBeta", localCotBeta,
                           "SENSOR angle estimate, cotBeta (signed; on a disc the sign flips with the module "
-                          "facing, use globalClusterCotTheta to compare directions)", 12);
-    tab->addColumn<float>("sigAlpha", sigAlpha, "angle-estimator resolution of localCotAlpha (a sigma of cotAlpha, dimensionless)", 10);
-    tab->addColumn<float>("sigBeta", sigBeta, "angle-estimator resolution of localCotBeta (a sigma of cotBeta, dimensionless)", 10);
+                          "facing, use globalClusterCotTheta to compare directions)", bits(12));
+    tab->addColumn<float>("sigAlpha", sigAlpha, "angle-estimator resolution of localCotAlpha (a sigma of cotAlpha, dimensionless)", bits(10));
+    tab->addColumn<float>("sigBeta", sigBeta, "angle-estimator resolution of localCotBeta (a sigma of cotBeta, dimensionless)", bits(10));
     tab->addColumn<uint8_t>("hasAlpha", hasAlpha,
                             "sensor reports an alpha at all, whatever its value: angleSource emu ALWAYS 1 (a "
                             "flag that depended on the value would tell class C from class T); payload 0 outside "
@@ -348,30 +349,30 @@ public:
     if (doTruth_) {
       tab->addColumn<int32_t>("tpIdx", tpIdx,
                               std::string("TRUTH-ONLY, dominant charge contributor: ") + l1tnano::tpIdxDoc());
-      tab->addColumn<float>("tpPt", tpPt, "TRUTH-ONLY: pT [GeV] of the dominant TP", 10);
+      tab->addColumn<float>("tpPt", tpPt, "TRUTH-ONLY: pT [GeV] of the dominant TP", bits(10));
       // PRODUCTION STATE of the dominant TP, at reduced precision (vertex 16 bits, eta/phi 12
       // bits): enough to tell a displaced TP from one that merely scattered, NOT enough to
       // recompute a helix projection at IT or OT precision. For projections use the full-precision
       // L1TTP row (L1TTP[tpIdx]). tpLocalCot{Alpha,Beta} are helix-propagated in the producer and
       // ignore multiple scattering. NOTE these are at the PRODUCTION VERTEX, not at the module --
       // do not use them as an incidence angle.
-      tab->addColumn<float>("tpVx", tpVx, "TRUTH-ONLY: dominant TP production vertex x [cm]", 16);
-      tab->addColumn<float>("tpVy", tpVy, "TRUTH-ONLY: dominant TP production vertex y [cm]", 16);
-      tab->addColumn<float>("tpVz", tpVz, "TRUTH-ONLY: dominant TP production vertex z [cm]", 16);
+      tab->addColumn<float>("tpVx", tpVx, "TRUTH-ONLY: dominant TP production vertex x [cm]", bits(16));
+      tab->addColumn<float>("tpVy", tpVy, "TRUTH-ONLY: dominant TP production vertex y [cm]", bits(16));
+      tab->addColumn<float>("tpVz", tpVz, "TRUTH-ONLY: dominant TP production vertex z [cm]", bits(16));
       tab->addColumn<float>("tpEta", tpEta,
-                            "TRUTH-ONLY: dominant TP eta AT PRODUCTION, 12 bits; for projections use L1TTP[tpIdx]", 12);
+                            "TRUTH-ONLY: dominant TP eta AT PRODUCTION, 12 bits; for projections use L1TTP[tpIdx]", bits(12));
       tab->addColumn<float>("tpPhi", tpPhi,
-                            "TRUTH-ONLY: dominant TP phi AT PRODUCTION, 12 bits; for projections use L1TTP[tpIdx]", 12);
+                            "TRUTH-ONLY: dominant TP phi AT PRODUCTION, 12 bits; for projections use L1TTP[tpIdx]", bits(12));
       tab->addColumn<float>("tpLocalCotAlpha", tpLocalCotAlpha,
                             "TRUTH-ONLY: TRUE incidence cotAlpha at this module (helix-propagated), "
-                            "i.e. what the sensor is trying to measure", 12);
-      tab->addColumn<float>("tpLocalCotBeta", tpLocalCotBeta, "TRUTH-ONLY: true incidence cotBeta", 12);
+                            "i.e. what the sensor is trying to measure", bits(12));
+      tab->addColumn<float>("tpLocalCotBeta", tpLocalCotBeta, "TRUTH-ONLY: true incidence cotBeta", bits(12));
       tab->addColumn<float>("tpGlobalClusterPhi", tpGlobalClusterPhi,
-                            "TRUTH-ONLY: true direction, global phi [rad]", 16);
+                            "TRUTH-ONLY: true direction, global phi [rad]", bits(16));
       tab->addColumn<float>("tpGlobalClusterCotTheta", tpGlobalClusterCotTheta,
-                            "TRUTH-ONLY: true direction, global cot(theta)", 16);
+                            "TRUTH-ONLY: true direction, global cot(theta)", bits(16));
       tab->addColumn<float>("tpChargeFrac", tpChargeFrac,
-                            "TRUTH-ONLY: dominant contributor share of the cluster charge", 10);
+                            "TRUTH-ONLY: dominant contributor share of the cluster charge", bits(10));
       tab->addColumn<int16_t>("tpEmuClass", tpEmuClass,
                              "TRUTH-ONLY, VALIDATION ONLY (a truth tell by construction; never a feature): "
                              "SmartPixels-output emulator class, 1 = T (angle emulated from the dominant TP's "
@@ -396,6 +397,8 @@ public:
         ->setComment("disc rows: none | sp (ID1-ID4) | tfpx | all. MUST equal the rec hits' discScope (checked)");
     desc.add<unsigned>("maxLayer", 4)
         ->setComment("highest TBPX layer kept (SmartPixels scope is 1..4); MUST equal the rec hits' (checked)");
+    desc.add<bool>("closurePrecision", false)
+        ->setComment("TEST ONLY (refit v3 closure): every float column at full precision");
     desc.add<bool>("doTruth", true)
         ->setComment("attach the TRUTH-ONLY tp* block (tpIdx, tpPt, tpChargeFrac, "
                      "tpLocalCot*, tpGlobalCluster*)");
@@ -414,6 +417,8 @@ private:
   const unsigned maxLayer_;
   const unsigned maxDisk_;
   const bool doTruth_;
+  const bool closurePrecision_;
+  int bits(int n) const { return closurePrecision_ ? -1 : n; }
   edm::EDGetTokenT<edm::ValueMap<int>> tpRowMapToken_;
   bool scopeChecked_ = false;
 };
