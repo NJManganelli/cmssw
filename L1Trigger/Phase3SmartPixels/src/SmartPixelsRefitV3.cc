@@ -345,7 +345,7 @@ namespace smartpixels::v3 {
     pHi_ = d.at("p_hi").get<std::vector<double>>();
   }
 
-  Mat5 SeedModel::dC(double aeta, double p) const {
+  Mat5 SeedModel::dC(double aeta, double p, bool* clipped) const {
     // segment index and x (seedmodel.segment_index / segment_x)
     const int nseg = static_cast<int>(edges_.size()) - 1;
     int sidx = static_cast<int>(std::upper_bound(edges_.begin(), edges_.end(), aeta) - edges_.begin()) - 1;
@@ -355,6 +355,8 @@ namespace smartpixels::v3 {
     int cell = static_cast<int>(std::min(aeta, etaLast_ - 1e-9) / etaCell_);
     cell = std::min(cell, static_cast<int>(pLo_.size()) - 1);
     const double pe = std::clamp(p, pLo_[cell], pHi_[cell]);
+    if (clipped)
+      *clipped = pe != p || aeta >= etaLast_;
     // entries e = theta[:18] + theta[18:] x: A (9) then B (9); each [T: 3 log-sigma, 3 pcorr; L: 2, 1]
     const auto& th = theta_[sidx];
     std::array<double, 18> e;
@@ -479,7 +481,9 @@ namespace smartpixels::v3 {
     orient_ = a.at("module_orientation");
     angBarrel_ = a.at("angle_barrel");
     angDisc_ = a.at("angle_disc");
-    skip_ = cs("skip_price.json").at("skip_price");
+    const auto& sp = cs("skip_price.json");
+    skip_ = sp.at("skip_price");
+    skipLevel_ = sp.at("skip_price_level");
     seed.load(file("seed_model.json"));
     material.load(file("material.json"));
     loaded_ = true;
@@ -515,6 +519,9 @@ namespace smartpixels::v3 {
 
   double Payloads::skipPrice(const std::string& dims, int code, bool first) const {
     return skip_->evaluate({dims, code, first ? 1 : 0});
+  }
+  int Payloads::skipPriceLevel(const std::string& dims, int code, bool first) const {
+    return static_cast<int>(skipLevel_->evaluate({dims, code, first ? 1 : 0}));
   }
 
   // ---------------------------------------------------------------- the engine
@@ -695,7 +702,8 @@ namespace smartpixels::v3 {
     }
   }
 
-  void Engine::measurements(const Cand& k, const Cluster& cl, Vec4& meas, Vec4& sig, std::array<bool, 2>& has) const {
+  void Engine::measurements(const Cand& k, const Cluster& cl, Vec4& meas, Vec4& sig, std::array<bool, 2>& has,
+                            std::array<int, 2>* modes) const {
     const Module& m = geo_.modules()[k.module];
     const int S = m.surface;
     meas = {{cl.x, cl.y, cl.cotA, cl.cotB}};
@@ -723,6 +731,8 @@ namespace smartpixels::v3 {
         e = pay_.discAngle(S, key, ia == 1);
       }
       applyAngleEntry(e, meas[2 + ia], sig[2 + ia]);
+      if (modes)
+        (*modes)[ia] = e.mode;
     }
   }
 
@@ -842,15 +852,25 @@ namespace smartpixels::v3 {
 
   void Engine::apply(Copy& c, int step, const Cand& k, const Cluster& cl) const {
     StepRecord& rec = c.rec[step];
-    if (!(std::abs(k.h0[2]) <= kPredAngleGuard && std::abs(k.h0[3]) <= kPredAngleGuard))
+    if (!(std::abs(k.h0[2]) <= kPredAngleGuard && std::abs(k.h0[3]) <= kPredAngleGuard)) {
+      rec.predGuard = true;
       return;
+    }
     Vec4 meas, sig;
     std::array<bool, 2> has;
-    measurements(k, cl, meas, sig, has);
+    measurements(k, cl, meas, sig, has, &rec.angleMode);
     const int S = geo_.modules()[k.module].surface;
     const std::array<bool, 4> ud{{true, true, has[0] && uses(1, 0, S, step), has[1] && uses(1, 1, S, step)}};
     // engine.kf_update: sequential scalars with relinearisation; guarded Jacobian columns zeroed
     const Jac J = guardZeroed(k.J, cfg_.jacobianMaxAbs);
+    for (int j = 0; j < 5; ++j) {
+      bool zeroed = true, any = false;
+      for (int r = 0; r < 4; ++r) {
+        zeroed = zeroed && J[r][j] == 0.;
+        any = any || k.J[r][j] != 0.;
+      }
+      rec.jacZeroed += zeroed && any;
+    }
     const Vec5 aLin = c.a;
     rec.aPre = c.a;
     rec.CPred = c.C;
@@ -927,7 +947,7 @@ namespace smartpixels::v3 {
     if (cfg_.seedSmooth && cfg_.knownBad != "seed_model_off") {
       const double tanl = aOT[2];
       const double p = ptOf(aOT, kpt) * std::sqrt(1.0 + tanl * tanl);
-      const Mat5 dC = pay_.seed.dC(std::abs(std::asinh(tanl)), p);
+      const Mat5 dC = pay_.seed.dC(std::abs(std::asinh(tanl)), p, &res.seedClipped);
       for (int i = 0; i < 5; ++i)
         for (int j = 0; j < 5; ++j)
           c0.C[i][j] += dC[i][j];
@@ -1045,6 +1065,7 @@ namespace smartpixels::v3 {
                                                                  : pay_.skipPrice(dimsKey(j), code, first);
         Copy& c = copies[t[q]];
         c.rec[j].skipPrice = P;
+        c.rec[j].skipLevel = cfg_.knownBad == "skip_price_star_only" ? 4 : pay_.skipPriceLevel(dimsKey(j), code, first);
         Copy ru = c, sk = c;
         c.branch = 0;
         c.pend = true;
@@ -1087,6 +1108,7 @@ namespace smartpixels::v3 {
         if (copies[q].pend)
           p.push_back(q);
       if (!p.empty()) {
+        res.endCommit = true;
         const auto keep = commit(p, nullptr);
         std::vector<Copy> next;
         for (int q = 0; q < static_cast<int>(copies.size()); ++q) {
