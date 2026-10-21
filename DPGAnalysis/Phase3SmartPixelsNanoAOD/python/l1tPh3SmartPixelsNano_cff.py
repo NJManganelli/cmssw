@@ -100,6 +100,21 @@ l1tPh3SmartPixelsRefitTable = cms.EDProducer(
 )
 
 
+# The tagger's per-track heads (extension table; see the flavours' addSmartPixelsTrackHeads).
+l1tSmartPixelsTrackHeadsTable = cms.EDProducer(
+    "L1SmartPixelsTrackHeadsTableProducer",
+    collection = cms.string("SmartPixels"),
+    tableName = cms.string("L1TSmartPixelsExtTrack"),
+    columnPrefix = cms.string("head_"),
+    otTables = cms.VInputTag(),
+    spTables = cms.VInputTag(),
+    hitTable = cms.InputTag(""),
+    dPromptMax = cms.double(0.02),
+    heads = cms.VPSet(),
+    writeFeatures = cms.bool(False),
+)
+
+
 def addPh3L1SmartPixelsRefitTables(process,
                                    srcLabel="l1tSmartPixelsTrackProducer",
                                    srcExtendedLabel="l1tSmartPixelsTrackProducerExtended",
