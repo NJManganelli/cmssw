@@ -14,7 +14,9 @@
 //
 // Links are written only when their target table is in the nano: an empty
 // trackTableName drops the "trk" extension and the hit trackIdx column, an empty
-// clusterTableName drops selClusterIdx.
+// clusterTableName drops selClusterIdx. With clusterTable (the cluster table product itself), the hit
+// table also carries selTpIdx, the selected cluster's tpIdx copied from that table, so the "wrong IT hit"
+// truth needs no cluster table in the file.
 //
 // Row-count invariants (asserted, throw SmartPixelsSyncBroken):
 //   sidecar.trackInfo.size() == sidecar.hitInfo.size() == tracks.size()
@@ -56,6 +58,12 @@ public:
         clusterTableName_(cfg.getParameter<std::string>("clusterTableName")),
         hitTableName_(cfg.getParameter<std::string>("hitTableName")),
         closurePrecision_(cfg.getParameter<bool>("closurePrecision")) {
+    const auto clusterTableTag = cfg.getParameter<edm::InputTag>("clusterTable");
+    if (!clusterTableTag.label().empty()) {
+      if (clusterTableName_.empty())
+        throw cms::Exception("Configuration") << "clusterTable needs clusterTableName (selTpIdx follows selClusterIdx)";
+      clusterTableToken_ = consumes<nanoaod::FlatTable>(clusterTableTag);
+    }
     produces<nanoaod::FlatTable>("hit");
     if (!trackTableName_.empty())
       produces<nanoaod::FlatTable>("trk");
@@ -231,6 +239,26 @@ public:
     hitTable->addColumn<bool>("windowTruncated", windowTruncated, "window hit the maxHitsPerWindow truncation");
     hitTable->addColumn<bool>("hasAlpha", hasAlpha, "synthesized cotAlpha available");
     hitTable->addColumn<bool>("hasBeta", hasBeta, "synthesized cotBeta available");
+    if (!clusterTableToken_.isUninitialized()) {
+      const auto& clusters = iEvent.get(clusterTableToken_);
+      const int col = clusters.columnIndex("tpIdx");
+      if (clusters.name() != clusterTableName_ || col < 0 ||
+          clusters.columnType(col) != nanoaod::FlatTable::ColumnType::Int32)
+        throw cms::Exception("Configuration")
+            << "clusterTable is " << clusters.name() << " without an int32 tpIdx column, not " << clusterTableName_;
+      const auto tp = clusters.columnData<int32_t>(col);
+      std::vector<int32_t> selTpIdx(selClusterIdx.size(), -1);
+      for (size_t h = 0; h < selClusterIdx.size(); ++h)
+        if (selClusterIdx[h] >= 0) {
+          if (static_cast<unsigned>(selClusterIdx[h]) >= clusters.nRows())
+            throw cms::Exception("SmartPixelsSyncBroken")
+                << "selClusterIdx " << selClusterIdx[h] << " outside " << clusters.nRows() << " cluster rows";
+          selTpIdx[h] = tp[selClusterIdx[h]];
+        }
+      hitTable->addColumn<int32_t>("selTpIdx", selTpIdx,
+                                   "TRUTH-ONLY: " + clusterTableName_ +
+                                       "_tpIdx of the SELECTED cluster (copied; -1 also when no cluster was selected)");
+    }
     if (!clusterTableName_.empty())
       hitTable->addColumn<int32_t>(
           "selClusterIdx", selClusterIdx,
@@ -361,6 +389,8 @@ public:
     desc.add<std::string>("clusterTableName", "L1TSmartPixelsCluster")
         ->setComment("cluster table selClusterIdx indexes; empty = no selClusterIdx column");
     desc.add<std::string>("hitTableName", "L1TSmartPixelsRefitHit");
+    desc.add<edm::InputTag>("clusterTable", edm::InputTag(""))
+        ->setComment("the clusterTableName table product (its tpIdx gives selTpIdx); empty = no selTpIdx column");
     desc.add<bool>("closurePrecision", false)
         ->setComment("TEST ONLY (refit v3 closure): every column at full float precision");
     descriptions.addWithDefaultLabel(desc);
@@ -374,6 +404,7 @@ private:
   const std::string clusterTableName_;
   const std::string hitTableName_;
   const bool closurePrecision_;
+  edm::EDGetTokenT<nanoaod::FlatTable> clusterTableToken_;
 
   int bits(int n) const { return closurePrecision_ ? -1 : n; }
 };

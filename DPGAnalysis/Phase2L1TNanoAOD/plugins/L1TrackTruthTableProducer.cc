@@ -5,7 +5,7 @@
 //     TrackingParticle pt/eta/pdgId (defaults when the associator did not
 //     run, e.g. data or central workflows without the truth sequence).
 //   - the matched TrackingParticle's FULL helix parameters propagated to its
-//     POCA to the beamline (tp_pt/tp_eta/tp_phi/tp_tanL/tp_charge/tp_d0/tp_z0)
+//     POCA to the beamline (tp_pt/tp_eta/tp_phi/tp_tanL/tp_charge/tp_rInv/tp_d0/tp_z0)
 //     plus its production vertex (tp_vx/tp_vy/tp_vz), and tpIdx, its L1TTP row
 //     (L1TPRowLink.h encoding; -2 when the association or the L1TTP row map
 //     is absent). These enable
@@ -84,6 +84,7 @@ public:
     constexpr float kSentinel = -999.f;
     std::vector<float> tpPhi(nTracks, kSentinel), tpTanL(nTracks, kSentinel), tpCharge(nTracks, kSentinel);
     std::vector<float> tpPhi0(nTracks, kSentinel), tpD0(nTracks, kSentinel), tpZ0(nTracks, kSentinel);
+    std::vector<float> tpRInv(nTracks, kSentinel);
     std::vector<float> tpVx(nTracks, kSentinel), tpVy(nTracks, kSentinel), tpVz(nTracks, kSentinel);
 
     for (size_t i = 0; i < nTracks; ++i) {
@@ -118,6 +119,7 @@ public:
           // Guard against pt==0 / charge==0 (would give r2_inv==0); such TPs keep
           // the -999 sentinel for d0/z0 only (params above are still valid).
           if (pt > 0.f && charge != 0.f) {
+            tpRInv[i] = charge * convertRtoPt / pt;
             const float delx = -vx;
             const float dely = -vy;
             const float r2_inv = charge * convertRtoPt / pt / 2.0f;
@@ -161,6 +163,11 @@ public:
                             "tp_d0/tp_z0 (compare to L1TTrack_phi); -999 if unmatched");
     table->addColumn<float>("tp_tanL", tpTanL, "matched TP tanLambda = sinh(eta); -999 if unmatched");
     table->addColumn<float>("tp_charge", tpCharge, "matched TP charge; -999 if unmatched");
+    table->addColumn<float>("tp_rInv",
+                            tpRInv,
+                            "matched TP curvature 1/R (1/cm) = tp_charge * c_light/1e5 * Bz(0,0,0) / tp_pt, the "
+                            "L1TTrack_rInv convention (c_light/1e5 * Bz = 0.0114 GeV/cm at 3.8 T); -999 if unmatched "
+                            "or neutral");
     table->addColumn<float>(
         "tp_d0",
         tpD0,
