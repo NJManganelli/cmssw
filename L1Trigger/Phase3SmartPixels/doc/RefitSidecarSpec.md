@@ -243,9 +243,11 @@ Rules:
   adapter may forward them (enforced by the transmitted-subset definitions below).
 - Refit v3: `hitInfo[i]` holds one entry per VISITED surface (the engine's visit plan), the
   selected-hit fields describe the cluster the two-layer choice kept, `proj*` is the
-  prediction from the state the update used, `projOT*` and `truthRes*` are not filled
-  (-999.f), and `chi2ITAtOT` is not filled; `shiftChi2` and `logDetRatio` compare with the
-  floored OT covariance (without the seed model's correction).
+  prediction from the state the update used, filled at accepted crossings only (-999.f where
+  no hit was accepted), `projOT*` are filled at accepted crossings (so `chi2ITAtOT` is),
+  `truthRes*` are not filled (-999.f); `shiftChi2` and `logDetRatio` compare with the floored
+  OT covariance (without the seed model's correction), so `shiftChi2` is -999.f whenever the
+  final covariance exceeds it in some direction (the seed model and the material).
 
 ## 3. Transmitted subsets (hardware-boundary model)
 
