@@ -1812,6 +1812,59 @@ void L1SmartPixelsTrackProducer::produce(edm::Event& iEvent, const edm::EventSet
         return hp;
       };
 
+      // OT projection + its cone, from the UNMODIFIED OT track helix, onto the crossing's module (both refit
+      // versions). Recomputed per crossing rather than cached because crossLayer resolves the module from the
+      // helix, and the OT track may cross a DIFFERENT module than the updated state does -- silently comparing
+      // across modules would corrupt every band count derived from it.
+      const auto fillOTProjection = [&](smartpixels::SmartPixelsRefitHitInfo& hi, unsigned surface, uint32_t detId) {
+        if (!seedlessRefitStoreOTProjection_)
+          return;
+        const smartpixels::Crossing cs =
+            projector_.crossSurface(makeHelix(aOT), surface, drField, seedlessRefitPredAngleMaxAbs_);
+        if (!(cs.valid && cs.detId == detId))
+          return;
+        hi.projOTLocalX = static_cast<float>(cs.local.x());
+        hi.projOTLocalY = static_cast<float>(cs.local.y());
+        hi.projOTCotAlpha = static_cast<float>(cs.cotAlpha);
+        hi.projOTCotBeta = static_cast<float>(cs.cotBeta);
+        // Cone sigma: sqrt(diag(H C_OT H^T)) with H the numerical Jacobian of (localx, localy) at the OT track
+        // state. Same one-sided-difference scheme and same same-module guard as the v2 update Jacobian.
+        const double hs0[2] = {cs.local.x(), cs.local.y()};
+        double Hs[2][5] = {{0.}};
+        constexpr std::array<double, 5> kEpsS{{1e-6, 1e-5, 1e-5, 1e-3, 1e-3}};
+        for (int j = 0; j < 5; ++j)
+          for (const double sgn : {+1., -1.}) {
+            ROOT::Math::SVector<double, 5> ap = aOT;
+            ap[j] += sgn * kEpsS[j];
+            const smartpixels::Crossing cp =
+                projector_.crossSurface(makeHelix(ap), surface, drField, seedlessRefitPredAngleMaxAbs_);
+            if (!cp.valid || cp.detId != cs.detId)
+              continue;
+            const double inv = 1.0 / (sgn * kEpsS[j]);
+            Hs[0][j] = (cp.local.x() - hs0[0]) * inv;
+            Hs[1][j] = (cp.local.y() - hs0[1]) * inv;
+            break;
+          }
+        for (int k = 0; k < 2; ++k) {
+          ROOT::Math::SVector<double, 5> Hrow;
+          bool ok = true;
+          for (int j = 0; j < 5; ++j) {
+            Hrow[j] = Hs[k][j];
+            if (!std::isfinite(Hs[k][j]) || std::abs(Hs[k][j]) > seedlessRefitJacobianMaxAbs_)
+              ok = false;
+          }
+          if (!ok)
+            continue;
+          const double var = ROOT::Math::Dot(Hrow, COT * Hrow);
+          if (var > 0.) {
+            if (k == 0)
+              hi.projOTSigX = static_cast<float>(std::sqrt(var));
+            else
+              hi.projOTSigY = static_cast<float>(std::sqrt(var));
+          }
+        }
+      };
+
       int nAcceptedHits = 0;
       int nUpdates = 0;
       // Last surface that actually constrained the state (its index in drPath), and its
@@ -1908,6 +1961,7 @@ void L1SmartPixelsTrackProducer::produce(edm::Event& iEvent, const edm::EventSet
             hi.sigY = static_cast<float>(st.sig[1]);
             hi.recoSizeX = static_cast<uint8_t>(cit->sizeX);
             hi.recoSizeY = static_cast<uint8_t>(cit->sizeY);
+            fillOTProjection(hi, st.surface, st.detId);
             hi.projLocalX = static_cast<float>(st.h0[0]);
             hi.projLocalY = static_cast<float>(st.h0[1]);
             hi.projCotAlpha = static_cast<float>(st.h0[2]);
@@ -1929,10 +1983,13 @@ void L1SmartPixelsTrackProducer::produce(edm::Event& iEvent, const edm::EventSet
             hi.chi2IncAlpha = static_cast<float>(st.applied[2] ? st.chi2[2] : 0.);
             hi.chi2IncBeta = static_cast<float>(st.applied[3] ? st.chi2[3] : 0.);
             hi.selChi2Margin = std::isfinite(st.selMargin) ? static_cast<float>(st.selMargin) : -999.f;
+            const auto bit = drClusterBaseIdx.find(st.detId);
+            const auto rhSet = drRecHits->find(st.detId);
+            if (rhSet != drRecHits->end() && bit != drClusterBaseIdx.end())
+              hi.recoCharge = static_cast<float>((*rhSet)[st.cluster - static_cast<int>(bit->second)].charge());
             // TRUTH-ONLY labels of the chosen cluster (the parallel truth collection, index-aligned)
             int tpKey = -1;
             const auto trSet = drRecHitTruth->find(st.detId);
-            const auto bit = drClusterBaseIdx.find(st.detId);
             if (trSet != drRecHitTruth->end() && bit != drClusterBaseIdx.end()) {
               const auto& tr = (*trSet)[st.cluster - static_cast<int>(bit->second)];
               tpKey = tr.hasTp() ? static_cast<int>(tr.dominantTp().key()) : -1;
@@ -2080,58 +2137,7 @@ void L1SmartPixelsTrackProducer::produce(edm::Event& iEvent, const edm::EventSet
           hi.projLocalY = static_cast<float>(cx.local.y());
           hi.projCotAlpha = static_cast<float>(cx.cotAlpha);
           hi.projCotBeta = static_cast<float>(cx.cotBeta);
-          // OT projection + its cone, from the UNMODIFIED OT track helix. Recomputed
-          // per crossing rather than cached because crossLayer resolves the module
-          // from the helix, and the OT track may cross a DIFFERENT module than the
-          // updated state does -- silently comparing across modules would corrupt
-          // every band count derived from it.
-          if (seedlessRefitStoreOTProjection_) {
-            const smartpixels::Crossing cs =
-                projector_.crossSurface(makeHelix(aOT), surface, drField, seedlessRefitPredAngleMaxAbs_);
-            if (cs.valid && cs.detId == cx.detId) {
-              hi.projOTLocalX = static_cast<float>(cs.local.x());
-              hi.projOTLocalY = static_cast<float>(cs.local.y());
-              hi.projOTCotAlpha = static_cast<float>(cs.cotAlpha);
-              hi.projOTCotBeta = static_cast<float>(cs.cotBeta);
-              // Cone sigma: sqrt(diag(H C_OT H^T)) with H the numerical Jacobian of
-              // (localx, localy) at the OT track state. Same one-sided-difference scheme
-              // and same same-module guard as the update Jacobian below.
-              const double hs0[2] = {cs.local.x(), cs.local.y()};
-              double Hs[2][5] = {{0.}};
-              constexpr std::array<double, 5> kEpsS{{1e-6, 1e-5, 1e-5, 1e-3, 1e-3}};
-              for (int j = 0; j < 5; ++j)
-                for (const double sgn : {+1., -1.}) {
-                  ROOT::Math::SVector<double, 5> ap = aOT;
-                  ap[j] += sgn * kEpsS[j];
-                  const smartpixels::Crossing cp =
-                      projector_.crossSurface(makeHelix(ap), surface, drField, seedlessRefitPredAngleMaxAbs_);
-                  if (!cp.valid || cp.detId != cs.detId)
-                    continue;
-                  const double inv = 1.0 / (sgn * kEpsS[j]);
-                  Hs[0][j] = (cp.local.x() - hs0[0]) * inv;
-                  Hs[1][j] = (cp.local.y() - hs0[1]) * inv;
-                  break;
-                }
-              for (int k = 0; k < 2; ++k) {
-                ROOT::Math::SVector<double, 5> Hrow;
-                bool ok = true;
-                for (int j = 0; j < 5; ++j) {
-                  Hrow[j] = Hs[k][j];
-                  if (!std::isfinite(Hs[k][j]) || std::abs(Hs[k][j]) > seedlessRefitJacobianMaxAbs_)
-                    ok = false;
-                }
-                if (!ok)
-                  continue;
-                const double var = ROOT::Math::Dot(Hrow, COT * Hrow);
-                if (var > 0.) {
-                  if (k == 0)
-                    hi.projOTSigX = static_cast<float>(std::sqrt(var));
-                  else
-                    hi.projOTSigY = static_cast<float>(std::sqrt(var));
-                }
-              }
-            }
-          }
+          fillOTProjection(hi, surface, cx.detId);
 
           // ---- linearized measurement model h(a) = (localx, localy, cotAlpha, cotBeta) ----
           // Numerical Jacobian against the SAME shared projector (consistency by
