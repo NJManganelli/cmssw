@@ -268,7 +268,8 @@ def useSPSeedlessRefitV3(process):
 # The tagger pseudo-nano tier (the physicist's sign-off, 2026-10-21): a named tier that keeps every track,
 # refit, jet, PF/Puppi, GT, generator and remaining table and drops only the bulk truth/cluster/stub tables
 # below. The canonical tiers keep everything; the truth the tagger needs travels with the tracks (otTp*,
-# selTpIdx; _configureLinkedTruth).
+# selTpIdx; _configureLinkedTruth). The full-float projOT* refit-hit columns stay (the physicist, 2026-10-21:
+# about 0.36 MB/event for one mask). README.md, "Tagger pseudo-nano tier".
 TAGGER_TIER = "SPTaggerTier"
 TAGGER_TIER_DROPPED = ("L1TSmartPixelsCluster", "L1TTP", "L1TOTStub", "L1TOTStubDTC")
 

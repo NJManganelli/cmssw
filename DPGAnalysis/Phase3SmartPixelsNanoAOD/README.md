@@ -193,6 +193,8 @@ nearest kept ancestor is GenPart row -3 - genPartIdx.
 
 - **No drops.** A flavour defines the content; no table is ever dropped. A table whose input
   is missing gets its input produced (e.g. `produceMiniAODGenInputs`, the L1 emulation on demand).
+  The one exception is the named pseudo-nano tier `@SPTaggerTier` (below), signed off by the
+  physicist; no canonical tier drops anything.
 - **Order-independent links.** A link column or link table exists only when both of its tables
   are in the nano. Every add-on re-derives all links, the variant wiring and the `L1TTP`
   inputs from what the job contains, so whichever end is added second creates the link and
@@ -223,6 +225,36 @@ nearest kept ancestor is GenPart row -3 - genPartIdx.
   default LZMA 9. PU200 L1TSPStudyNano: 2.9 vs 3.8 s/event, file 1.18x larger, read ~13x
   faster (LZMA 9 output compression is serial and dominated the event time). Check a file with
   `ROOT.TFile(path).GetCompressionSettings()` (505 = ZSTD 5, 209 = LZMA 9).
+
+## Tagger pseudo-nano tier (`@SPTaggerTier`, 2026-10-21)
+
+A slim, retrainable tier for the jet tagger and its track heads. It is a named pseudo-nano tier: the physicist
+signed off on its drops, and the canonical tiers stay complete.
+
+- **Compositions:**
+  - `L1TSPTaggerNanoV3` + a mask tag (one mask per job);
+  - `L1TSPTaggerNanoV3Multi`: the seedless refit v3 for AAAA, AAAI and IAAA in one job (`@SPMultiMaskV3`,
+    coexist), with mask-suffixed SmartPixels tables. The L1 emulation runs once, from the OT tracks, as the IIII
+    control. About a third of the CPU of the three per-mask jobs.
+- **Dropped from the output only:** `L1TSmartPixelsCluster`, `L1TTP`, `L1TOTStub`, `L1TOTStubDTC`.
+  - Their producers still run where another table needs them.
+  - nanoMetadata `smartPixelsTier` names the tier.
+  - Every other table is bitwise identical to the canonical nano's.
+- **Truth that travels with the tracks,** in every tier, canonical included (`_configureLinkedTruth`):
+  - the SmartPixels track tables copy their OT track's matched TrackingParticle truth (`otTpIdx`, `otTpPdgId`,
+    `otGenuine`, `otLooselyGenuine`, `otCombinatoric`, `otUnknown`, `otTpFromHardInteraction`,
+    `otTp_pt/eta/phi0/tanL/charge/rInv/d0/z0`), the "otlink" convention;
+  - the refit hit tables carry `selTpIdx`, the selected cluster's `tpIdx`;
+  - the OT track tables carry `tp_rInv` = tp_charge × c_light/1e5 × Bz(0) / tp_pt.
+- **Kept on purpose: the per-hit OT projection columns** (`projOT*`, full float). That was the physicist's decision
+  of 2026-10-21, at about 0.36 MB/event for one SmartPixels mask (projected from 10 events; projOT* about 0.03 of it)
+  against a 0.30-0.35 target. The multi-mask file is about 0.9 MB/event.
+- **Track heads** (optional, `addSmartPixelsTrackHeads(process, modelDir)`):
+  - the per-track quality heads (conifer, one model per head and window) as columns on the extended track tables;
+  - the features are computed from the stored nano values;
+  - as built, they need the OT track truth extension (`nStubs`), i.e. a gen tier.
+- **Grid:** `L1Trigger/Phase3SmartPixels/test/makeCrabTaggerTier.py` writes the pset and a CRAB config (dataset left
+  blank).
 
 ## seedlessRefit sidecar tables (spec §4.4)
 
