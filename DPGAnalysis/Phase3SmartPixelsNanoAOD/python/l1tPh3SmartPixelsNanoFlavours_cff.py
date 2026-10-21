@@ -75,6 +75,7 @@ def _state(process):
             extendedTracks=cms.bool(True),
             promptHnpar=cms.uint32(5),
             seedlessRefitConfig=cms.string(json.dumps(_TIER_SEEDLESSREFIT_DEFAULTS, sort_keys=True)),
+            tier=cms.string(""),
         ))
     return getattr(process, _STATE)
 
@@ -264,6 +265,119 @@ def useSPSeedlessRefitV3(process):
     return _useModeTag(process, "SPSeedlessRefitV3")
 
 
+# The tagger pseudo-nano tier (the physicist's sign-off, 2026-10-21): a named tier that keeps every track,
+# refit, jet, PF/Puppi, GT, generator and remaining table and drops only the bulk truth/cluster/stub tables
+# below. The canonical tiers keep everything; the truth the tagger needs travels with the tracks (otTp*,
+# selTpIdx; _configureLinkedTruth).
+TAGGER_TIER = "SPTaggerTier"
+TAGGER_TIER_DROPPED = ("L1TSmartPixelsCluster", "L1TTP", "L1TOTStub", "L1TOTStubDTC")
+
+
+def useSPTaggerTier(process):
+    """@SPTaggerTier: the tagger pseudo-nano tier: the output drops L1TSmartPixelsCluster, L1TTP, L1TOTStub
+    and L1TOTStubDTC (their producers still run when another table needs them). Compose it last or anywhere:
+    every reconcile re-derives the drops from the job's tables."""
+    st = _begin(process, TAGGER_TIER)
+    st.tier = TAGGER_TIER
+    return _reconcile(process)
+
+
+def _applyTier(process, st):
+    if not st.tier.value():
+        return
+    labels = sorted(label for label, module in process.producers_().items()
+                    if any(isinstance(getattr(module, p, None), cms.string)
+                           and getattr(module, p).value() in TAGGER_TIER_DROPPED for p in ("name", "tableName")))
+    drops = [f"drop nanoaodFlatTable_{label}_*_*" for label in labels]
+    for module in process.outputModules_().values():
+        if module.type_() != "NanoAODOutputModule":
+            continue
+        cmds = list(module.outputCommands)
+        module.outputCommands = cms.untracked.vstring(*(cmds + [d for d in drops if d not in cmds]))
+    if not hasattr(process, "nanoMetadata"):
+        return
+    process.nanoMetadata.strings.smartPixelsTier = cms.string(
+        f"{st.tier.value()}: drops {', '.join(TAGGER_TIER_DROPPED)}")
+
+
+# One job, the L1 emulation once (from the OT tracks, as the passthrough control IIII) and the seedless
+# refit v3 once per mask, each with mask-suffixed SmartPixels tables (smartPixelsCoexist).
+MULTI_MASKS = ("AAAA", "AAAI", "IAAA")
+
+
+def useSPMultiMaskV3(process):
+    """@SPMultiMaskV3: coexisting seedless refit v3 variants for AAAA, AAAI and IAAA with suffixed tables
+    (L1TSmartPixelsTrackSeedlessRefitV3<mask>, ...RefitHitSeedlessRefitV3<mask>, links, otlink truth); the
+    L1 emulation reads the OT tracks. Compose without @SPTrk and without mode or mask tags (coexist writes
+    no canonical SmartPixels tables)."""
+    st = _begin(process, "SPMultiMaskV3")
+    if st.modeTag.value() or st.mask.value():
+        raise RuntimeError("SmartPixels nano: @SPMultiMaskV3 replaces the mode and mask tags; compose neither")
+    from L1Trigger.Phase3SmartPixels.customizeSmartPixels_cff import smartPixelsCoexist
+    variants = [("seedlessRefitV3", m.replace("A", "1").replace("I", "0")) for m in MULTI_MASKS]
+    return smartPixelsCoexist(process, variants=variants, addNanoTables=True,
+                              trackInputMode=st.trackInputMode.value(),
+                              seedlessRefitConfig=json.loads(st.seedlessRefitConfig.value()),
+                              extendedTracks=st.extendedTracks.value(), promptHnpar=st.promptHnpar.value())
+
+
+# The tagger's per-track heads (heads_cmssw/SPEC.md): six heads, one conifer model per head and window.
+TRACK_HEADS = (("clean", "probability"), ("d0", "margin"), ("z0", "margin"), ("tanl", "margin"),
+               ("rinv", "margin"), ("phi", "margin"))
+
+
+def trackHeadModelFile(modelDir, coll, mask, window, head, flat=False):
+    """<modelDir>/<OT|SmartPixels>/<mask>/<window>/<head>.json, or <modelDir>/<coll>_<mask>_<window>_<head>.json
+    (flat: one directory, e.g. the files a grid job receives in its working directory)."""
+    return f"{modelDir}/{coll}_{mask}_{window}_{head}.json" if flat else f"{modelDir}/{coll}/{mask}/{window}/{head}.json"
+
+
+def addSmartPixelsTrackHeads(process, modelDir, heads=TRACK_HEADS, columnPrefix="head_", writeFeatures=False,
+                             flat=False):
+    """The per-track heads on the extended (5-parameter) track tables of the job: the OT models on L1TExtTrack
+    and, on every SmartPixels extended table (canonical and coexist), the models of its variant's mask
+    (trackHeadModelFile). Call after the add-on flavours, e.g. in --customise_commands. The prompt
+    (4-parameter) family has no models."""
+    from DPGAnalysis.Phase3SmartPixelsNanoAOD.l1tPh3SmartPixelsNano_cff import l1tSmartPixelsTrackHeadsTable
+    st = _state(process)
+    sched = _scheduled(process)
+
+    def models(coll, mask, windows):
+        return [cms.PSet(name=cms.string(h), output=cms.string(out), models=cms.VPSet(
+            *[cms.PSet(window=cms.string(w), file=cms.string(trackHeadModelFile(modelDir, coll, mask, w, h, flat)))
+              for w in windows])) for h, out in heads]
+
+    otTables = cms.VInputTag(cms.InputTag("l1tExtTracksTable"), cms.InputTag("l1tExtTracksTruthTable"))
+    added = []
+    if "l1tExtTracksTable" in sched:
+        setattr(process, "l1tExtTracksHeadsTable", l1tSmartPixelsTrackHeadsTable.clone(
+            collection="OT", tableName="L1TExtTrack", columnPrefix=columnPrefix, otTables=otTables,
+            heads=cms.VPSet(*models("OT", "IIII", ("all",))), writeFeatures=writeFeatures))
+        added.append("l1tExtTracksHeadsTable")
+    variants = [("", _wiredVariant(st))] if st.variant.value() else []
+    from L1Trigger.Phase3SmartPixels.customizeSmartPixels_cff import smartPixelsVariantSuffix
+    for spec in st.coexistVariants:
+        mode, _, activeSP = spec.partition(":")
+        suffix = smartPixelsVariantSuffix(mode, activeSP or None)
+        variants.append((suffix[:1].upper() + suffix[1:], (mode, activeSP or None)))
+    for suffix, (mode, activeSP) in variants:
+        if mode not in _MODE_TAGS.values() or not activeSP:
+            continue
+        mask = activeSP.replace("1", "A").replace("0", "I")
+        table, refit = f"l1tPh3ExtSmartPixelsTracks{suffix}Table", f"l1tPh3ExtSmartPixelsRefit{suffix}Table"
+        if table not in sched or refit not in sched:
+            continue
+        label = f"l1tPh3ExtSmartPixelsHeads{suffix}Table"
+        setattr(process, label, l1tSmartPixelsTrackHeadsTable.clone(
+            collection="SmartPixels", tableName=f"L1TSmartPixelsExtTrack{suffix}", columnPrefix=columnPrefix,
+            otTables=otTables, spTables=cms.VInputTag(cms.InputTag(table), cms.InputTag(refit, "trk")),
+            hitTable=cms.InputTag(refit, "hit"), heads=cms.VPSet(*models("SmartPixels", mask, ("prompt", "displaced"))),
+            writeFeatures=writeFeatures))
+        added.append(label)
+    _addToNano(process, "p3L1SmartPixelsHeadsTask", added)
+    return process
+
+
 def _reserved(tag):
     def customise(process):
         raise NotImplementedError(f"SmartPixels nano: @{tag} is RESERVED; the mode is not implemented. "
@@ -364,11 +478,13 @@ def _applySeedlessRefitSettings(process, st):
         _applySeedlessRefitConfig, configureSmartPixelsRecHits, smartPixelsVariantLabels)
     resolved = _seedlessRefitConfig(st)
     from L1Trigger.Phase3SmartPixels.customizeSmartPixels_cff import SEEDLESSREFIT_PRESETS
-    mode, _, activeSP = st.variant.value().partition(":")
-    if mode in SEEDLESSREFIT_PRESETS:
+    for spec in [st.variant.value()] + list(st.coexistVariants):
+        mode, _, activeSP = spec.partition(":")
+        if mode not in SEEDLESSREFIT_PRESETS:
+            continue
         if resolved["angleSource"] == "payload" and not resolved["pixelavAngleSet"]:
             raise ValueError("smartPixelsNanoParams: angleSource='payload' needs pixelavAngleSet")
-        for label in smartPixelsVariantLabels(mode, activeSP):
+        for label in smartPixelsVariantLabels(mode, activeSP or None):
             _applySeedlessRefitConfig(getattr(process, label), resolved, SEEDLESSREFIT_PRESETS[mode])
     if hasattr(process, "spixSmartPixelsRecHits"):
         configureSmartPixelsRecHits(process, resolved["pixelavAngleSet"], resolved["smarthitFakeSet"],
@@ -398,7 +514,29 @@ def _reconcile(process):
     _configureTrackingParticles(process, st, variant, sched)
     _configureOTStubDTC(process, sched)
     _configureOTSeedType(process, sched)
+    _configureLinkedTruth(process, sched)
+    _applyTier(process, st)
     return process
+
+
+_OT_TRUTH_TABLES = {"L1TTrack": "l1tTracksTruthTable", "L1TExtTrack": "l1tExtTracksTruthTable"}
+
+
+def _configureLinkedTruth(process, sched):
+    """Truth that travels with the tracks, so a tier without L1TTP / L1TSmartPixelsCluster keeps it: every
+    SmartPixels track table (canonical and coexist) copies its OT track's TP truth (otTp*, the otlink
+    convention) when the OT truth table is in the job, and every refit hit table carries the selected
+    cluster's tpIdx (selTpIdx) when the cluster table has its truth columns."""
+    for label, module in process.producers_().items():
+        if label not in sched:
+            continue
+        if module.type_() == "L1SmartPixelsOTTrackLinkTableProducer":
+            truth = _OT_TRUTH_TABLES.get(module.otTrackTableName.value())
+            module.otTruthTable = cms.InputTag(truth if truth in sched else "")
+        elif module.type_() == "L1SmartPixelsRefitTableProducer":
+            withTruth = (_CLUSTER_TABLE in sched and module.clusterTableName.value()
+                         and getattr(process, _CLUSTER_TABLE).doTruth.value())
+            module.clusterTable = cms.InputTag(_CLUSTER_TABLE if withTruth else "")
 
 
 def _wireVariant(process, st):
