@@ -231,11 +231,15 @@ nearest kept ancestor is GenPart row -3 - genPartIdx.
 A slim, retrainable tier for the jet tagger and its track heads. It is a named pseudo-nano tier: the physicist
 signed off on its drops, and the canonical tiers stay complete.
 
-- **Compositions:**
-  - `L1TSPTaggerNanoV3` + a mask tag (one mask per job);
-  - `L1TSPTaggerNanoV3Multi`: the seedless refit v3 for AAAA, AAAI and IAAA in one job (`@SPMultiMaskV3`,
-    coexist), with mask-suffixed SmartPixels tables. The L1 emulation runs once, from the OT tracks, as the IIII
-    control. About a third of the CPU of the three per-mask jobs.
+- **One job per mask:** `L1TSPTaggerNanoV3` + a mask tag, as canon_v5 (the physicist, 2026-10-22).
+  - Every table of a file belongs to that file's mask. The L1 downstream (PF / Puppi candidates, jets and their NG
+    scores, e/gamma, muons, the GT bits, vertices, track jets and sums) is built from that mask's refit tracks,
+    exactly as in the canonical nano.
+  - Nothing is shared between masks, and no table carries a mask suffix.
+  - **Why no merged multi-mask files:** with four variants in production, files that merge several masks'
+    collections (one shared downstream, suffixed per-mask tables) confuse more than they save. A shared downstream
+    would also be IIII's, built from the OT tracks, and could not give the SmartPixels-minus-IIII results that
+    come through the PF candidates and jets.
 - **Dropped from the output only:** `L1TSmartPixelsCluster`, `L1TTP`, `L1TOTStub`, `L1TOTStubDTC`.
   - Their producers still run where another table needs them.
   - nanoMetadata `smartPixelsTier` names the tier.
@@ -247,14 +251,19 @@ signed off on its drops, and the canonical tiers stay complete.
   - the refit hit tables carry `selTpIdx`, the selected cluster's `tpIdx`;
   - the OT track tables carry `tp_rInv` = tp_charge × c_light/1e5 × Bz(0) / tp_pt.
 - **Kept on purpose: the per-hit OT projection columns** (`projOT*`, full float). That was the physicist's decision
-  of 2026-10-21, at about 0.36 MB/event for one SmartPixels mask (projected from 10 events; projOT* about 0.03 of it)
-  against a 0.30-0.35 target. The multi-mask file is about 0.9 MB/event.
+  of 2026-10-21, at about 0.36 MB/event (projected from 10 events; projOT* about 0.03 of it) against a
+  0.30-0.35 target.
 - **Track heads** (optional, `addSmartPixelsTrackHeads(process, modelDir)`):
-  - the per-track quality heads (conifer, one model per head and window) as columns on the extended track tables;
+  - the per-track quality heads (conifer, one model per head and window) on L1TExtTrack and L1TSmartPixelsExtTrack,
+    with the job's mask's models;
   - the features are computed from the stored nano values;
   - as built, they need the OT track truth extension (`nStubs`), i.e. a gen tier.
-- **Grid:** `L1Trigger/Phase3SmartPixels/test/makeCrabTaggerTier.py` writes the pset and a CRAB config (dataset left
-  blank).
+- **Grid:** `L1Trigger/Phase3SmartPixels/test/makeCrabTaggerTier.py` writes one pset and CRAB config per mask
+  (dataset left blank).
+- **A possible future option (not started): one cmsRun, separate files per mask.** The L1 emulation and the per-mask
+  refits would share the upstream, with one NanoAOD output module per mask whose per-mask table producers write the
+  canonical table names, so each file looks exactly like a per-mask job's. See the v3 port's RESUME.md for the
+  effort and the validation it would need.
 
 ## seedlessRefit sidecar tables (spec §4.4)
 

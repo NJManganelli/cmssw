@@ -176,9 +176,8 @@ autoNANO.update({
     'TPTruthLinked': {'customize': _spxFlavours + 'useTPTruthLinked'},
     'TPTruth1GeVLinked': {'customize': _spxFlavours + 'useTPTruth1GeVLinked'},
     'TPTruthAll': {'customize': _spxFlavours + 'useTPTruthAll'},
-    # the tagger pseudo-nano tier (drops L1TSmartPixelsCluster, L1TTP, L1TOTStub*) and the multi-mask refit
+    # the tagger pseudo-nano tier (drops L1TSmartPixelsCluster, L1TTP, L1TOTStub*)
     'SPTaggerTier': {'customize': _spxFlavours + 'useSPTaggerTier'},
-    'SPMultiMaskV3': {'customize': _spxFlavours + 'useSPMultiMaskV3'},
     # standard compositions (add a mask tag, e.g. +@SPActiveLayersAAAA)
     'L1TSPStudyNano': {'sequence': '@Phase2L1DPGwithGen',
                        'customize': '+'.join(['@Phase2L1DPGwithGen', '@L1PF', '@L1Trk', '@SPTrk', '@SPClustersStubs',
@@ -186,12 +185,9 @@ autoNANO.update({
     'L1TSPStudyNanoV3': {'sequence': '@Phase2L1DPGwithGen',
                          'customize': '+'.join(['@Phase2L1DPGwithGen', '@L1PF', '@L1Trk', '@SPTrk', '@SPClustersStubs',
                                                 '@TPTruth1GeVLinked', '@SPSeedlessRefitV3'])},
-    # the tagger tier: one mask per job (add a mask tag), or every SmartPixels mask in one job
+    # the tagger tier, one mask per job (add a mask tag)
     'L1TSPTaggerNanoV3': {'sequence': '@Phase2L1DPGwithGen',
                           'customize': '+'.join(['@L1TSPStudyNanoV3', '@SPTaggerTier'])},
-    'L1TSPTaggerNanoV3Multi': {'sequence': '@Phase2L1DPGwithGen',
-                               'customize': '+'.join(['@Phase2L1DPGwithGen', '@L1PF', '@L1Trk', '@SPClustersStubs',
-                                                      '@TPTruth1GeVLinked', '@SPMultiMaskV3', '@SPTaggerTier'])},
     'SPStudyNano': {'sequence': '@L1TSPStudyNano+@PHYS',
                     'customize': '@L1TSPStudyNano+@PHYS'},
 })
