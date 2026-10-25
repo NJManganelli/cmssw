@@ -92,6 +92,10 @@ def _validateComposition(st):
     if "SPTrk" in addOns and not st.variant.value():
         raise RuntimeError("SmartPixels nano: @SPTrk needs a SmartPixels variant: compose a mode tag "
                            f"and a mask tag, or @SPActiveLayers{PASSTHROUGH_MASK} for the passthrough control")
+    # @PHYS without RECO+PAT in the job reads MINIAOD products from the input (_recordRecoInputs); the
+    # configuration never reads the input file, so the input kind must be stated (smartPixelsNanoParams)
+    if getattr(st, "_physNeedsMiniAOD", "") and getattr(st, "_inputHasMiniAOD", None) is not True:
+        raise RuntimeError(st._physNeedsMiniAOD)
 
 
 def _scheduled(process):
@@ -403,13 +407,16 @@ for _tag in _TP_TRUTH_TAGS:
 # Settings that are not in a tag name
 # ---------------------------------------------------------------------------
 _POSTURE_KEYS = ("trackInputMode", "extendedTracks", "promptHnpar")
+_INPUT_KEYS = ("inputHasMiniAOD",)
 
 
 def smartPixelsNanoParams(process, **params):
     """Settings of the SmartPixels nano that no tag names:
-      trackInputMode, extendedTracks, promptHnpar  (see smartPixelsCoopt), and
+      trackInputMode, extendedTracks, promptHnpar  (see smartPixelsCoopt),
       any seedlessRefitConfig key (SEEDLESSREFIT_DEFAULTS), e.g. angleSource (default "emu"),
-      pixelavAngleSet / smarthitFakeSet (the payload names for angleSource="payload").
+      pixelavAngleSet / smarthitFakeSet (the payload names for angleSource="payload"), and
+      inputHasMiniAOD: True when the input carries MINIAOD products (GEN-SIM-DIGI-RAW-MINIAOD). @PHYS
+      without RECO+PAT in the job needs it; the configuration never reads the input file to find out.
 
     cmsDriver runs --customise_commands AFTER the autoNANO customisations, so the variant is
     usually wired before this runs. The settings are then applied to what the tags built,
@@ -421,9 +428,11 @@ def smartPixelsNanoParams(process, **params):
     from L1Trigger.Phase3SmartPixels.customizeSmartPixels_cff import (
         SEEDLESSREFIT_DEFAULTS, _resolveSeedlessRefitConfig, _resolveTrackInputMode)
     st = _state(process)
-    unknown = set(params) - set(_POSTURE_KEYS) - set(SEEDLESSREFIT_DEFAULTS)
+    unknown = set(params) - set(_POSTURE_KEYS) - set(_INPUT_KEYS) - set(SEEDLESSREFIT_DEFAULTS)
     if unknown:
         raise ValueError(f"smartPixelsNanoParams: unknown setting(s) {sorted(unknown)}")
+    if "inputHasMiniAOD" in params:
+        st._inputHasMiniAOD = bool(params["inputHasMiniAOD"])
     if "trackInputMode" in params:
         mode = _resolveTrackInputMode(params["trackInputMode"])
         current = st.trackInputMode.value()
@@ -469,7 +478,7 @@ def _reconcile(process):
     from DPGAnalysis.Phase3SmartPixelsNanoAOD.l1tPh3SmartPixelsNano_cff import useSmartPixelsNanoCompression
     useSmartPixelsNanoCompression(process)
     st = _state(process)
-    _checkRecoInputs(process, st)
+    _recordRecoInputs(process, st)
     _wireVariant(process, st)
     _applyPosture(process, st)
     sched = _scheduled(process)
@@ -793,16 +802,8 @@ def _configureTrackingParticles(process, st, variant, sched):
 # products. They come from the input (GEN-SIM-DIGI-RAW-MINIAOD) or from RECO+PAT run in
 # the same job; today's RelVals (GEN-SIM-DIGI-RAW) need the latter.
 # ---------------------------------------------------------------------------
-_MINIAOD_BRANCHES = ("patPackedCandidates_packedPFCandidates__", "patJets_slimmedJets__",
-                     "patMuons_slimmedMuons__", "recoGenParticles_prunedGenParticles__")
+_PHYS_MINIAOD_PRODUCTS = ("packedPFCandidates", "slimmedJets", "slimmedMuons", "prunedGenParticles")
 _RECO_STEPS = "RAW2DIGI,RECO,RECOSIM,PAT"
-
-
-def inputHasMiniAOD(fileName):
-    """True if the first file of the input carries the MINIAOD products @PHYS reads."""
-    from DPGAnalysis.Phase3SmartPixelsNanoAOD.l1tPh3SmartPixelsNano_cff import inputEventBranches
-    branches = inputEventBranches(fileName)
-    return all(any(b.startswith(p) for b in branches) for p in _MINIAOD_BRANCHES)
 
 
 def _pathLabels(path):
@@ -822,9 +823,11 @@ def _pathLabels(path):
     return labels
 
 
-def _checkRecoInputs(process, st):
-    """With @PHYS composed, fail at configuration time unless the input has the MINIAOD
-    products or the job runs RECO and PAT."""
+def _recordRecoInputs(process, st):
+    """With @PHYS composed and no RECO+PAT in the job, the job reads MINIAOD products from its input. The
+    configuration never reads the input file, so it records the requirement, which _validateComposition enforces
+    when the process description is built: smartPixelsNanoParams(process, inputHasMiniAOD=True) states it."""
+    st._physNeedsMiniAOD = ""
     if not hasattr(process, "nanoAOD_step") or not (
             _pathLabels(process.nanoAOD_step) & {"nanoSequence", "nanoSequenceMC", "nanoSequenceFS"}):
         return
@@ -832,19 +835,14 @@ def _checkRecoInputs(process, st):
         process.schedule is None or any(t is process.patTask for t in process.schedule._tasks))
     if recoInJob:
         return
-    fileNames = list(getattr(process.source, "fileNames", []))
-    if not fileNames:
-        raise RuntimeError("SmartPixels nano: @PHYS needs MINIAOD products; the job has no input file to check "
-                           "and runs no RECO+PAT")
-    if inputHasMiniAOD(fileNames[0]):
-        return
     # the NANO spec as given to cmsDriver; the add-ons seen so far otherwise (e.g. under cmsRun)
     import sys
     given = [arg.split("NANO:", 1)[1].split(",")[0] for arg in sys.argv if "NANO:" in arg]
     spec = given[0] if given else "+".join(["@Phase2L1DPGwithGen" if _withGen(process) else "@Phase2L1DPG"]
                                            + ["@" + tag for tag in st.addOns if tag != "coopt"] + ["@PHYS"])
-    raise RuntimeError(
-        f"SmartPixels nano: @PHYS reads MINIAOD products ({', '.join(b.split('_')[1] for b in _MINIAOD_BRANCHES)}) "
-        f"that {fileNames[0]} does not carry and this job does not produce. Run RECO and PAT in the job, "
-        f"with the RelVal workflow's own step-3 options: -s {_RECO_STEPS},NANO:{spec} "
+    st._physNeedsMiniAOD = (
+        f"SmartPixels nano: @PHYS reads MINIAOD products ({', '.join(_PHYS_MINIAOD_PRODUCTS)}) and this job runs no "
+        "RECO+PAT. On an input that carries them (GEN-SIM-DIGI-RAW-MINIAOD), state it: "
+        "smartPixelsNanoParams(process, inputHasMiniAOD=True). Otherwise run RECO and PAT in the job, with the "
+        f"RelVal workflow's own step-3 options: -s {_RECO_STEPS},NANO:{spec} "
         "(L1Trigger/Phase3SmartPixels/test/makeSpixConfig.py --reco emits the full command)")

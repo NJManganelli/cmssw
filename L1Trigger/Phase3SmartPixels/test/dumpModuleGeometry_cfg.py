@@ -6,8 +6,8 @@
 # (Phase2C22I13M9, ExtendedRun4D121, auto:phase2_realistic_T35). campaign=spring24
 # is the Phase2Spring24 production (Phase2C17I13M9, ExtendedRun4D110; a CMSSW_17 area).
 #
-#   cmsRun dumpModuleGeometry_cfg.py jsonFile=/work/spix_module_geometry_D121.json
-#   cmsRun dumpModuleGeometry_cfg.py campaign=spring24 jsonFile=/work/spix_module_geometry_D110.json
+#   cmsRun dumpModuleGeometry_cfg.py jsonFile=spix_module_geometry_D121.json
+#   cmsRun dumpModuleGeometry_cfg.py campaign=spring24 jsonFile=spix_module_geometry_D110.json
 import importlib
 
 import FWCore.ParameterSet.Config as cms

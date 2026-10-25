@@ -14,7 +14,7 @@ SmartPixelsOTCovMissing here — by design. For such files, rebuild the tracks
 Run (in the container, cmsenv):
   cmsRun L1Trigger/Phase3SmartPixels/test/runSeedlessRefitFromFile_cfg.py \
       maxEvents=100 useAngles=alphaBeta \
-      inputFiles=file:/work/testfiles/RelValTTbar_14TeV_PU_150X_mcRun4_realistic_v1_STD_D121_RegeneratedGS_PU-v1.root \
+      inputFiles=file:<D121 PU200 RelVal GEN-SIM-DIGI-RAW, post-#51503> \
       outputFile=seedlessrefit_pu.root
 """
 import FWCore.ParameterSet.Config as cms
@@ -26,14 +26,14 @@ options.register('useAngles', 'alphaBeta', VarParsing.multiplicity.singleton, Va
                  "seedlessRefit angle usage: none | alpha | alphaBeta")
 options.register('activeSP', '1100', VarParsing.multiplicity.singleton, VarParsing.varType.string,
                  "active layer encoding for the seedlessRefit variant")
-options.register('pixelavAngleSet', '/work/spxsmoke/pixelav_angle_example.json',
+options.register('pixelavAngleSet', 'L1Trigger/Phase3SmartPixels/data/spix_angle_response_Conv1D_Full-2bit_v6.json',
                  VarParsing.multiplicity.singleton, VarParsing.varType.string,
                  "PixelAV angle-response payload path")
 options.setDefault('maxEvents', 100)
-options.setDefault('inputFiles',
-                   'file:/work/testfiles/RelValTTbar_14TeV_PU_150X_mcRun4_realistic_v1_STD_D121_RegeneratedGS_PU-v1.root')
 options.setDefault('outputFile', 'seedlessrefit_pu.root')
 options.parseArguments()
+if not options.inputFiles:
+    raise SystemExit("runSeedlessRefitFromFile_cfg.py: pass inputFiles=file:<D121 PU200 GEN-SIM-DIGI-RAW>")
 
 process = cms.Process("SPIXREFIT", Phase2C22I13M9)
 process.load('Configuration.StandardSequences.Services_cff')

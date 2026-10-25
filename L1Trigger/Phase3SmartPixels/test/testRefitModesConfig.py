@@ -674,9 +674,24 @@ def _phys_job(recoInJob):
     return p
 
 
-expect_raises(RuntimeError, lambda: _flav._checkRecoInputs(_phys_job(False), _flav._state(_phys_job(False))),
-              "@PHYS without RECO+PAT and without an input to check is refused", contains="MINIAOD")
-_flav._checkRecoInputs(_phys_job(True), _flav._state(_phys_job(True)))
+def _phys_state(recoInJob, declared=None):
+    """The @PHYS guard as the process description sees it: recorded at reconcile time (no input file is read),
+    enforced by _validateComposition; inputHasMiniAOD stated through smartPixelsNanoParams."""
+    p = _phys_job(recoInJob)
+    st = _flav._state(p)
+    _flav._recordRecoInputs(p, st)
+    if declared is not None:
+        _flav.smartPixelsNanoParams(p, inputHasMiniAOD=declared)
+    return st
+
+
+expect_raises(RuntimeError, lambda: _flav._validateComposition(_phys_state(False)),
+              "@PHYS without RECO+PAT and without a stated MINIAOD input is refused", contains="inputHasMiniAOD")
+expect_raises(RuntimeError, lambda: _flav._validateComposition(_phys_state(False, declared=False)),
+              "@PHYS without RECO+PAT on an input stated without MINIAOD is refused", contains="MINIAOD")
+_flav._validateComposition(_phys_state(False, declared=True))
+check(True, "@PHYS without RECO+PAT on an input stated WITH MINIAOD passes the guard")
+_flav._validateComposition(_phys_state(True))
 check(True, "@PHYS with RECO+PAT in the job passes the guard")
 
 # coexist variants get the canonical tables' links, whichever of coexist and the tables comes first

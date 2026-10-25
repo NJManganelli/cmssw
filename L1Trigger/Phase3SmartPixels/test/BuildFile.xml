@@ -12,3 +12,4 @@
   <use name="json"/>
   <use name="L1Trigger/Phase3SmartPixels"/>
 </bin>
+<test name="testConfigHygiene" command="python3 ${CMSSW_BASE}/src/L1Trigger/Phase3SmartPixels/test/testConfigHygiene.py"/>

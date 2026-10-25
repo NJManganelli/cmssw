@@ -36,11 +36,10 @@ it). CRAB (pluginName='Analysis') OVERRIDES process.source.fileNames from the
 dataset, so the PoolSource below is a valid placeholder taken from
 options.inputFiles.
 
-Local test (D121 RelVal from the SD mount):
+Local test (a D121 RelVal, GEN-SIM-DIGI-RAW):
   cmsRun runUnifiedNano_cfg.py maxEvents=2 activeSP=1100 \
     pixelavAngleSet=L1Trigger/Phase3SmartPixels/data/spix_angle_response_Conv1D_Full-2bit_v6.json \
-    inputFiles=file:/host_volumes/NJM256GBSD/smartpixels-cmssw-testfiles/RelValTTbar_14TeV_PU_150X_mcRun4_realistic_v1_STD_D121_RegeneratedGS_PU-v1_file1.root \
-    outputFile=/work/spix_unifiednano_test.root
+    inputFiles=file:<D121 RelVal GEN-SIM-DIGI-RAW> outputFile=spix_unifiednano_test.root
 """
 import os
 
@@ -69,8 +68,8 @@ options.register('hasMiniAOD', False, VarParsing.multiplicity.singleton,
                  "only): they are made in-job (produceMiniAODGenInputs)")
 options.setDefault('maxEvents', -1)
 options.setDefault('outputFile', 'file:spix_unifiednano.root')
-options.setDefault('inputFiles',
-                   'file:/host_volumes/NJM256GBSD/smartpixels-cmssw-testfiles/RelValTTbar_14TeV_PU_150X_mcRun4_realistic_v1_STD_D121_RegeneratedGS_PU-v1_file1.root')
+# a neutral placeholder: CRAB replaces the input files; a local run passes inputFiles=
+options.setDefault('inputFiles', 'file:placeholder.root')
 options.parseArguments()
 
 
@@ -299,7 +298,7 @@ for _m in ["TTClusterAssociatorFromPixelDigis"]:
 # fileNames after this pset is loaded, so the input cannot be inspected here.
 if not options.hasMiniAOD:
   from DPGAnalysis.Phase3SmartPixelsNanoAOD.l1tPh3SmartPixelsNano_cff import produceMiniAODGenInputs
-  process = produceMiniAODGenInputs(process, assumeNoMiniAOD=True)
+  process = produceMiniAODGenInputs(process)
 
 # Add early deletion of temporary data products to reduce peak memory need
 from Configuration.StandardSequences.earlyDeleteSettings_cff import customiseEarlyDelete

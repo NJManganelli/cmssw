@@ -41,11 +41,13 @@ cmsDriver.py spx -s NANO:@L1TSPStudyNano+@SPActiveLayersAAAA $COMMON \
 cmsDriver.py spx -s NANO:@L1TSPStudyNano+@SPActiveLayersIIII $COMMON \
   --filein file:<GEN-SIM-DIGI-RAW> --customise_commands "$PARAMS; $GEN"
 
-# SPStudyNano on an input WITH MINIAOD products (GEN-SIM-DIGI-RAW-MINIAOD): NANO only; the TrackingParticle
-# table's generator link needs the gen pruner maps rebuilt (see "The generator link on inputs with MINIAOD")
+# SPStudyNano on an input WITH MINIAOD products (GEN-SIM-DIGI-RAW-MINIAOD): NANO only. The configuration never
+# reads the input, so state its kind (inputHasMiniAOD=True); the TrackingParticle table's generator link needs the
+# gen pruner maps rebuilt (see "The generator link on inputs with MINIAOD")
+PARAMS_MINIAOD='from DPGAnalysis.Phase3SmartPixelsNanoAOD.l1tPh3SmartPixelsNanoFlavours_cff import smartPixelsNanoParams; smartPixelsNanoParams(process, trackInputMode="rebuildTracksFromStubs", inputHasMiniAOD=True)'
 LINK='from DPGAnalysis.Phase3SmartPixelsNanoAOD.l1tPh3SmartPixelsNano_cff import rebuildGenPruningMaps; process = rebuildGenPruningMaps(process)'
 cmsDriver.py spx -s NANO:@SPStudyNano+@SPActiveLayersAAAA $COMMON \
-  --filein file:<...-MINIAOD> --customise_commands "$PARAMS; $LINK"
+  --filein file:<...-MINIAOD> --customise_commands "$PARAMS_MINIAOD; $LINK"
 
 # SPStudyNano on an input WITHOUT MINIAOD (today's RelVals): RECO+PAT in the job, with the
 # step-3 options of the RelVal workflow; makeSpixConfig.py --reco builds this line itself
@@ -88,17 +90,19 @@ other modules match.
 only `L1hpsTau` differs. `produceMiniAODGenInputs` refuses that job, because PAT already defines
 the products.
 
+`produceMiniAODGenInputs` is only for inputs WITHOUT MINIAOD products: on an input that carries
+them, the in-job copies would replace the stored ones. **No configuration reads its input file**
+(no configuration-time file access: the same configuration must load on the grid, where the
+input is only known to CRAB). The caller states the input kind instead: the generators choose
+the customisation from their `--campaign` (d121: `produceMiniAODGenInputs`; spring24:
+`customiseSpring24Inputs`), `runUnifiedNano_cfg.py` from its `hasMiniAOD` option.
 `produceMiniAODGenInputs` refuses at configuration time when:
-- the first input file carries any of these products or `slimmedMETs` /
-  `offlineSlimmedPrimaryVertices` (the in-job copies would shadow the persisted ones);
-- the job defines them already (PAT in the job);
+- the job defines these products already (PAT in the job);
 - the tier has no gen tables;
 - `nano_l1_hlt` is off.
 
-`assumeNoMiniAOD=True` skips only the input check. It is meant for the CRAB pset, whose input
-cannot be read when the pset is loaded. Consequence on an input WITH MINIAOD under `nano_l1_hlt`:
-`L1TSPStudyNano` has no `GenMET`, `GenJetAK8` or `Pileup`, because the modifier removes the
-stock tables and the helper refuses to run.
+On an input WITH MINIAOD under `nano_l1_hlt`, `L1TSPStudyNano` has no `GenMET`, `GenJetAK8` or
+`Pileup`, because the modifier removes the stock tables; run such inputs without `nano_l1_hlt`.
 
 ### The generator link on inputs with MINIAOD (`rebuildGenPruningMaps`)
 
@@ -111,8 +115,8 @@ first event (ProductNotFound, `Association<GenParticle>` `prunedGenParticlesWith
 physicist, 2026-10-25), safe while the rebuilt collection equals the stored one. The pruner code is identical in
 CMSSW_14_0_9 and CMSSW_17_0_0_pre4, and its configuration differs only under the heavy-ion, ppRef, UPC and oxygen
 modifiers. Checked on 10 events of the Phase2Spring24 TTbar: every column bit-identical to the job without the
-link, and the link columns filled. Repeat that check on a new sample family. `assumeMiniAOD=True` skips the input
-check (CRAB psets).
+link, and the link columns filled. Repeat that check on a new sample family. Use it only on inputs with MINIAOD
+products: the configuration does not inspect the input.
 
 ### Phase2Spring24 inputs (CMSSW_17; `customiseSpring24Inputs`)
 
@@ -250,8 +254,10 @@ nearest kept ancestor is GenPart row -3 - genPartIdx.
   for `angleSource="payload"`). cmsDriver runs it after the flavours, so it re-applies the
   settings to what the tags wired; the result equals passing them first. The composition is
   recorded in `process.smartPixelsNano`.
-- **`@PHYS` guard.** With the add-ons composed, the configuration fails unless the input has the
-  MINIAOD products `@PHYS` reads or the job runs RECO and PAT; the message gives the `-s` string.
+- **`@PHYS` guard.** With the add-ons composed and no RECO+PAT in the job, `@PHYS` reads MINIAOD products
+  from the input. The configuration never reads the input, so building the process fails unless
+  `smartPixelsNanoParams(process, inputHasMiniAOD=True)` states it; the message also gives the `-s` string
+  with RECO and PAT.
 - **OT naming.** The OT track is never called a seed: quantities of the OT track alone carry
   `OT` (`projOT*`, `spixChi2ITAtOT`, `spixOTCovOK`, `C_OT`, `l1TrackIdx` = the OT track a
   SmartPixels track was built from). "Seed" means a real seed (tracklet seed type, IT/OT seeds).
