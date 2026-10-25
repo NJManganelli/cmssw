@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
-"""Generate ready-to-submit CRAB tasks for the SmartPixels tagger pseudo-nano tier (CMSSW_20_1_0_pre1, D121):
+"""Generate ready-to-submit CRAB tasks for the SmartPixels tagger pseudo-nano tier (CMSSW_20_1_0_pre1, D121; or, with
+--campaign spring24, the old Phase2Spring24 samples in a CMSSW_17 area, which alone can read them):
 ONE TASK PER MASK, as canon_v5 (the physicist, 2026-10-22: no merged multi-mask collections), so every file's
 L1 downstream (PF / Puppi, jets and their NG scores, e/gamma, muons, GT bits) comes from that mask's tracks.
 
@@ -12,10 +13,12 @@ Per mask, writes (run inside the CMSSW environment, which `crab submit` needs an
      with --heads, the model files as JobType.inputFiles.
 
 NOTHING is queried or submitted: the dataset is left blank (TODO) unless --inputDataset is given. A DAS query and
-`crab submit` need the physicist's grid proxy and explicit go. The RelVal inputs must be post-cms-sw/cmssw#51503
-PU200 D121 GEN-SIM-DIGI-RAW (TTbar, H->tautau, ...), as the local test files.
+`crab submit` need the physicist's grid proxy and explicit go. The d121 inputs must be post-cms-sw/cmssw#51503
+PU200 D121 GEN-SIM-DIGI-RAW (TTbar, H->tautau, ...), as the local test files; the spring24 inputs are the
+Phase2Spring24 GEN-SIM-DIGI-RAW-MINIAOD samples (customiseSpring24Inputs: the input fixes, without nano_l1_hlt).
 
-  python3 makeCrabTaggerTier.py [--masks AAAA AAAI IAAA IIII] [--heads /path/to/heads_cmssw/models] [--inputDataset /A/B/C]
+  python3 makeCrabTaggerTier.py [--campaign d121|spring24] [--masks AAAA AAAI IAAA IIII]
+                                [--heads /path/to/heads_cmssw/models] [--inputDataset /A/B/C]
 """
 import argparse
 import os
@@ -25,16 +28,22 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from makeCrabUnifiedNano import DATASET_UNSET, primary_name, sanitize  # noqa: E402
+from makeSpixConfig import CAMPAIGNS, INPUTS  # noqa: E402
 
 POSTURE = ("import DPGAnalysis.Phase3SmartPixelsNanoAOD.l1tPh3SmartPixelsNano_cff as p3nano; "
            "from DPGAnalysis.Phase3SmartPixelsNanoAOD.l1tPh3SmartPixelsNanoFlavours_cff import smartPixelsNanoParams; "
            "smartPixelsNanoParams(process, trackInputMode='rebuildTracksFromStubs', extendedTracks=True, "
-           "promptHnpar=5, angleSource='emu'); process = p3nano.produceMiniAODGenInputs(process)")
+           "promptHnpar=5, angleSource='emu')")
+# the generator inputs / input fixes per campaign. A CRAB pset is loaded before CRAB sets its input files, so the
+# spring24 customisation cannot inspect the input: the dataset choice vouches for its MINIAOD products
+GEN = {"d121": "process = p3nano.produceMiniAODGenInputs(process)",
+       "spring24": "process = p3nano.customiseSpring24Inputs(process, assumeMiniAOD=True)"}
 HEADS = ("from DPGAnalysis.Phase3SmartPixelsNanoAOD.l1tPh3SmartPixelsNanoFlavours_cff import addSmartPixelsTrackHeads; "
          "addSmartPixelsTrackHeads(process, '.', flat=True)")
 # a placeholder input: CRAB replaces process.source.fileNames with the dataset's files
-PLACEHOLDER = ("file:/host_volumes/NJM256GBSD/smartpixels-cmssw-testfiles/"
-               "RelValTTbar_14TeV_PU_150X_mcRun4_realistic_v1_STD_D121_RegeneratedGS_PU-v1_file1.root")
+PLACEHOLDER = {"d121": ("file:/host_volumes/NJM256GBSD/smartpixels-cmssw-testfiles/"
+                        "RelValTTbar_14TeV_PU_150X_mcRun4_realistic_v1_STD_D121_RegeneratedGS_PU-v1_file1.root"),
+               "spring24": "file:" + INPUTS[("200", "17_0")]}
 
 
 def model_files(models, mask):
@@ -55,12 +64,14 @@ def task(a, mask):
     os.makedirs(wd, exist_ok=True)
     tag = f"SP{mask}"
     pset = os.path.join(wd, f"taggertier_{tag}_cfg.py")
-    custom = POSTURE + ("; " + HEADS if a.heads else "")
+    custom = POSTURE + "; " + GEN[a.campaign] + ("; " + HEADS if a.heads else "")
+    camp = CAMPAIGNS[a.campaign]
     cmd = ["cmsDriver.py", f"taggertier_{tag}_cfg", "-s", f"NANO:@L1TSPTaggerNanoV3+@SPActiveLayers{mask}",
-           "--conditions", "auto:phase2_realistic_T35", "--geometry", "ExtendedRun4D121", "--era", "Phase2C22I13M9",
-           "--procModifiers", "nano_l1_hlt", "--datatier", "NANOAODSIM", "--eventcontent", "NANOAODSIM",
-           "--filein", PLACEHOLDER, "--fileout", "file:taggertier.root", "--python_filename", pset, "-n", "-1",
-           "--mc", "--nThreads", str(a.numCores), "--no_exec", "--customise_commands", custom]
+           "--conditions", "auto:phase2_realistic_T35", "--geometry", camp["geometry"], "--era", camp["era"]] + \
+        (["--procModifiers", ",".join(camp["modifiers"])] if camp["modifiers"] else []) + \
+        ["--datatier", "NANOAODSIM", "--eventcontent", "NANOAODSIM",
+         "--filein", PLACEHOLDER[a.campaign], "--fileout", "file:taggertier.root", "--python_filename", pset,
+         "-n", "-1", "--mc", "--nThreads", str(a.numCores), "--no_exec", "--customise_commands", custom]
     subprocess.run(cmd, check=True)
 
     inputs = []
@@ -72,10 +83,13 @@ def task(a, mask):
 
     primary = primary_name(a.inputDataset)
     request = sanitize(f"{a.requestName or 'taggertier'}_{a.outLFNDirBase.rstrip('/').split('/')[-1]}_{tag}_{primary}")[:100]
+    wanted = {"d121": "a post-cms-sw/cmssw#51503 PU200 D121 RelVal (GEN-SIM-DIGI-RAW)",
+              "spring24": "a Phase2Spring24 sample (GEN-SIM-DIGI-RAW-MINIAOD)"}[a.campaign]
     lines = ([] if a.inputDataset else
-             [f"# TODO: config.Data.inputDataset is EMPTY ({DATASET_UNSET}): fill in a post-cms-sw/cmssw#51503",
-              "#       PU200 D121 RelVal (GEN-SIM-DIGI-RAW) after a DAS query with the physicist's go.", ""]) + [
-        "# Auto-generated by makeCrabTaggerTier.py -- SmartPixels tagger pseudo-nano tier, one mask per task",
+             [f"# TODO: config.Data.inputDataset is EMPTY ({DATASET_UNSET}): fill in {wanted}",
+              "#       after a DAS query with the physicist's go.", ""]) + [
+        f"# Auto-generated by makeCrabTaggerTier.py -- SmartPixels tagger pseudo-nano tier, one mask per task, "
+        f"campaign {a.campaign}",
         f"#   composition: NANO:@L1TSPTaggerNanoV3+@SPActiveLayers{mask}{'  + track heads' if a.heads else ''}",
         "from CRABClient.UserUtilities import config",
         "config = config()",
@@ -112,6 +126,8 @@ def task(a, mask):
 
 def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap.add_argument("--campaign", default="d121", choices=sorted(CAMPAIGNS),
+                    help="d121 (CMSSW_20 RelVals) or spring24 (the old Phase2Spring24 samples, CMSSW_17 area)")
     ap.add_argument("--masks", nargs="+", default=["AAAA", "AAAI", "IAAA", "IIII"],
                     help="one task per mask (IIII: the passthrough control, OT heads only)")
     ap.add_argument("--heads", default=None, help="the heads' model directory (SPEC.md layout); default: no heads")
