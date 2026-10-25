@@ -33,6 +33,10 @@ So configs are GENERATED here, from named axes, and are not kept.
     ./makeSpixConfig.py --pu 200 --tier coexist --variant seedlessRefit:all \
         --events 100 -o /work/coexist15.py
 
+    # the canonical nano on the old Phase2Spring24 samples, in a CMSSW_17 area (CMSSW_20 cannot read them)
+    ./makeSpixConfig.py --campaign spring24 --tier study --coopt --variant seedlessRefitV3:1111 \
+        --events 100 -o /work/spix_spring24.py
+
     # SPStudyNano: the study tier plus the regular nano (@PHYS). The input is inspected:
     # with MINIAOD products the job is NANO only, else it also runs RAW2DIGI,RECO,RECOSIM,PAT
     # with the step-3 options of the RelVal workflow (runTheMatrix --dryRun)
@@ -63,6 +67,21 @@ TESTFILE_DIR = "/host_volumes/WDMac/smartpixels-cmssw-testfiles"
 INPUTS = {
     ("200", "20_1"): f"{TESTFILE_DIR}/RelValTTbar_14TeV_PU_150X_mcRun4_realistic_v1_STD_D121_RegeneratedGS_PU-v1_file1.root",
     ("0", "20_1"): "/work/testfiles/RelValTTbar_D121_noPU_regen.root",
+    # the old Phase2Spring24 TTbar (CMSSW_14_0_9, GEN-SIM-DIGI-RAW-MINIAOD, TrackingParticles above 1 GeV):
+    # readable by CMSSW_17, not by CMSSW_20 (io_v1)
+    ("200", "17_0"): f"{TESTFILE_DIR}/TT_TuneCP5_14TeV-powheg-pythia8_Phase2Spring24DIGIRECOMiniAOD_PU200_Trk1GeV_"
+                     "140X_mcRun4_realistic_v4-v2.root",
+}
+
+# --- campaigns: the input samples' geometry and era, and how the job gets its generator inputs.
+#     d121: the CMSSW_20 D121 RelVals (GEN-SIM-DIGI-RAW, no MINIAOD): nano_l1_hlt and produceMiniAODGenInputs.
+#     spring24: the Phase2Spring24 samples (D110 = the same T35 tracker; MINIAOD in the input), in a CMSSW_17
+#     area: no nano_l1_hlt, and customiseSpring24Inputs (the input fixes and the generator link's pruner maps).
+CAMPAIGNS = {
+    "d121": dict(geometry="ExtendedRun4D121", era="Phase2C22I13M9", modifiers=["nano_l1_hlt"], release="20_1",
+                 gen="process = p3nano.produceMiniAODGenInputs(process)"),
+    "spring24": dict(geometry="ExtendedRun4D110", era="Phase2C17I13M9", modifiers=[], release="17_0",
+                     gen="process = p3nano.customiseSpring24Inputs(process)"),
 }
 
 # --- nano tiers. "truth" variants keep the TrackingParticle extension
@@ -145,7 +164,7 @@ def nano_step(args):
     return "NANO:" + "+".join(flavours + tags)
 
 
-GEOMETRY, ERA, CONDITIONS = "ExtendedRun4D121", "Phase2C22I13M9", "auto:phase2_realistic_T35"
+CONDITIONS = "auto:phase2_realistic_T35"
 
 # seedlessRefitConfig keys this CLI exposes. Everything else takes SEEDLESSREFIT_DEFAULTS.
 REFIT_AXES = {
@@ -216,8 +235,9 @@ def build_customise(args, overrides):
     # withGen tiers read MINIAOD gen products (prunedGenParticles, slimmedGenJets, ...);
     # the GEN-SIM-DIGI-RAW RelVals carry only genParticles/ak4GenJetsNoNu, so make them.
     # SPStudyNano gets them from its MINIAOD input or from the PAT step it runs.
-    if truth and args.tier != "reco":
-        parts.append("process = p3nano.produceMiniAODGenInputs(process)")
+    # The Spring24 inputs carry MINIAOD; their input fixes apply to every tier.
+    if args.campaign == "spring24" or (truth and args.tier != "reco"):
+        parts.append(CAMPAIGNS[args.campaign]["gen"])
     return "; ".join(parts)
 
 
@@ -233,13 +253,14 @@ def cmsdriver_cmd(args, out_py, overrides):
                          "pass --filein explicitly")
     if args.tier == "reco":
         return reco_cmd(args, out_py, overrides, infile)
+    camp = CAMPAIGNS[args.campaign]
     return [
         "cmsDriver.py", os.path.splitext(os.path.basename(out_py))[0],
         "-s", nano_step(args),
         "--conditions", CONDITIONS,
-        "--geometry", GEOMETRY,
-        "--era", ERA,
-        "--procModifiers", "nano_l1_hlt",
+        "--geometry", camp["geometry"],
+        "--era", camp["era"],
+    ] + (["--procModifiers", ",".join(camp["modifiers"])] if camp["modifiers"] else []) + [
         "--datatier", "NANOAODSIM",
         "--eventcontent", "NANOAODSIM",
         "--filein", f"file:{infile}",
@@ -319,9 +340,12 @@ def main():
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--pu", choices=["0", "200"], default="200")
-    ap.add_argument("--release-compat", default="20_1", choices=["20_1"],
-                    help="which release the input must be readable by "
-                         "(see mem:smartpixels-testfile-release-compat)")
+    ap.add_argument("--campaign", default="d121", choices=sorted(CAMPAIGNS),
+                    help="the input samples: d121 (the CMSSW_20 RelVals) or spring24 (the old Phase2Spring24 "
+                         "samples, read by a CMSSW_17 area)")
+    ap.add_argument("--release-compat", default=None, choices=["20_1", "17_0"],
+                    help="which release the input must be readable by (default: the campaign's; "
+                         "see mem:smartpixels-testfile-release-compat)")
     ap.add_argument("--tier", choices=sorted(TIERS), default="trk-truth")
     ap.add_argument("--variant", action="append", default=None,
                     help="mode[:activeSP], e.g. seedlessRefit:1111, passthrough. REPEATABLE: give it "
@@ -367,6 +391,12 @@ def main():
     ap.add_argument("--dry-run", action="store_true",
                     help="print the cmsDriver command instead of running it")
     args = ap.parse_args()
+    release = CAMPAIGNS[args.campaign]["release"]
+    if args.release_compat not in (None, release):
+        raise SystemExit(f"--campaign {args.campaign} inputs are read by {release}, not {args.release_compat}")
+    args.release_compat = release
+    if args.campaign == "spring24" and args.reco:
+        raise SystemExit("--reco takes the D121 RelVal workflow's step-3 options; it has no spring24 form")
     if not args.variant:
         args.variant = ["seedlessRefit:1111"]
     args.variant = expand_variants(args.variant)

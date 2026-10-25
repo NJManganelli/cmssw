@@ -41,9 +41,11 @@ cmsDriver.py spx -s NANO:@L1TSPStudyNano+@SPActiveLayersAAAA $COMMON \
 cmsDriver.py spx -s NANO:@L1TSPStudyNano+@SPActiveLayersIIII $COMMON \
   --filein file:<GEN-SIM-DIGI-RAW> --customise_commands "$PARAMS; $GEN"
 
-# SPStudyNano on an input WITH MINIAOD products (GEN-SIM-DIGI-RAW-MINIAOD): NANO only
+# SPStudyNano on an input WITH MINIAOD products (GEN-SIM-DIGI-RAW-MINIAOD): NANO only; the TrackingParticle
+# table's generator link needs the gen pruner maps rebuilt (see "The generator link on inputs with MINIAOD")
+LINK='from DPGAnalysis.Phase3SmartPixelsNanoAOD.l1tPh3SmartPixelsNano_cff import rebuildGenPruningMaps; process = rebuildGenPruningMaps(process)'
 cmsDriver.py spx -s NANO:@SPStudyNano+@SPActiveLayersAAAA $COMMON \
-  --filein file:<...-MINIAOD> --customise_commands "$PARAMS"
+  --filein file:<...-MINIAOD> --customise_commands "$PARAMS; $LINK"
 
 # SPStudyNano on an input WITHOUT MINIAOD (today's RelVals): RECO+PAT in the job, with the
 # step-3 options of the RelVal workflow; makeSpixConfig.py --reco builds this line itself
@@ -97,6 +99,43 @@ the products.
 cannot be read when the pset is loaded. Consequence on an input WITH MINIAOD under `nano_l1_hlt`:
 `L1TSPStudyNano` has no `GenMET`, `GenJetAK8` or `Pileup`, because the modifier removes the
 stock tables and the helper refuses to run.
+
+### The generator link on inputs with MINIAOD (`rebuildGenPruningMaps`)
+
+The TrackingParticle table's generator link (`L1TTP` `genPartIdx`, `genFromB`, `genFromC`; `@TPTruth1GeVLinked`)
+follows the GenParticlePruner maps genParticles -> prunedGenParticlesWithStatusOne -> prunedGenParticles ->
+finalGenParticles. MINIAOD stores the pruned collection but not the maps, so on such an input the job stops at the
+first event (ProductNotFound, `Association<GenParticle>` `prunedGenParticlesWithStatusOne`).
+`rebuildGenPruningMaps` reruns the two stock pruners on the stored `genParticles`, under their stock labels, so
+`GenPart` reads the rebuilt collection. This is a documented exception to `produceMiniAODGenInputs`' rule (the
+physicist, 2026-10-25), safe while the rebuilt collection equals the stored one. The pruner code is identical in
+CMSSW_14_0_9 and CMSSW_17_0_0_pre4, and its configuration differs only under the heavy-ion, ppRef, UPC and oxygen
+modifiers. Checked on 10 events of the Phase2Spring24 TTbar: every column bit-identical to the job without the
+link, and the link columns filled. Repeat that check on a new sample family. `assumeMiniAOD=True` skips the input
+check (CRAB psets).
+
+### Phase2Spring24 inputs (CMSSW_17; `customiseSpring24Inputs`)
+
+The Phase2Spring24 samples (CMSSW_14_0_9 GEN-SIM-DIGI-RAW-MINIAOD; D110 = the T35 tracker of D121) are read only by
+releases before CMSSW_20, which stores `io_v1` types: run the backport branch in a CMSSW_17 area. Use their own
+geometry and era, the same conditions, and no `nano_l1_hlt`, because the input carries MINIAOD and the stock gen
+tables read it. `customiseSpring24Inputs` applies the input fixes:
+- the stored `l1tTrackerMuons_l1tTkMuonsGmt*` products are dropped on input, keeping their descendants. Their class
+  changed (`TrackerMuon::muRef_` now refers to `l1t::SAMuon`), so reading them fails; the L1 emulation remakes them;
+- `rebuildGenPruningMaps` runs when the job has the generator link.
+
+```bash
+SPRING24="--conditions auto:phase2_realistic_T35 --geometry ExtendedRun4D110 --era Phase2C17I13M9 \
+  --datatier NANOAODSIM --eventcontent NANOAODSIM --mc --nThreads 4"
+FIX='from DPGAnalysis.Phase3SmartPixelsNanoAOD.l1tPh3SmartPixelsNano_cff import customiseSpring24Inputs; process = customiseSpring24Inputs(process)'
+cmsDriver.py spx -s NANO:@L1TSPStudyNanoV3+@SPActiveLayersAAAA $SPRING24 \
+  --filein file:<Phase2Spring24 ...-MINIAOD> --customise_commands "$PARAMS; $FIX"
+```
+
+`makeSpixConfig.py --campaign spring24` and `makeCrabTaggerTier.py --campaign spring24` emit these jobs. Compared
+with the CMSSW_20 tier on D121, the tier is complete: no column is missing or retyped. The extras are the stock
+MINIAOD tables `nano_l1_hlt` removes (`Flag`, `Pileup` `pudensity` / `gpudensity`, `L1hpsTau`) and the input's own
+HLT and L1 bits.
 
 ### Flavours
 
