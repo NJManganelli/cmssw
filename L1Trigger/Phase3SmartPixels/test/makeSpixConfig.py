@@ -76,11 +76,12 @@ INPUTS = {
 #     d121: the CMSSW_20 D121 RelVals (GEN-SIM-DIGI-RAW, no MINIAOD): nano_l1_hlt and produceMiniAODGenInputs.
 #     spring24: the Phase2Spring24 samples (D110 = the same T35 tracker; MINIAOD in the input), in a CMSSW_17
 #     area: no nano_l1_hlt, and customiseSpring24Inputs (the input fixes and the generator link's pruner maps).
+#     miniaod: whether the campaign's inputs carry MINIAOD products (checked against a dataset's data tier).
 CAMPAIGNS = {
     "d121": dict(geometry="ExtendedRun4D121", era="Phase2C22I13M9", modifiers=["nano_l1_hlt"], release="20_1",
-                 gen="process = p3nano.produceMiniAODGenInputs(process)"),
+                 miniaod=False, gen="process = p3nano.produceMiniAODGenInputs(process)"),
     "spring24": dict(geometry="ExtendedRun4D110", era="Phase2C17I13M9", modifiers=[], release="17_0",
-                     gen="process = p3nano.customiseSpring24Inputs(process)"),
+                     miniaod=True, gen="process = p3nano.customiseSpring24Inputs(process)"),
 }
 
 # --- nano tiers. "truth" variants keep the TrackingParticle extension
