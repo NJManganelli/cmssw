@@ -136,10 +136,11 @@ cmsDriver.py spx -s NANO:@L1TSPStudyNanoV3+@SPActiveLayersAAAA $SPRING24 \
   --filein file:<Phase2Spring24 ...-MINIAOD> --customise_commands "$PARAMS; $FIX"
 ```
 
-`makeSpixConfig.py --campaign spring24` and `makeCrabTaggerTier.py --campaign spring24` emit these jobs. Compared
-with the CMSSW_20 tier on D121, the tier is complete: no column is missing or retyped. The extras are the stock
-MINIAOD tables `nano_l1_hlt` removes (`Flag`, `Pileup` `pudensity` / `gpudensity`, `L1hpsTau`) and the input's own
-HLT and L1 bits.
+`makeSpixConfig.py --campaign spring24` emits these jobs. `makeCrabTaggerTier.py` infers the campaign from the
+`--inputDataset` name: a `Phase2Spring24...` processed dataset with a MINIAOD tier, with no file access and no DAS
+query. Compared with the CMSSW_20 tier on D121, the tier is complete: no column is missing or retyped. The extras are
+the stock MINIAOD tables `nano_l1_hlt` removes (`Flag`, `Pileup` `pudensity` / `gpudensity`, `L1hpsTau`) and the
+input's own HLT and L1 bits.
 
 ### Flavours
 
@@ -303,8 +304,9 @@ signed off on its drops, and the canonical tiers stay complete.
     with the job's mask's models;
   - the features are computed from the stored nano values;
   - as built, they need the OT track truth extension (`nStubs`), i.e. a gen tier.
-- **Grid:** `L1Trigger/Phase3SmartPixels/test/makeCrabTaggerTier.py` writes one pset and CRAB config per mask
-  (dataset left blank).
+- **Grid:** `L1Trigger/Phase3SmartPixels/test/makeCrabTaggerTier.py` writes one pset and CRAB config per mask. The
+  campaign comes from the `--inputDataset` name (`..._STD_D121_...` RelVals or `Phase2Spring24...`, checked against
+  the data tier); an unknown name, or no dataset (the TODO marker), needs `--campaign`.
 - **A possible future option (not started): one cmsRun, separate files per mask.** The L1 emulation and the per-mask
   refits would share the upstream, with one NanoAOD output module per mask whose per-mask table producers write the
   canonical table names, so each file looks exactly like a per-mask job's. See the v3 port's RESUME.md for the

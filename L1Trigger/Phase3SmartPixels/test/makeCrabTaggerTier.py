@@ -17,11 +17,17 @@ NOTHING is queried or submitted: the dataset is left blank (TODO) unless --input
 PU200 D121 GEN-SIM-DIGI-RAW (TTbar, H->tautau, ...), as the local test files; the spring24 inputs are the
 Phase2Spring24 GEN-SIM-DIGI-RAW-MINIAOD samples (customiseSpring24Inputs: the input fixes, without nano_l1_hlt).
 
-  python3 makeCrabTaggerTier.py [--campaign d121|spring24] [--masks AAAA AAAI IAAA IIII]
-                                [--heads /path/to/heads_cmssw/models] [--inputDataset /A/B/C]
+The campaign comes from the dataset NAME (no file access, no DAS query; campaign_of): MINIAOD presence from the data
+tier, the campaign from the processed-dataset name (..._STD_D121_... -> d121, Phase2Spring24... -> spring24). An
+unrecognised name needs --campaign; an explicit --campaign overrides the inference and is still checked against the
+tier. Without --inputDataset (TODO marker), --campaign is required.
+
+  python3 makeCrabTaggerTier.py --inputDataset /PRIMARY/PROCESSED/TIER [--masks AAAA AAAI IAAA IIII]
+                                [--heads /path/to/heads_cmssw/models] [--campaign d121|spring24]
 """
 import argparse
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -42,6 +48,39 @@ HEADS = ("from DPGAnalysis.Phase3SmartPixelsNanoAOD.l1tPh3SmartPixelsNanoFlavour
          "addSmartPixelsTrackHeads(process, '.', flat=True)")
 # a neutral placeholder input: CRAB replaces process.source.fileNames with the dataset's files
 PLACEHOLDER = "file:placeholder.root"
+# the campaign of a dataset, from its processed-dataset name (the second component of /PRIMARY/PROCESSED/TIER)
+CAMPAIGN_OF_PROCESSED = {"d121": re.compile(r"_STD_D121_"), "spring24": re.compile(r"^Phase2Spring24")}
+
+
+def campaign_of(dataset, campaign=None):
+    """The campaign of a task from the dataset NAME alone (no file access, no DAS query): MINIAOD presence from the
+    data tier (a tier containing MINIAOD: the campaign must take MINIAOD inputs, i.e. the rebuildGenPruningMaps path;
+    otherwise produceMiniAODGenInputs), the campaign from the processed-dataset name (CAMPAIGN_OF_PROCESSED). An
+    explicit campaign overrides the inference and is still checked against the tier. Without a dataset (the TODO
+    marker) the campaign must be explicit."""
+    if not dataset:
+        if campaign is None:
+            raise SystemExit("makeCrabTaggerTier: no --inputDataset to infer the campaign from: give --inputDataset "
+                             "/PRIMARY/PROCESSED/TIER, or --campaign for a task without a dataset (TODO marker)")
+        return campaign
+    parts = dataset.split("/")
+    if len(parts) != 4 or parts[0] or not all(parts[1:]):
+        raise SystemExit(f"makeCrabTaggerTier: malformed --inputDataset {dataset!r}: expected /PRIMARY/PROCESSED/TIER")
+    processed, tier = parts[2], parts[3]
+    inferred = [c for c, pattern in CAMPAIGN_OF_PROCESSED.items() if pattern.search(processed)]
+    if len(inferred) > 1:
+        raise SystemExit(f"makeCrabTaggerTier: {dataset} matches several campaigns {inferred}: give --campaign")
+    if campaign is None:
+        if not inferred:
+            raise SystemExit(f"makeCrabTaggerTier: no campaign is known for the processed dataset {processed!r} "
+                             f"(known: {sorted(CAMPAIGN_OF_PROCESSED)}): give --campaign")
+        campaign = inferred[0]
+    miniaod = "MINIAOD" in tier
+    if miniaod != CAMPAIGNS[campaign]["miniaod"]:
+        expected = "a tier with MINIAOD (GEN-SIM-DIGI-RAW-MINIAOD)" if CAMPAIGNS[campaign]["miniaod"] else \
+            "a tier without MINIAOD (GEN-SIM-DIGI-RAW)"
+        raise SystemExit(f"makeCrabTaggerTier: campaign {campaign} takes {expected}; {dataset} has the tier {tier}")
+    return campaign
 
 
 def model_files(models, mask):
@@ -124,8 +163,9 @@ def task(a, mask):
 
 def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--campaign", default="d121", choices=sorted(CAMPAIGNS),
-                    help="d121 (CMSSW_20 RelVals) or spring24 (the old Phase2Spring24 samples, CMSSW_17 area)")
+    ap.add_argument("--campaign", default=None, choices=sorted(CAMPAIGNS),
+                    help="d121 (CMSSW_20 RelVals) or spring24 (the old Phase2Spring24 samples, CMSSW_17 area); "
+                         "default: inferred from --inputDataset (campaign_of)")
     ap.add_argument("--masks", nargs="+", default=["AAAA", "AAAI", "IAAA", "IIII"],
                     help="one task per mask (IIII: the passthrough control, OT heads only)")
     ap.add_argument("--heads", default=None, help="the heads' model directory (SPEC.md layout); default: no heads")
@@ -140,6 +180,8 @@ def main(argv=None):
     ap.add_argument("--requestName", default=None, help="request name prefix (default taggertier)")
     ap.add_argument("--workDir", default="crab_taggertier", help="where the psets, staged models and configs go")
     a = ap.parse_args(argv)
+    a.campaign = campaign_of(a.inputDataset, a.campaign)
+    sys.stderr.write(f"campaign {a.campaign}\n")
     for mask in a.masks:
         task(a, mask)
     sys.stderr.write("nothing queried or submitted\n")
