@@ -133,8 +133,12 @@ def nano_step(args):
         return f"NANO:@{base}{gen}"
     tags = variant_tags(args.variant[0])
     if base is None:
-        # the aliases carry the mode tag; the variant adds its mask tag
-        flavours = ["@SPStudyNano" if payload == "PHYS" else "@L1TSPStudyNano"]
+        # the aliases carry the mode tag (L1TSPStudyNano: seedlessRefit; L1TSPStudyNanoV3: seedlessRefitV3, the
+        # canonical flavour); the variant adds its mask tag
+        v3 = "@SPSeedlessRefitV3" in tags
+        if payload == "PHYS" and v3:
+            raise SystemExit("--reco: SPStudyNano carries seedlessRefit; there is no seedlessRefitV3 alias")
+        flavours = ["@SPStudyNano" if payload == "PHYS" else ("@L1TSPStudyNanoV3" if v3 else "@L1TSPStudyNano")]
         tags = [tag for tag in tags if tag.startswith("@SPActiveLayers")]
     else:
         flavours = [f"@Phase2L1DPG{gen}"] + COOPT_ADDONS[base] + (["@SPClustersStubs"] if payload else [])
