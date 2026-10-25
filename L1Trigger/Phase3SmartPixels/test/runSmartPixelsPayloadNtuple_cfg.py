@@ -7,7 +7,7 @@ a TFileService ntuple of L1Track x TBPX-layer crossings for payload derivation.
 Run (in the container, cmsenv):
   cmsRun L1Trigger/Phase3SmartPixels/test/runSmartPixelsPayloadNtuple_cfg.py \
       maxEvents=2 \
-      inputFiles=file:/work/testfiles/RelValTTbar_D121_noPU.root \
+      inputFiles=file:<D121 noPU RelVal GEN-SIM-DIGI-RAW> \
       outputFile=payload_ntuple.root
 """
 import FWCore.ParameterSet.Config as cms
@@ -25,9 +25,10 @@ options.register('windowZ', [], VarParsing.multiplicity.list, VarParsing.varType
 options.register('debug', False, VarParsing.multiplicity.singleton, VarParsing.varType.bool,
                  "Verbose per-crossing logging")
 options.setDefault('maxEvents', 2)
-options.setDefault('inputFiles', 'file:/work/testfiles/RelValTTbar_D121_noPU.root')
 options.setDefault('outputFile', 'payload_ntuple.root')
 options.parseArguments()
+if not options.inputFiles:
+    raise SystemExit("runSmartPixelsPayloadNtuple_cfg.py: pass inputFiles=file:<D121 noPU GEN-SIM-DIGI-RAW>")
 
 process = cms.Process("SPIXPAYLOAD", Phase2C22I13M9)
 

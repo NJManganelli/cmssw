@@ -15,32 +15,31 @@ So configs are GENERATED here, from named axes, and are not kept.
 
     # the standard PU200 refit-development config
     ./makeSpixConfig.py --pu 200 --tier trk-truth --variant seedlessRefit:1111 \
-        --events 100 -o /work/spix_pu200.py
+        --events 100 -o spix_pu200.py
 
     # noPU smoke, two inner layers only, alpha-only angles
     ./makeSpixConfig.py --pu 0 --tier trk --variant seedlessRefit:1100 \
-        --use-angles alpha --events 3 -o /work/spix_smoke.py
+        --use-angles alpha --events 3 -o spix_smoke.py
 
     # A/B on one axis: emit both arms, identical in every other respect
     ./makeSpixConfig.py --pu 200 --tier trk-truth --variant seedlessRefit:1111 \
-        --scan layerOrder=outsideIn,insideOut -o /work/spix_order
+        --scan layerOrder=outsideIn,insideOut -o spix_order
 
     # the canonical single-view nano (add-on flavours): ONE variant drives the L1 emulation
     ./makeSpixConfig.py --pu 200 --tier study --coopt --variant seedlessRefit:1111 \
-        --events 100 -o /work/spix_coopt.py
+        --events 100 -o spix_coopt.py
 
     # the multi-variant omnibus nano: all 15 non-trivial seedlessRefit masks side by side
     ./makeSpixConfig.py --pu 200 --tier coexist --variant seedlessRefit:all \
-        --events 100 -o /work/coexist15.py
+        --events 100 -o coexist15.py
 
     # the canonical nano on the old Phase2Spring24 samples, in a CMSSW_17 area (CMSSW_20 cannot read them)
     ./makeSpixConfig.py --campaign spring24 --tier study --coopt --variant seedlessRefitV3:1111 \
-        --events 100 -o /work/spix_spring24.py
+        --events 100 -o spix_spring24.py
 
-    # SPStudyNano: the study tier plus the regular nano (@PHYS). The input is inspected:
-    # with MINIAOD products the job is NANO only, else it also runs RAW2DIGI,RECO,RECOSIM,PAT
-    # with the step-3 options of the RelVal workflow (runTheMatrix --dryRun)
-    ./makeSpixConfig.py --pu 200 --reco --variant seedlessRefit:1111 --events 2 -o /work/spix_reco.py
+    # SPStudyNano on a D121 RelVal: the study tier plus the regular nano (@PHYS); the job also runs
+    # RAW2DIGI,RECO,RECOSIM,PAT with the step-3 options of the RelVal workflow (runTheMatrix --dryRun)
+    ./makeSpixConfig.py --pu 200 --reco --variant seedlessRefit:1111 --events 2 -o spix_reco.py
 
 No nano table is ever dropped: every table of the tier is produced (the L1
 emulation runs on demand, the MINIAOD gen inputs of a truth tier are made in-job).
@@ -61,15 +60,15 @@ import shlex
 import subprocess
 import sys
 
-# --- input files, by (pileup, release-compat). See mem:smartpixels-testfile-release-compat.
-#     Paths are the WDMac mount; the NJM256GBSD SD card is no longer attached.
-TESTFILE_DIR = "/host_volumes/WDMac/smartpixels-cmssw-testfiles"
+# --- default test inputs, by (pileup, release-compat): file names in the directory $SPIX_TESTFILE_DIR (no
+#     default: the directory is the operator's); otherwise pass --filein. See mem:smartpixels-testfile-release-compat.
+TESTFILE_ENV = "SPIX_TESTFILE_DIR"
 INPUTS = {
-    ("200", "20_1"): f"{TESTFILE_DIR}/RelValTTbar_14TeV_PU_150X_mcRun4_realistic_v1_STD_D121_RegeneratedGS_PU-v1_file1.root",
-    ("0", "20_1"): "/work/testfiles/RelValTTbar_D121_noPU_regen.root",
+    ("200", "20_1"): "RelValTTbar_14TeV_PU_150X_mcRun4_realistic_v1_STD_D121_RegeneratedGS_PU-v1_file1.root",
+    ("0", "20_1"): "RelValTTbar_D121_noPU_regen.root",
     # the old Phase2Spring24 TTbar (CMSSW_14_0_9, GEN-SIM-DIGI-RAW-MINIAOD, TrackingParticles above 1 GeV):
     # readable by CMSSW_17, not by CMSSW_20 (io_v1)
-    ("200", "17_0"): f"{TESTFILE_DIR}/TT_TuneCP5_14TeV-powheg-pythia8_Phase2Spring24DIGIRECOMiniAOD_PU200_Trk1GeV_"
+    ("200", "17_0"): "TT_TuneCP5_14TeV-powheg-pythia8_Phase2Spring24DIGIRECOMiniAOD_PU200_Trk1GeV_"
                      "140X_mcRun4_realistic_v4-v2.root",
 }
 
@@ -247,10 +246,13 @@ def cmsdriver_cmd(args, out_py, overrides):
             f"--tier {args.tier} does not keep the TrackingParticle truth extension, but "
             "--needs-truth was requested. Use a '-truth' tier; otherwise L1TTrack_genuine "
             "and L1TTrack_tp_* are absent and no resolution or hit-purity study can run.")
-    infile = args.filein or INPUTS.get((args.pu, args.release_compat))
+    infile = args.filein
     if not infile:
-        raise SystemExit(f"no known input for pu={args.pu} release={args.release_compat}; "
-                         "pass --filein explicitly")
+        name, testdir = INPUTS.get((args.pu, args.release_compat)), os.environ.get(TESTFILE_ENV)
+        if not (name and testdir):
+            raise SystemExit(f"no input: pass --filein, or set ${TESTFILE_ENV} to the directory of the default test "
+                             f"input for pu={args.pu} release={args.release_compat}" + (f" ({name})" if name else ""))
+        infile = os.path.join(testdir, name)
     if args.tier == "reco":
         return reco_cmd(args, out_py, overrides, infile)
     camp = CAMPAIGNS[args.campaign]
@@ -309,13 +311,11 @@ def relval_step3(workflow):
 
 
 def reco_cmd(args, out_py, overrides, infile):
-    """SPStudyNano: NANO only on an input with MINIAOD products, else RECO and PAT in the
-    job with the RelVal workflow's step-3 options."""
-    from DPGAnalysis.Phase3SmartPixelsNanoAOD.l1tPh3SmartPixelsNanoFlavours_cff import inputHasMiniAOD
+    """SPStudyNano on a D121 RelVal (GEN-SIM-DIGI-RAW, no MINIAOD products): RECO and PAT in the job, with the
+    RelVal workflow's step-3 options. (On a MINIAOD input the job is NANO only, with
+    smartPixelsNanoParams(process, inputHasMiniAOD=True): see the README.)"""
     steps, options = relval_step3(args.reco_workflow)
-    nano = nano_step(args)
-    if not inputHasMiniAOD(f"file:{infile}"):
-        nano = ",".join(steps + [nano])
+    nano = ",".join(steps + [nano_step(args)])
     modifiers = ["nano_l1_hlt"]
     cmd = ["cmsDriver.py", os.path.splitext(os.path.basename(out_py))[0], "-s", nano]
     for opt, value in options:
@@ -371,8 +371,8 @@ def main():
                          "or --tier coexist; payload otherwise)")
     ap.add_argument("--pixelav-angle-set", default=DEFAULT_ANGLE_SET)
     ap.add_argument("--reco", action="store_true",
-                    help="SPStudyNano (--tier reco --coopt): the study tier plus the regular nano; "
-                         "runs RECO and PAT in the job when the input has no MINIAOD products")
+                    help="SPStudyNano (--tier reco --coopt) on a D121 RelVal: the study tier plus the regular nano, "
+                         "with RECO and PAT in the job")
     ap.add_argument("--reco-workflow", default=RELVAL_WORKFLOW,
                     help="RelVal workflow whose step-3 options the RECO+PAT steps take (%(default)s)")
     ap.add_argument("--coopt", action="store_true",

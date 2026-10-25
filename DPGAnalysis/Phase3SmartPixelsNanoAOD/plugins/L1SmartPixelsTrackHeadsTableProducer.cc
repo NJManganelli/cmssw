@@ -2,7 +2,7 @@
 // with one single-output model per window, read from JSON files named in the configuration (joint-head models
 // swap in by configuration). The features are computed from the nano tables' STORED values (mantissa reduction
 // included), so they equal the ones the models were trained on, bit for bit in float32
-// (/Volumes/WDMac/smartpixels_scratch/heads_cmssw/SPEC.md, the tagger's heads):
+// (the tagger's heads specification, SPEC.md of the heads export):
 //
 //   collection "OT"           features 1-13 from the OT track table (otTables), one window "all"
 //   collection "SmartPixels"  features 1-38: 1-13 from the OT track the refit started from (row aligned), 14-31

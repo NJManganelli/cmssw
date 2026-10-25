@@ -271,31 +271,7 @@ def useSmartPixelsNanoCompression(process):
     return process
 
 
-_inputBranches = {}
-
-
-def inputEventBranches(fileName):
-    """Names of the Events branches of an EDM file (read with uproot, so no EDM dictionaries
-    are needed); cached per file."""
-    if fileName not in _inputBranches:
-        import uproot
-        try:
-            with uproot.open(fileName[len("file:"):] if fileName.startswith("file:") else fileName) as f:
-                _inputBranches[fileName] = f["Events"].keys(recursive=False)
-        except Exception as e:
-            raise RuntimeError(f"SmartPixels nano: cannot read {fileName} to inspect its products: {e}")
-    return _inputBranches[fileName]
-
-
-# the MINIAOD gen products produceMiniAODGenInputs makes, plus slimmedMETs and offlineSlimmedPrimaryVertices: their
-# presence in an input marks it as MINIAOD-carrying
-_MINIAOD_GEN_MARKERS = {"prunedGenParticlesWithStatusOne", "prunedGenParticles", "packedGenParticles",
-                        "slimmedGenJets", "slimmedGenJetsAK8", "selectedHadronsAndPartonsForGenJetsFlavourInfos",
-                        "ak4GenJetFlavourInfos", "slimmedGenJetsFlavourInfos", "slimmedAddPileupInfo", "slimmedMETs",
-                        "offlineSlimmedPrimaryVertices"}
-
-
-def produceMiniAODGenInputs(process, assumeNoMiniAOD=False):
+def produceMiniAODGenInputs(process):
     """withGen tiers on a GEN-SIM-DIGI-RAW input (no MINIAOD, no PAT in the job), run with
     --procModifiers nano_l1_hlt: rebuild the MINIAOD gen products the stock gen tables read
     from the persisted GEN-SIM products, with the stock MINIAOD slimming modules and their
@@ -315,12 +291,12 @@ def produceMiniAODGenInputs(process, assumeNoMiniAOD=False):
         savePUDensityVars=False (genPileupTable). pudensity/gpudensity are counted around the
         offline primary vertex (offlineSlimmedPrimaryVertices, needs RECO) and are absent;
         every other column is the stock one.
-    Refused when the input carries any of these products (they would shadow the persisted
-    ones; there the stock tables read them directly), when the job already defines them
-    (PAT in the job), on a tier without the gen tables, or without nano_l1_hlt.
-    assumeNoMiniAOD: skip the input inspection, for jobs whose input cannot be read at
-    configuration time (CRAB replaces fileNames after loading the pset); the caller then
-    vouches for an input without MINIAOD products.
+    ONLY for inputs WITHOUT MINIAOD products (the D121 GEN-SIM-DIGI-RAW RelVals): on an input that
+    carries them, the in-job copies would replace the stored ones. The configuration never reads
+    the input file, so the caller states the input kind: the generators choose this function
+    from their --campaign (d121), runUnifiedNano_cfg.py from its hasMiniAOD option.
+    Refused when the job already defines these products (PAT in the job), on a tier without the
+    gen tables, or without nano_l1_hlt.
     """
     from PhysicsTools.PatAlgos.slimming.genParticles_cff import (
         prunedGenParticlesWithStatusOne, prunedGenParticles, packedGenParticles)
@@ -340,27 +316,17 @@ def produceMiniAODGenInputs(process, assumeNoMiniAOD=False):
                  "ak4GenJetFlavourInfos": ak4GenJetFlavourInfos,
                  "slimmedGenJetsFlavourInfos": slimmedGenJetsFlavourInfos,
                  "slimmedAddPileupInfo": slimmedAddPileupInfo}
-    if set(producers) | {"slimmedMETs", "offlineSlimmedPrimaryVertices"} != _MINIAOD_GEN_MARKERS:
-        raise RuntimeError("produceMiniAODGenInputs: _MINIAOD_GEN_MARKERS is out of date with its producers")
+    # products whose presence in the job marks PAT in the job, beyond the ones made here
+    miniAODMarkers = set(producers) | {"slimmedMETs", "offlineSlimmedPrimaryVertices"}
 
     if not hasattr(process, "genNanoTask"):
         raise RuntimeError("produceMiniAODGenInputs: the job has no gen tables (a withGen tier)")
     if process.genNanoTask.contains(process.metMCTable):
         raise RuntimeError("produceMiniAODGenInputs: the stock gen tables that read PAT products are "
                            "scheduled; it is meant for --procModifiers nano_l1_hlt, which removes them")
-    defined = sorted(label for label in _MINIAOD_GEN_MARKERS if hasattr(process, label))
+    defined = sorted(label for label in miniAODMarkers if hasattr(process, label))
     if defined:
         raise RuntimeError(f"produceMiniAODGenInputs: {defined} already defined in this job (PAT in the job?)")
-    if not assumeNoMiniAOD:
-        fileNames = list(getattr(process.source, "fileNames", []))
-        if not fileNames:
-            raise RuntimeError("produceMiniAODGenInputs: the job has no input file to check for MINIAOD products")
-        present = _inputMiniAODLabels(fileNames[0])
-        if present:
-            raise RuntimeError(f"produceMiniAODGenInputs: {fileNames[0]} carries MINIAOD products {present}; "
-                               "they must not be shadowed -- run without produceMiniAODGenInputs (note: under "
-                               "nano_l1_hlt the stock GenMET/GenJetAK8/Pileup tables are then absent; see "
-                               "DPGAnalysis/Phase3SmartPixelsNanoAOD/README.md)")
 
     for label, module in producers.items():
         setattr(process, label, module.clone())
@@ -379,13 +345,7 @@ def produceMiniAODGenInputs(process, assumeNoMiniAOD=False):
     return process
 
 
-def _inputMiniAODLabels(fileName):
-    """The MINIAOD products that mark a MINIAOD-carrying input (_MINIAOD_GEN_MARKERS), present in its first file.
-    Product branches are <type>_<module label>_<instance>_<process>."""
-    return sorted({b.split("_")[1] for b in inputEventBranches(fileName) if b.count("_") >= 3} & _MINIAOD_GEN_MARKERS)
-
-
-def rebuildGenPruningMaps(process, assumeMiniAOD=False):
+def rebuildGenPruningMaps(process):
     """The TrackingParticle table's generator link (L1TTP genPartIdx, genFromB, genFromC) on an input WITH MINIAOD
     products. The link follows the GenParticlePruner maps genParticles -> prunedGenParticlesWithStatusOne ->
     prunedGenParticles -> finalGenParticles (Association<GenParticleCollection>). MINIAOD stores the pruned
@@ -399,10 +359,10 @@ def rebuildGenPruningMaps(process, assumeMiniAOD=False):
     Phase2Spring24 TTbar (CMSSW_17_0_0_pre4): every nano column bit-identical to the job without the link, the link
     columns filled. Repeat that check on a new sample family.
 
-    Refused when the job has no generator link (nothing to rebuild), when the job already defines the pruners (PAT
-    in the job, or produceMiniAODGenInputs), and when the input carries no MINIAOD products (use
-    produceMiniAODGenInputs there). assumeMiniAOD: skip the input inspection (CRAB psets, whose input cannot be
-    read when the pset is loaded); the caller then vouches for an input with MINIAOD products.
+    ONLY for inputs WITH MINIAOD products (on the others use produceMiniAODGenInputs): the configuration never
+    reads the input file, so the caller states the input kind (the generators: --campaign spring24).
+    Refused when the job has no generator link (nothing to rebuild) and when the job already defines the pruners
+    (PAT in the job, or produceMiniAODGenInputs).
     """
     from PhysicsTools.PatAlgos.slimming.genParticles_cff import prunedGenParticlesWithStatusOne, prunedGenParticles
     tp = getattr(process, "l1tTrackingParticleTable", None)
@@ -412,13 +372,6 @@ def rebuildGenPruningMaps(process, assumeMiniAOD=False):
                      if hasattr(process, label))
     if defined:
         raise RuntimeError(f"rebuildGenPruningMaps: {defined} already defined in this job")
-    if not assumeMiniAOD:
-        fileNames = list(getattr(process.source, "fileNames", []))
-        if not fileNames:
-            raise RuntimeError("rebuildGenPruningMaps: the job has no input file to check for MINIAOD products")
-        if not _inputMiniAODLabels(fileNames[0]):
-            raise RuntimeError(f"rebuildGenPruningMaps: {fileNames[0]} carries no MINIAOD products; "
-                               "use produceMiniAODGenInputs")
     process.prunedGenParticlesWithStatusOne = prunedGenParticlesWithStatusOne.clone()
     process.prunedGenParticles = prunedGenParticles.clone()
     process.smartPixelsGenPruningMapsTask = cms.Task(process.prunedGenParticlesWithStatusOne,
@@ -427,7 +380,7 @@ def rebuildGenPruningMaps(process, assumeMiniAOD=False):
     return process
 
 
-def customiseSpring24Inputs(process, assumeMiniAOD=False):
+def customiseSpring24Inputs(process):
     """Inputs of the Phase2Spring24 campaign (CMSSW_14_0_9 GEN-SIM-DIGI-RAW-MINIAOD; tracker T35, as D121), which only
     a release before CMSSW_20 reads (CMSSW_20 stores io_v1 types). Run with --geometry ExtendedRun4D110 --era
     Phase2C17I13M9 --conditions auto:phase2_realistic_T35, and without nano_l1_hlt: the input carries MINIAOD, so
@@ -439,25 +392,19 @@ def customiseSpring24Inputs(process, assumeMiniAOD=False):
       - the TrackingParticle table's generator link, when the job has it: rebuildGenPruningMaps.
     The July standalone configuration's other two fixes (hcaltpdigi_cff; the cluster associator's sim links) are
     not needed in a cmsDriver NANO job: without hcaltpdigi_cff every column is bit-identical.
-    Refused with nano_l1_hlt (it removes stock gen tables the MINIAOD input feeds) and on an input without MINIAOD
-    products. assumeMiniAOD: as rebuildGenPruningMaps (CRAB psets)."""
+    The configuration never reads the input file: calling this function states that the input is a Phase2Spring24
+    GEN-SIM-DIGI-RAW-MINIAOD sample (the generators: --campaign spring24). Refused with nano_l1_hlt (it removes stock
+    gen tables the MINIAOD input feeds)."""
     if hasattr(process, "genNanoTask") and hasattr(process, "metMCTable") and \
             not process.genNanoTask.contains(process.metMCTable):
         raise RuntimeError("customiseSpring24Inputs: run without --procModifiers nano_l1_hlt (the input carries "
                            "MINIAOD; nano_l1_hlt removes the stock gen tables that read it)")
-    if not assumeMiniAOD:
-        fileNames = list(getattr(process.source, "fileNames", []))
-        if not fileNames:
-            raise RuntimeError("customiseSpring24Inputs: the job has no input file to check")
-        if not _inputMiniAODLabels(fileNames[0]):
-            raise RuntimeError(f"customiseSpring24Inputs: {fileNames[0]} carries no MINIAOD products: not a "
-                               "Phase2Spring24 GEN-SIM-DIGI-RAW-MINIAOD input")
     commands = list(getattr(process.source, "inputCommands", cms.untracked.vstring("keep *")))
     process.source.inputCommands = cms.untracked.vstring(*(commands + ["drop l1tTrackerMuons_l1tTkMuonsGmt*_*_*"]))
     process.source.dropDescendantsOfDroppedBranches = cms.untracked.bool(False)
     tp = getattr(process, "l1tTrackingParticleTable", None)
     if tp is not None and tp.doGen.value():
-        rebuildGenPruningMaps(process, assumeMiniAOD=True)
+        rebuildGenPruningMaps(process)
     return process
 
 

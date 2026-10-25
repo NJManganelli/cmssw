@@ -28,22 +28,20 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from makeCrabUnifiedNano import DATASET_UNSET, primary_name, sanitize  # noqa: E402
-from makeSpixConfig import CAMPAIGNS, INPUTS  # noqa: E402
+from makeSpixConfig import CAMPAIGNS  # noqa: E402
 
 POSTURE = ("import DPGAnalysis.Phase3SmartPixelsNanoAOD.l1tPh3SmartPixelsNano_cff as p3nano; "
            "from DPGAnalysis.Phase3SmartPixelsNanoAOD.l1tPh3SmartPixelsNanoFlavours_cff import smartPixelsNanoParams; "
            "smartPixelsNanoParams(process, trackInputMode='rebuildTracksFromStubs', extendedTracks=True, "
            "promptHnpar=5, angleSource='emu')")
-# the generator inputs / input fixes per campaign. A CRAB pset is loaded before CRAB sets its input files, so the
-# spring24 customisation cannot inspect the input: the dataset choice vouches for its MINIAOD products
+# the generator inputs / input fixes per campaign: the campaign states the input kind (d121 GEN-SIM-DIGI-RAW without
+# MINIAOD; spring24 GEN-SIM-DIGI-RAW-MINIAOD), the configuration never reads the input
 GEN = {"d121": "process = p3nano.produceMiniAODGenInputs(process)",
-       "spring24": "process = p3nano.customiseSpring24Inputs(process, assumeMiniAOD=True)"}
+       "spring24": "process = p3nano.customiseSpring24Inputs(process)"}
 HEADS = ("from DPGAnalysis.Phase3SmartPixelsNanoAOD.l1tPh3SmartPixelsNanoFlavours_cff import addSmartPixelsTrackHeads; "
          "addSmartPixelsTrackHeads(process, '.', flat=True)")
-# a placeholder input: CRAB replaces process.source.fileNames with the dataset's files
-PLACEHOLDER = {"d121": ("file:/host_volumes/NJM256GBSD/smartpixels-cmssw-testfiles/"
-                        "RelValTTbar_14TeV_PU_150X_mcRun4_realistic_v1_STD_D121_RegeneratedGS_PU-v1_file1.root"),
-               "spring24": "file:" + INPUTS[("200", "17_0")]}
+# a neutral placeholder input: CRAB replaces process.source.fileNames with the dataset's files
+PLACEHOLDER = "file:placeholder.root"
 
 
 def model_files(models, mask):
@@ -70,7 +68,7 @@ def task(a, mask):
            "--conditions", "auto:phase2_realistic_T35", "--geometry", camp["geometry"], "--era", camp["era"]] + \
         (["--procModifiers", ",".join(camp["modifiers"])] if camp["modifiers"] else []) + \
         ["--datatier", "NANOAODSIM", "--eventcontent", "NANOAODSIM",
-         "--filein", PLACEHOLDER[a.campaign], "--fileout", "file:taggertier.root", "--python_filename", pset,
+         "--filein", PLACEHOLDER, "--fileout", "file:taggertier.root", "--python_filename", pset,
          "-n", "-1", "--mc", "--nThreads", str(a.numCores), "--no_exec", "--customise_commands", custom]
     subprocess.run(cmd, check=True)
 
