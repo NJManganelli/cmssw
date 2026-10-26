@@ -6,30 +6,114 @@ customisation entry points for producing and injecting those collections, and th
 standalone STEP1/STEP2 drivers. The companion NanoAOD tables live in
 `DPGAnalysis/Phase3SmartPixelsNanoAOD`.
 
-## Setup (CMSSW_20_1_X / master cycle)
+## Setup
 
-correctionlib is a proper CMSSW external now (no scram-venv/pip or
-SCRAM_CXX_STANDARD/USER_CXXFLAGS hacks); `plugins/BuildFile.xml` declares
-`<use name="correctionlib"/>` directly.
+Two branches on https://github.com/NJManganelli/cmssw carry the same SmartPixels code:
+
+| release | branch | inputs it reads |
+|---|---|---|
+| CMSSW_20_1_0_pre1 | `smartpixels-phase3-tier2refit` | the 150X D121 RelVals (GEN-SIM-DIGI-RAW), and anything written by CMSSW_20 |
+| CMSSW_17_0_0_pre4 | `smartpixels-phase3-tier2refit-17_0_0_pre4` | the older Phase-2 samples (e.g. Phase2Spring24, CMSSW_14_0_9, GEN-SIM-DIGI-RAW-MINIAOD) |
+
+CMSSW_20 cannot open files written before CMSSW_20 (`io_v1`), and CMSSW_17 cannot open CMSSW_20 files. Our packages are
+file-identical on both branches, apart from two class-checksum pins in `DataFormats/Phase3SmartPixels`.
+
+Neither branch is based on its release tag; both carry later commits (cms-sw/cmssw#51503 and the SmartPixels work). A
+working area is the release plus 40 package directories at the branch tip. Add them with `git-cms-addpkg`, which works
+before the branch is checked out (with warnings). Do not edit `.git/info/sparse-checkout` by hand.
 
 ```bash
-# SCRAM_ARCH=el9_amd64_gcc14
-scram project CMSSW CMSSW_20_1_0_pre1
-cd CMSSW_20_1_0_pre1/src
-cmsenv
-git cms-init --upstream-only -q -y
-git remote add njmanganelli-fork https://github.com/NJManganelli/cmssw.git
-git fetch njmanganelli-fork smartpixels-phase3
-# smartpixels-phase3 = master + cms-sw/cmssw#51503 (L1TK community update)
-#   + l1nano-central (general L1Nano extensions)
-#   + L1Trigger/Phase3SmartPixels + DPGAnalysis/Phase3SmartPixelsNanoAOD
-git checkout smartpixels-phase3
+PKGS="Configuration/Applications Configuration/EventContent Configuration/Geometry Configuration/StandardSequences
+DPGAnalysis/Phase2L1TNanoAOD DPGAnalysis/Phase3SmartPixelsNanoAOD DQMOffline/L1Trigger DataFormats/L1TCalorimeterPhase2
+DataFormats/L1TCorrelator DataFormats/L1TMuonPhase2 DataFormats/L1TParticleFlow DataFormats/L1TrackTrigger
+DataFormats/L1Trigger DataFormats/Phase3SmartPixels DataFormats/StdDictionaries Fireworks/Geometry
+HLTriggerOffline/Common L1Trigger/Configuration L1Trigger/DemonstratorTools L1Trigger/L1CaloTrigger L1Trigger/L1TNtuples
+L1Trigger/L1TTrackMatch L1Trigger/Phase2L1GMT L1Trigger/Phase2L1GT L1Trigger/Phase2L1ParticleFlow L1Trigger/Phase2L1Taus
+L1Trigger/Phase3SmartPixels L1Trigger/TrackFindingTMTT L1Trigger/TrackFindingTracklet L1Trigger/TrackTrigger
+L1Trigger/TrackerDTC L1Trigger/TrackerTFP L1Trigger/VertexFinder PhysicsTools/NanoAOD RecoLocalCalo/Configuration
+SimDataFormats/Associations SimGeneral/MixingModule SimTracker/TrackTriggerAssociation Validation/RecoHI SmartPixelsStudies"
 
-# resolution corrections used by the correctionlib* emulator modes
-xrdcp root://cmseos.fnal.gov//eos/uscms/store/group/lpcsmartpixelscms/toysim/resolution/spixel_smear_all_configs_barrel_CalV1_v2p1_compound.json L1Trigger/Phase3SmartPixels/data/
-
-scram b -j8
+# CMSSW_20 (D121 RelVals). For CMSSW_17 use CMSSW_17_0_0_pre4 and the branch smartpixels-phase3-tier2refit-17_0_0_pre4.
+export SCRAM_ARCH=el9_amd64_gcc13
+cmsrel CMSSW_20_1_0_pre1 && cd CMSSW_20_1_0_pre1/src && cmsenv
+git cms-init
+git remote add njm https://github.com/NJManganelli/cmssw.git && git fetch njm smartpixels-phase3-tier2refit
+for pkg in $PKGS; do git-cms-addpkg $pkg; done
+git checkout -b smartpixels-phase3-tier2refit njm/smartpixels-phase3-tier2refit
+scram b -j 8
+scram b runtests          # includes testConfigHygiene, testCrabDatasetCampaign, testRefitModesConfig
 ```
+
+Every data file the jobs read is in the branch (the refit v3 payloads, the SmartPixels emulator models, the smear set),
+in cms-data or in the release. The one exception is the optional track heads' models (next section).
+
+## Slim tagger tier: production for jet-tagger and track-MVA training
+
+The tier itself (`@SPTaggerTier`: what it keeps, drops and adds) is described in
+`DPGAnalysis/Phase3SmartPixelsNanoAOD/README.md`, "Tagger pseudo-nano tier". This section is the recipe.
+
+### Producing it on the grid
+
+`test/makeCrabTaggerTier.py` writes, per mask, a pset (cmsDriver `NANO:@L1TSPTaggerNanoV3+@SPActiveLayers<mask>`) and a
+CRAB config. It never queries DAS and never submits, and no configuration reads its input file. The campaign comes from
+the `--inputDataset` name:
+- `..._STD_D121_.../GEN-SIM-DIGI-RAW` gives `d121`: CMSSW_20, geometry D121, era Phase2C22I13M9, generator inputs made in
+  the job;
+- `Phase2Spring24.../GEN-SIM-DIGI-RAW-MINIAOD` gives `spring24`: CMSSW_17 only; D110, Phase2C17I13M9, no `nano_l1_hlt`,
+  the stored tracker-muon products dropped on input, the generator pruning maps rebuilt in the job. That name pattern
+  has not been checked in DAS; if your name differs, pass `--campaign spring24`.
+- An unrecognised name needs `--campaign d121|spring24`, and a campaign that contradicts the data tier is refused.
+
+```bash
+# test first: one mask, 2 files of 100 events
+python3 L1Trigger/Phase3SmartPixels/test/makeCrabTaggerTier.py --masks AAAA --heads $PWD/models \
+    --inputDataset /RelValTTbar_14TeV/CMSSW_20_1_0_pre2-PU_150X_mcRun4_realistic_v1_STD_D121_RegeneratedGS_PU_20260917_163358_RV24-v1/GEN-SIM-DIGI-RAW \
+    --totalUnits 2 --requestName taggertier_test --outLFNDirBase /store/user/$USER/taggertier/test \
+    --storageSite T2_CH_CERN --workDir crab_taggertier_test
+crab submit --dryrun -c crab_taggertier_test/AAAA/crab_*.py && crab submit -c crab_taggertier_test/AAAA/crab_*.py
+crab getoutput -d crab_projects/crab_<requestName> [--dump]
+# production: drop --totalUnits; the default masks are AAAA AAAI IAAA IIII (IIII = the OT-only control, OT heads only);
+# run the generator once per dataset
+```
+
+- **Local smoke test:** in `crab_taggertier_test/AAAA`, make a 3-line `smoke_cfg.py` that imports
+  `taggertier_SPAAAA_cfg`, sets `process.source.fileNames` to one xrootd file of the dataset and `process.maxEvents.input =
+  5`, then `cmsRun smoke_cfg.py`.
+- **What a good file shows:** about 0.35 MB/event; `L1TExtTrack`, `L1TSmartPixelsExtTrack`, `L1TSmartPixelsExtRefitHit`,
+  `L1PFCand`, `L1puppiJetSC4NG`, `GenPart`, `GenJet`; no `L1TSmartPixelsCluster`, `L1TTP` or `L1TOTStub*`;
+  `spixRefitVersion` = 3; with `--heads`, the twelve `*_head_*` columns.
+- **Track heads:** the models are not in git. The reference set is the archive `heads_models_reference_v1.tgz` (1.1 MB,
+  sha256 d2f9dfbafc42...): unpack it to `models/` and pass `--heads $PWD/models`. The generator ships each mask's models in
+  the CRAB sandbox. Without `--heads` the tier has no head columns, but every head input is stored, so the heads can be
+  evaluated later.
+- **Output:** `<outLFNDirBase>/<primary dataset>/<request tag>/<timestamp>/0000/taggertier_<job>.root` at
+  `--storageSite` (defaults `T3_US_FNALLPC`, `/store/user/lpcsmartpixelscms/taggertier/v1`). About 36 MB per 100-event
+  file; about 7 s/event on one thread.
+
+### Using it for training
+
+- **One file per mask and job.** Pair masks by event identity (`run`, `luminosityBlock`, `event`), never by job number or
+  entry: masks are separate CRAB tasks. Use the events present in every mask you compare; failed jobs leave gaps.
+- **Tracks:** `L1TExtTrack` (OT) and `L1TSmartPixelsExtTrack` (refit, same index along axis 1). The per-hit refit records
+  are in `L1TSmartPixelsExtRefitHit` (`trackIdx`). The prompt family (`L1TTrack`, `L1TSmartPixelsTrack`) is there too.
+- **Truth, for labels and targets only:**
+  - on the SmartPixels tracks, the OT track's matched particle: `otTpIdx`, `otTpPdgId`, `otGenuine`, `otLooselyGenuine`,
+    `otCombinatoric`, `otUnknown`, `otTpFromHardInteraction`, `otTp_pt/eta/phi0/tanL/charge/rInv/d0/z0`;
+  - on the OT tracks, `genuine`, `tp_*` and `tp_rInv`;
+  - the selected cluster's particle on the refit hits, `selTpIdx`, which gives the wrong-hit count.
+
+  These replace the dropped `L1TTP` and cluster tables.
+- **Columns whose title says `TRUTH-ONLY`** (e.g. the refit hits' `clusterMerged`) are simulation truth. Never use them as
+  model inputs. ngtagger-train's `refuse_truth_inputs` enforces this for the track MVAs.
+- **Jets:** `L1puppiJetSC4NG` with its constituents (`L1PFCand`, `l1TrackIdx` to the track tables), and `GenJet` for
+  labels.
+- **Heads:** `L1TExtTrack_head_*` and `L1TSmartPixelsExtTrack_head_*`: `head_clean` = P(clean); `head_d0`, `head_z0`,
+  `head_tanl`, `head_rinv`, `head_phi` = log of the predicted error width, with sigma in um (d0, z0), 1e-5 (tanL),
+  1e-6/cm (1/R) and urad (phi). They are the extended family only, with prompt and displaced windows split at
+  |d0| = 0.02 cm; the features are described in `plugins/L1SmartPixelsTrackHeadsTableProducer.cc` (DPGAnalysis).
+- **Old "Trk1GeV" samples** store truth particles above 1 GeV only. Truth columns are therefore missing for lower-pT
+  matches, and most SmartPixels clusters get the CNN stand-in angle (91 % of clusters against 29 % on D121; 2.7 % against
+  0.9 % of the clusters the refit selects). "AllTP" samples behave like D121.
 
 ## Workflows
 
