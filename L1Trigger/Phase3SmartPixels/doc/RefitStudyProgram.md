@@ -8,12 +8,18 @@ repo (`docs/`, `eval_refitq/`) and are cross-referenced per section. Written 202
 latency budget and the sensor payload constraint were made explicit; several
 conclusions recorded earlier in the v2.6 work are corrected below.
 
-## Version discipline: v2.6 IS NOT MINTED YET
+## Version discipline: v2p6pre1 (pre-release); v2.6 NOT MINTED YET
 
-Everything in this program lands **inside v2.6**. The commits already on the
-branch that carry "v2.6" in their subject (the 4-way chi2 split and the spec
-changelog) are **work in progress**, not a shipped schema: nothing is pushed and
-no production has ever written a v2.6 file. Consequences, all load-bearing:
+**Status (2026-10-26).** The code is pushed and marked as the pre-release **v2p6pre1**:
+- the nanoMetadata `smartPixelsVersion`;
+- the tags `smartpixels-phase3-digirefit-v2p6pre1` (CMSSW_20) and `...-v2p6pre1-17_0_0_pre4` (CMSSW_17).
+
+The canon_v1 to canon_v5 productions were written with earlier, in-progress v2.6 states. The single-bump rule
+below was not kept: the class versions are now HitInfo 7, TrackInfo 6, Sidecar 7, with every older checksum still
+pinned. **The mint criterion is now a jet-tagger training in CMSSW_17 with decent statistics** (the physicist,
+2026-10-26), not merely the first production. At the mint the marker becomes "v2p6" and the changelog entry freezes.
+
+The original rules, kept for the record. Item 3 is superseded by the mint criterion above:
 
 1. **ONE ClassVersion bump for the whole of v2.6.** HitInfo 4->5, TrackInfo
    4->5, Sidecar 5->6 already cover it. Adding the reco payload, the innovation

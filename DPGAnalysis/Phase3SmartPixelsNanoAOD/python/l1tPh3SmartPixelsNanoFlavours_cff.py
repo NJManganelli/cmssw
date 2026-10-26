@@ -34,6 +34,9 @@ _TP_TRUTH_TAGS = {"TPTruth1GeV": "charged1GeV",
                   "TPTruthLinked": "linked",
                   "TPTruth1GeVLinked": "charged1GeVOrLinked",
                   "TPTruthAll": "all"}
+# The SmartPixels simulation version, written to every SmartPixels nano as nanoMetadata smartPixelsVersion (Runs tree).
+# "v2p6pre1" until v2.6 is minted (doc/RefitSidecarSpec.md); any schema or physics change bumps it.
+SMARTPIXELS_VERSION = "v2p6pre1"
 MASKS = [a + b + c + d for a in "AI" for b in "AI" for c in "AI" for d in "AI"]
 PASSTHROUGH_MASK = "IIII"
 
@@ -496,7 +499,14 @@ def _reconcile(process):
     _configureOTSeedType(process, sched)
     _configureLinkedTruth(process, sched)
     _applyTier(process, st)
+    _markVersion(process)
     return process
+
+
+def _markVersion(process):
+    """File-level marker of the SmartPixels simulation version: nanoMetadata's smartPixelsVersion string."""
+    if hasattr(process, "nanoMetadata"):
+        process.nanoMetadata.strings.smartPixelsVersion = cms.string(SMARTPIXELS_VERSION)
 
 
 _OT_TRUTH_TABLES = {"L1TTrack": "l1tTracksTruthTable", "L1TExtTrack": "l1tExtTracksTruthTable"}
