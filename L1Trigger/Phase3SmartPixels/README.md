@@ -47,6 +47,13 @@ scram b runtests          # includes testConfigHygiene, testCrabDatasetCampaign,
 Every data file the jobs read is in the branch (the refit v3 payloads, the SmartPixels emulator models, the smear set),
 in cms-data or in the release. The one exception is the optional track heads' models (next section).
 
+## Version
+
+The SmartPixels simulation version is **v2p6pre1**, a pre-release of v2.6. It is written to every SmartPixels nano as
+nanoMetadata `smartPixelsVersion` and tagged `smartpixels-phase3-digirefit-v2p6pre1` (CMSSW_20) /
+`smartpixels-phase3-digirefit-v2p6pre1-17_0_0_pre4` (CMSSW_17). v2.6 is minted once a jet-tagger training in CMSSW_17 with
+decent statistics is done. Changelog, class versions and the mint rule: `doc/RefitSidecarSpec.md`.
+
 ## Slim tagger tier: production for jet-tagger and track-MVA training
 
 The tier itself (`@SPTaggerTier`: what it keeps, drops and adds) is described in
@@ -81,11 +88,15 @@ crab getoutput -d crab_projects/crab_<requestName> [--dump]
   5`, then `cmsRun smoke_cfg.py`.
 - **What a good file shows:** about 0.35 MB/event; `L1TExtTrack`, `L1TSmartPixelsExtTrack`, `L1TSmartPixelsExtRefitHit`,
   `L1PFCand`, `L1puppiJetSC4NG`, `GenPart`, `GenJet`; no `L1TSmartPixelsCluster`, `L1TTP` or `L1TOTStub*`;
-  `spixRefitVersion` = 3; with `--heads`, the twelve `*_head_*` columns.
-- **Track heads:** the models are not in git. The reference set is the archive `heads_models_reference_v1.tgz` (1.1 MB,
-  sha256 d2f9dfbafc42...): unpack it to `models/` and pass `--heads $PWD/models`. The generator ships each mask's models in
-  the CRAB sandbox. Without `--heads` the tier has no head columns, but every head input is stored, so the heads can be
-  evaluated later.
+  `spixRefitVersion` = 3; with `--heads`, the twelve `*_head_*` columns; in the Runs tree, nanoMetadata `smartPixelsVersion`
+  = "v2p6pre1", `smartPixelsTier` and `smartPixelsRefit`.
+- **Track heads:** the models are not in git. The reference set for v2p6pre1 is on the LPC EOS group area:
+  ```bash
+  xrdcp root://cmseos.fnal.gov//eos/uscms/store/user/lpcsmartpixelscms/slimtaggertier/v2p6/heads_models_reference_v2p6pre1.tgz .
+  tar xzf heads_models_reference_v2p6pre1.tgz          # gives models/ (MANIFEST.json, OT/, SmartPixels/)
+  ```
+  Pass `--heads $PWD/models`; the generator ships each mask's models in the CRAB sandbox. Without `--heads` the tier has
+  no head columns, but every head input is stored, so the heads can be evaluated later.
 - **Output:** `<outLFNDirBase>/<primary dataset>/<request tag>/<timestamp>/0000/taggertier_<job>.root` at
   `--storageSite` (defaults `T3_US_FNALLPC`, `/store/user/lpcsmartpixelscms/taggertier/v1`). About 36 MB per 100-event
   file; about 7 s/event on one thread.

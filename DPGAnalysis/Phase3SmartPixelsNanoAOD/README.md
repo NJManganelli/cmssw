@@ -288,7 +288,7 @@ signed off on its drops, and the canonical tiers stay complete.
     come through the PF candidates and jets.
 - **Dropped from the output only:** `L1TSmartPixelsCluster`, `L1TTP`, `L1TOTStub`, `L1TOTStubDTC`.
   - Their producers still run where another table needs them.
-  - nanoMetadata `smartPixelsTier` names the tier.
+  - nanoMetadata `smartPixelsTier` names the tier, and `smartPixelsVersion` the SmartPixels simulation version (v2p6pre1).
   - Every other table is bitwise identical to the canonical nano's.
 - **Truth that travels with the tracks,** in every tier, canonical included (`_configureLinkedTruth`):
   - the SmartPixels track tables copy their OT track's matched TrackingParticle truth (`otTpIdx`, `otTpPdgId`,

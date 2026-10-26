@@ -19,15 +19,22 @@ loaded model's `n_features`) and the ROOT `ClassVersion`s in
 Changelog (the parenthesized version is the simulation version the change
 shipped in).
 
-**v2.6 IS NOT MINTED.** Its entry below is a single CONSOLIDATED, still-mutable
-record of everything going into v2.6, not one entry per commit; nothing is
-pushed and no production has written a v2.6 file. Therefore: the whole of v2.6
-gets exactly ONE ClassVersion bump (HitInfo 4->5, TrackInfo 4->5, Sidecar 5->6),
-already taken — later v2.6 field additions RE-PIN those checksums rather than
-bumping again, because there is no intermediate schema anyone can hold. v2.6 is
-minted when the first production is written with it; only then does the entry
-freeze and the next schema change become v2.7. Program of work:
-`RefitStudyProgram.md`.
+**Status (2026-10-26): v2p6pre1, a pre-release of v2.6; v2.6 is NOT minted yet.**
+- The code is pushed on both branches: `smartpixels-phase3-tier2refit` (CMSSW_20_1_0_pre1) and
+  `smartpixels-phase3-tier2refit-17_0_0_pre4` (CMSSW_17_0_0_pre4). The annotated tags
+  `smartpixels-phase3-digirefit-v2p6pre1` and `smartpixels-phase3-digirefit-v2p6pre1-17_0_0_pre4` mark the pre-release.
+- Every SmartPixels nano carries nanoMetadata `smartPixelsVersion` = "v2p6pre1" (`SMARTPIXELS_VERSION`).
+- Productions written so far:
+  - development productions with earlier v2.6 states: canon_v1 to canon_v5;
+  - the first v2p6pre1-era productions: the grid slim tagger tier and the CMSSW_17 Phase2Spring24 comparison.
+  These are pre-release files, not a minted schema.
+- **Class versions at v2p6pre1:** SmartPixelsRefitHitInfo 7, SmartPixelsRefitTrackInfo 6, SmartPixelsRefitSidecar 7,
+  SmartPixelsRecHit 4, SmartPixelsRecHitTruth 4. The rule of a single v2.6 bump (HitInfo 4->5, TrackInfo 4->5,
+  Sidecar 5->6) was not kept: later v2.6 work bumped again. Every older version's checksum stays pinned, so all
+  earlier files remain readable.
+- **v2.6 is minted** once a jet-tagger training in CMSSW_17 with decent statistics is done (the physicist,
+  2026-10-26). Then this entry freezes, the marker becomes "v2p6", and the next schema change becomes v2.7.
+- The entry below remains the single consolidated record of what goes into v2.6. Program of work: `RefitStudyProgram.md`.
 
 - 2026-08-12 onward (v2.6, IN PROGRESS): (a) 4-WAY CHI2 SPLIT. The per-hit chi2IncRPhi/chi2IncRZ and
   per-track chi2IncRPhiTot/chi2IncRZTot become per-measurement-dimension fields
